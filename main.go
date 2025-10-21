@@ -101,6 +101,7 @@ func main() {
 	}
 
 	go controller.AutomaticallyTestChannels()
+	go controller.ScheduledTestChannels()
 
 	if common.IsMasterNode && constant.UpdateTask {
 		gopool.Go(func() {

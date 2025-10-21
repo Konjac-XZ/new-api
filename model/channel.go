@@ -31,6 +31,7 @@ type Channel struct {
 	TestTime             int64   `json:"test_time" gorm:"bigint"`
 	ResponseTime         int     `json:"response_time"` // in milliseconds
 	MaxFirstTokenLatency *int    `json:"max_first_token_latency" gorm:"column:max_first_token_latency"`
+	ScheduledTestInterval *int   `json:"scheduled_test_interval" gorm:"column:scheduled_test_interval;default:0"` // 定时测试间隔（分钟）
 	BaseURL              *string `json:"base_url" gorm:"column:base_url;default:''"`
 	Other                string  `json:"other"`
 	Balance              float64 `json:"balance"` // in USD
@@ -330,6 +331,13 @@ func SearchChannels(keyword string, group string, model string, idSort bool) ([]
 	return channels, nil
 }
 
+func GetChannelsWithScheduledTest() ([]*Channel, error) {
+	var channels []*Channel
+	// Get all enabled channels with scheduled_test_interval > 0 and auto_ban enabled
+	err := DB.Where("status = ? AND scheduled_test_interval > 0 AND auto_ban = 1", 1).Find(&channels).Error
+	return channels, err
+}
+
 func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	channel := &Channel{Id: id}
 	var err error = nil
@@ -438,6 +446,16 @@ func (channel *Channel) GetMaxFirstTokenLatency() int {
 		return 0
 	}
 	return *channel.MaxFirstTokenLatency
+}
+
+func (channel *Channel) GetScheduledTestInterval() int {
+	if channel.ScheduledTestInterval == nil {
+		return 0
+	}
+	if *channel.ScheduledTestInterval < 0 {
+		return 0
+	}
+	return *channel.ScheduledTestInterval
 }
 
 func (channel *Channel) GetStatusCodeMapping() string {

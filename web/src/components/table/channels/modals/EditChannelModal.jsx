@@ -133,7 +133,8 @@ const EditChannelModal = (props) => {
     key: '',
     openai_organization: '',
     max_input_tokens: 0,
-  max_first_token_latency: 0,
+    max_first_token_latency: 0,
+    scheduled_test_interval: 0,
     base_url: '',
     other: '',
     model_mapping: '',
@@ -1029,6 +1030,13 @@ const EditChannelModal = (props) => {
       delete localInputs.max_first_token_latency;
     } else {
       localInputs.max_first_token_latency = Math.round(latencyValue);
+    }
+
+    const scheduledTestValue = Number(localInputs.scheduled_test_interval);
+    if (!Number.isFinite(scheduledTestValue) || scheduledTestValue <= 0) {
+      delete localInputs.scheduled_test_interval;
+    } else {
+      localInputs.scheduled_test_interval = Math.round(scheduledTestValue);
     }
 
     // 清理不需要发送到后端的字段
@@ -2496,6 +2504,21 @@ const EditChannelModal = (props) => {
                         '仅当自动禁用开启时有效，关闭后不会自动禁用该渠道',
                       )}
                       initValue={autoBan}
+                    />
+
+                    <Form.InputNumber
+                      field='scheduled_test_interval'
+                      label={t('独立定时测试间隔 (分钟)')}
+                      placeholder={t('设置定时测试间隔')}
+                      min={0}
+                      disabled={!autoBan}
+                      onNumberChange={(value) =>
+                        handleInputChange('scheduled_test_interval', value)
+                      }
+                      style={{ width: '100%' }}
+                      extraText={t(
+                        '需开启自动禁用。当值不为 0 时，每隔指定分钟数测试该渠道。如果首 Token 延迟超过"最大首 Token 延迟"，则禁用渠道；如果延迟正常，则重新启用渠道',
+                      )}
                     />
 
                     <Form.TextArea

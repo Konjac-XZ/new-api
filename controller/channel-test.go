@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -636,4 +637,356 @@ func AutomaticallyTestChannels() {
 			}
 		}
 	})
+}
+
+// ScheduledTestChannels 独立定时测试渠道
+var scheduledTestChannelsOnce sync.Once
+
+func ScheduledTestChannels() {
+	scheduledTestChannelsOnce.Do(func() {
+		// 存储每个渠道的下次测试时间
+		nextTestTimes := make(map[int]int64)
+		var mu sync.Mutex
+
+		for {
+			// 每分钟检查一次
+			time.Sleep(1 * time.Minute)
+
+			channels, err := model.GetChannelsWithScheduledTest()
+			if err != nil {
+				common.SysLog(fmt.Sprintf("failed to get channels with scheduled test: %s", err.Error()))
+				continue
+			}
+
+			if len(channels) == 0 {
+				continue
+			}
+
+			now := time.Now().Unix()
+
+			for _, channel := range channels {
+				interval := channel.GetScheduledTestInterval()
+				if interval <= 0 {
+					continue
+				}
+
+				mu.Lock()
+				nextTestTime, exists := nextTestTimes[channel.Id]
+				mu.Unlock()
+
+				// 如果是第一次或者到了测试时间
+				if !exists || now >= nextTestTime {
+					// 异步测试渠道
+					gopool.Go(func() {
+						testScheduledChannel(channel)
+					})
+
+					// 更新下次测试时间
+					mu.Lock()
+					nextTestTimes[channel.Id] = now + int64(interval*60)
+					mu.Unlock()
+				}
+			}
+		}
+	})
+}
+
+func testScheduledChannel(channel *model.Channel) {
+	defer func() {
+		if r := recover(); r != nil {
+			common.SysLog(fmt.Sprintf("scheduled test channel #%d panic: %v", channel.Id, r))
+		}
+	}()
+
+	maxLatency := channel.GetMaxFirstTokenLatency()
+	if maxLatency <= 0 {
+		// 如果没有设置最大首Token延迟，则不进行测试
+		return
+	}
+
+	common.SysLog(fmt.Sprintf("scheduled testing channel #%d (%s)", channel.Id, channel.Name))
+
+	// 执行流式渠道测试以测量首Token延迟
+	testModel := ""
+	if channel.TestModel != nil {
+		testModel = *channel.TestModel
+	}
+	result := testChannelStream(channel, testModel)
+
+	if result.localErr != nil {
+		// 测试失败
+		common.SysLog(fmt.Sprintf("scheduled test channel #%d failed: %s", channel.Id, result.localErr.Error()))
+		// 如果渠道当前是启用状态，则禁用它
+		if channel.Status == 1 {
+			service.DisableChannel(*types.NewChannelError(
+				channel.Id,
+				channel.Type,
+				channel.Name,
+				channel.ChannelInfo.IsMultiKey,
+				"",
+				true,
+			), fmt.Sprintf("定时测试失败: %s", result.localErr.Error()))
+			common.SysLog(fmt.Sprintf("channel #%d disabled due to scheduled test failure", channel.Id))
+		}
+		return
+	}
+
+	// 检查首Token延迟
+	if result.context != nil {
+		firstTokenLatencyMs := result.context.GetInt("first_token_latency_ms")
+		if firstTokenLatencyMs > 0 {
+			// Convert maxLatency from seconds to milliseconds
+			maxLatencyMs := maxLatency * 1000
+			if firstTokenLatencyMs > maxLatencyMs {
+				// 延迟超过阈值
+				common.SysLog(fmt.Sprintf("channel #%d first token latency %dms exceeds max %dms", 
+					channel.Id, firstTokenLatencyMs, maxLatencyMs))
+				
+				// 如果渠道当前是启用状态，则禁用它
+				if channel.Status == 1 {
+					service.DisableChannel(*types.NewChannelError(
+						channel.Id,
+						channel.Type,
+						channel.Name,
+						channel.ChannelInfo.IsMultiKey,
+						"",
+						true,
+					), fmt.Sprintf("首Token延迟 %dms 超过最大值 %dms", firstTokenLatencyMs, maxLatencyMs))
+					common.SysLog(fmt.Sprintf("channel #%d disabled due to high latency", channel.Id))
+				}
+			} else {
+				// 延迟在阈值内
+				common.SysLog(fmt.Sprintf("channel #%d first token latency %dms is within limit %dms", 
+					channel.Id, firstTokenLatencyMs, maxLatencyMs))
+				
+				// 如果渠道当前是禁用状态，则重新启用它
+				if channel.Status != 1 {
+					service.EnableChannel(channel.Id, "", channel.Name)
+					common.SysLog(fmt.Sprintf("channel #%d re-enabled due to acceptable latency", channel.Id))
+				}
+			}
+		} else {
+			// 如果无法测量首Token延迟，记录警告
+			common.SysLog(fmt.Sprintf("channel #%d: unable to measure first token latency", channel.Id))
+		}
+	}
+}
+
+// testChannelStream 专门用于定时测试的流式测试函数，测量首Token延迟
+func testChannelStream(channel *model.Channel, testModel string) testResult {
+	startTime := time.Now()
+	
+	var unsupportedTestChannelTypes = []int{
+		constant.ChannelTypeMidjourney,
+		constant.ChannelTypeMidjourneyPlus,
+		constant.ChannelTypeSunoAPI,
+		constant.ChannelTypeKling,
+		constant.ChannelTypeJimeng,
+		constant.ChannelTypeDoubaoVideo,
+		constant.ChannelTypeVidu,
+	}
+	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
+		channelTypeName := constant.GetChannelTypeName(channel.Type)
+		return testResult{
+			localErr: fmt.Errorf("%s channel test is not supported", channelTypeName),
+		}
+	}
+	
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	testModel = strings.TrimSpace(testModel)
+	if testModel == "" {
+		models := channel.GetModels()
+		if len(models) > 0 {
+			testModel = strings.TrimSpace(models[0])
+		}
+		if testModel == "" {
+			testModel = "gpt-4o-mini"
+		}
+	}
+
+	requestPath := "/v1/chat/completions"
+	c.Request = &http.Request{
+		Method: "POST",
+		URL:    &url.URL{Path: requestPath},
+		Body:   nil,
+		Header: make(http.Header),
+	}
+
+	cache, err := model.GetUserCache(1)
+	if err != nil {
+		return testResult{
+			localErr:    err,
+			newAPIError: nil,
+		}
+	}
+	cache.WriteContext(c)
+
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("channel", channel.Type)
+	c.Set("base_url", channel.GetBaseURL())
+	group, _ := model.GetUserGroup(1, false)
+	c.Set("group", group)
+
+	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, testModel)
+	if newAPIError != nil {
+		return testResult{
+			context:     c,
+			localErr:    newAPIError,
+			newAPIError: newAPIError,
+		}
+	}
+
+	// 构建流式请求
+	testRequest := &dto.GeneralOpenAIRequest{
+		Model:  testModel,
+		Stream: true, // 关键：设置为流式
+		Messages: []dto.Message{
+			{
+				Role:    "user",
+				Content: "hi",
+			},
+		},
+	}
+
+	// 设置合理的token限制
+	if strings.HasPrefix(testModel, "o") {
+		testRequest.MaxCompletionTokens = 10
+	} else {
+		testRequest.MaxTokens = 10
+	}
+
+	info, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAI, testRequest, nil)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeGenRelayInfoFailed),
+		}
+	}
+
+	info.InitChannelMeta(c)
+
+	err = helper.ModelMappedHelper(c, info, testRequest)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeChannelModelMappedError),
+		}
+	}
+
+	testModel = info.UpstreamModelName
+	testRequest.SetModelName(testModel)
+
+	apiType, _ := common.ChannelType2APIType(channel.Type)
+	adaptor := relay.GetAdaptor(apiType)
+	if adaptor == nil {
+		return testResult{
+			context:     c,
+			localErr:    fmt.Errorf("invalid api type: %d, adaptor is nil", apiType),
+			newAPIError: types.NewError(fmt.Errorf("invalid api type: %d, adaptor is nil", apiType), types.ErrorCodeInvalidApiType),
+		}
+	}
+
+	adaptor.Init(info)
+
+	convertedRequest, err := adaptor.ConvertOpenAIRequest(c, info, testRequest)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeConvertRequestFailed),
+		}
+	}
+
+	jsonData, err := json.Marshal(convertedRequest)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
+		}
+	}
+
+	requestBody := bytes.NewBuffer(jsonData)
+	c.Request.Body = io.NopCloser(requestBody)
+	
+	resp, err := adaptor.DoRequest(c, info, requestBody)
+	if err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError),
+		}
+	}
+
+	var httpResp *http.Response
+	if resp != nil {
+		httpResp = resp.(*http.Response)
+		if httpResp.StatusCode != http.StatusOK {
+			err := service.RelayErrorHandler(c.Request.Context(), httpResp, true)
+			return testResult{
+				context:     c,
+				localErr:    err,
+				newAPIError: types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError),
+			}
+		}
+	}
+
+	// 读取流式响应并测量首Token延迟
+	firstTokenTime := time.Duration(0)
+	scanner := bufio.NewScanner(httpResp.Body)
+	scanner.Split(bufio.ScanLines)
+	
+	gotFirstToken := false
+	for scanner.Scan() {
+		data := scanner.Text()
+		if len(data) < 6 || !strings.HasPrefix(data, "data: ") {
+			continue
+		}
+		data = strings.TrimPrefix(data, "data: ")
+		data = strings.TrimSpace(data)
+		
+		if data == "[DONE]" {
+			break
+		}
+		
+		if !gotFirstToken && data != "" {
+			firstTokenTime = time.Since(startTime)
+			gotFirstToken = true
+			common.SysLog(fmt.Sprintf("channel #%d first token received after %dms", channel.Id, firstTokenTime.Milliseconds()))
+			break // 只需要测量首Token，不需要读取全部响应
+		}
+	}
+
+	if httpResp.Body != nil {
+		httpResp.Body.Close()
+	}
+
+	if err := scanner.Err(); err != nil && !gotFirstToken {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeReadResponseBodyFailed),
+		}
+	}
+
+	if !gotFirstToken {
+		return testResult{
+			context:     c,
+			localErr:    errors.New("no first token received"),
+			newAPIError: types.NewError(errors.New("no first token received"), types.ErrorCodeBadResponseBody),
+		}
+	}
+
+	// 将首Token延迟存储到context中（以毫秒为单位）
+	c.Set("first_token_latency_ms", int(firstTokenTime.Milliseconds()))
+
+	return testResult{
+		context:     c,
+		localErr:    nil,
+		newAPIError: nil,
+	}
 }
