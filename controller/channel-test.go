@@ -615,6 +615,27 @@ func TestAllChannels(c *gin.Context) {
 	})
 }
 
+func isWithinTestTime() bool {
+	now := time.Now()
+	hour := now.Hour()
+	minute := now.Minute()
+	
+	// 8:00 - 11:30
+	if hour >= 8 && hour < 12 {
+		if hour == 11 && minute > 30 {
+			return false
+		}
+		return true
+	}
+	
+	// 14:00 - 21:00
+	if hour >= 14 && hour <= 21 {
+		return true
+	}
+	
+	return false
+}
+
 var autoTestChannelsOnce sync.Once
 
 func AutomaticallyTestChannels() {
@@ -629,6 +650,12 @@ func AutomaticallyTestChannels() {
 				time.Sleep(time.Duration(frequency) * time.Minute)
 				common.SysLog(fmt.Sprintf("automatically test channels with interval %d minutes", frequency))
 				common.SysLog("automatically testing all channels")
+				
+				// Check if current time is within allowed testing hours
+				if !isWithinTestTime() {
+					continue
+				}
+				
 				_ = testAllChannels(false)
 				common.SysLog("automatically channel test finished")
 				if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
