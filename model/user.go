@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -721,21 +722,25 @@ func GetUserGroup(id int, fromDB bool) (group string, err error) {
 
 // GetUserSetting gets setting from Redis first, falls back to DB if needed
 func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error) {
-	var setting string
+	var setting sql.NullString
 	defer func() {
 		// Update Redis cache asynchronously on successful DB read
 		if shouldUpdateRedis(fromDB, err) {
 			gopool.Go(func() {
-				if err := updateUserSettingCache(id, setting); err != nil {
+				settingStr := ""
+				if setting.Valid {
+					settingStr = setting.String
+				}
+				if err := updateUserSettingCache(id, settingStr); err != nil {
 					common.SysLog("failed to update user setting cache: " + err.Error())
 				}
 			})
 		}
 	}()
 	if !fromDB && common.RedisEnabled {
-		setting, err := getUserSettingCache(id)
+		settingStr, err := getUserSettingCache(id)
 		if err == nil {
-			return setting, nil
+			return settingStr, nil
 		}
 		// Don't return error - fall through to DB
 	}
@@ -744,8 +749,12 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 	if err != nil {
 		return settingMap, err
 	}
+	settingStr := ""
+	if setting.Valid {
+		settingStr = setting.String
+	}
 	userBase := &UserBase{
-		Setting: setting,
+		Setting: settingStr,
 	}
 	return userBase.GetSetting(), nil
 }
