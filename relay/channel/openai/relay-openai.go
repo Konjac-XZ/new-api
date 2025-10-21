@@ -143,6 +143,10 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		return true
 	})
 
+	if helper.HasFirstTokenTimeout(c) {
+		return nil, helper.FirstTokenLatencyError(info)
+	}
+
 	// 处理最后的响应
 	shouldSendLastResp := true
 	if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,

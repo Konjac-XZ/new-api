@@ -148,6 +148,10 @@ func GeminiTextGenerationStreamHandler(c *gin.Context, info *relaycommon.RelayIn
 		return true
 	})
 
+	if helper.HasFirstTokenTimeout(c) {
+		return nil, helper.FirstTokenLatencyError(info)
+	}
+
 	if info.SendResponseCount == 0 {
 		return nil, types.NewOpenAIError(errors.New("no response received from Gemini API"), types.ErrorCodeEmptyResponse, http.StatusInternalServerError)
 	}

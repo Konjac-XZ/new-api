@@ -475,7 +475,20 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	if channel.MaxFirstTokenLatency != nil && *channel.MaxFirstTokenLatency < 0 {
+		return fmt.Errorf("最大首 Token 延迟必须大于等于 0")
+	}
+
 	return nil
+}
+
+func normalizeChannelDefaults(channel *model.Channel) {
+	if channel == nil {
+		return
+	}
+	if channel.MaxFirstTokenLatency != nil && *channel.MaxFirstTokenLatency <= 0 {
+		channel.MaxFirstTokenLatency = nil
+	}
 }
 
 type AddChannelRequest struct {
@@ -533,6 +546,8 @@ func AddChannel(c *gin.Context) {
 		})
 		return
 	}
+
+	normalizeChannelDefaults(addChannelRequest.Channel)
 
 	addChannelRequest.Channel.CreatedTime = common.GetTimestamp()
 	keys := make([]string, 0)
@@ -802,6 +817,8 @@ func UpdateChannel(c *gin.Context) {
 	if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
 		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
 	}
+
+	normalizeChannelDefaults(&channel.Channel)
 
 	// 处理多key模式下的密钥追加/覆盖逻辑
 	if channel.KeyMode != nil && channel.ChannelInfo.IsMultiKey {

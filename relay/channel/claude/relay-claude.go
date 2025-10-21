@@ -712,6 +712,9 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		}
 		return true
 	})
+	if helper.HasFirstTokenTimeout(c) {
+		return nil, helper.FirstTokenLatencyError(info)
+	}
 	if err != nil {
 		return nil, err
 	}

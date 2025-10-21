@@ -133,6 +133,7 @@ const EditChannelModal = (props) => {
     key: '',
     openai_organization: '',
     max_input_tokens: 0,
+  max_first_token_latency: 0,
     base_url: '',
     other: '',
     model_mapping: '',
@@ -1022,6 +1023,13 @@ const EditChannelModal = (props) => {
     }
 
     localInputs.settings = JSON.stringify(settings);
+
+    const latencyValue = Number(localInputs.max_first_token_latency);
+    if (!Number.isFinite(latencyValue) || latencyValue <= 0) {
+      delete localInputs.max_first_token_latency;
+    } else {
+      localInputs.max_first_token_latency = Math.round(latencyValue);
+    }
 
     // 清理不需要发送到后端的字段
     delete localInputs.force_format;
@@ -2465,6 +2473,18 @@ const EditChannelModal = (props) => {
                         />
                       </Col>
                     </Row>
+
+                    <Form.InputNumber
+                      field='max_first_token_latency'
+                      label='最大首 Token 延迟 (秒)'
+                      placeholder='超出延迟后自动切换下一个渠道'
+                      min={0}
+                      onNumberChange={(value) =>
+                        handleInputChange('max_first_token_latency', value)
+                      }
+                      style={{ width: '100%' }}
+                      extraText='仅对流式请求生效，0 表示关闭'
+                    />
 
                     <Form.Switch
                       field='auto_ban'

@@ -53,23 +53,24 @@ type ResponsesUsageInfo struct {
 }
 
 type ChannelMeta struct {
-	ChannelType          int
-	ChannelId            int
-	ChannelIsMultiKey    bool
-	ChannelMultiKeyIndex int
-	ChannelBaseUrl       string
-	ApiType              int
-	ApiVersion           string
-	ApiKey               string
-	Organization         string
-	ChannelCreateTime    int64
-	ParamOverride        map[string]interface{}
-	HeadersOverride      map[string]interface{}
-	ChannelSetting       dto.ChannelSettings
-	ChannelOtherSettings dto.ChannelOtherSettings
-	UpstreamModelName    string
-	IsModelMapped        bool
-	SupportStreamOptions bool // 是否支持流式选项
+	ChannelType                 int
+	ChannelId                   int
+	ChannelIsMultiKey           bool
+	ChannelMultiKeyIndex        int
+	ChannelBaseUrl              string
+	ApiType                     int
+	ApiVersion                  string
+	ApiKey                      string
+	Organization                string
+	ChannelCreateTime           int64
+	ParamOverride               map[string]interface{}
+	HeadersOverride             map[string]interface{}
+	ChannelSetting              dto.ChannelSettings
+	ChannelOtherSettings        dto.ChannelOtherSettings
+	UpstreamModelName           string
+	IsModelMapped               bool
+	SupportStreamOptions        bool // 是否支持流式选项
+	MaxFirstTokenLatencySeconds int
 }
 
 type RelayInfo struct {
@@ -161,6 +162,8 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 		channelMeta.ChannelOtherSettings = channelOtherSettings
 	}
 
+	channelMeta.MaxFirstTokenLatencySeconds = common.GetContextKeyInt(c, constant.ContextKeyChannelMaxFirstTokenLatency)
+
 	if streamSupportedChannels[channelMeta.ChannelType] {
 		channelMeta.SupportStreamOptions = true
 	}
@@ -223,8 +226,8 @@ func (info *RelayInfo) ToString() string {
 	// Channel metadata (mask ApiKey)
 	if info.ChannelMeta != nil {
 		cm := info.ChannelMeta
-		fmt.Fprintf(b, "ChannelMeta{ Type: %d, Id: %d, IsMultiKey: %t, MultiKeyIndex: %d, BaseURL: %q, ApiType: %d, ApiVersion: %q, Organization: %q, CreateTime: %d, UpstreamModelName: %q, IsModelMapped: %t, SupportStreamOptions: %t, ApiKey: ***masked*** }, ",
-			cm.ChannelType, cm.ChannelId, cm.ChannelIsMultiKey, cm.ChannelMultiKeyIndex, cm.ChannelBaseUrl, cm.ApiType, cm.ApiVersion, cm.Organization, cm.ChannelCreateTime, cm.UpstreamModelName, cm.IsModelMapped, cm.SupportStreamOptions)
+		fmt.Fprintf(b, "ChannelMeta{ Type: %d, Id: %d, IsMultiKey: %t, MultiKeyIndex: %d, BaseURL: %q, ApiType: %d, ApiVersion: %q, Organization: %q, CreateTime: %d, UpstreamModelName: %q, IsModelMapped: %t, SupportStreamOptions: %t, MaxFirstTokenLatencySeconds: %d, ApiKey: ***masked*** }, ",
+			cm.ChannelType, cm.ChannelId, cm.ChannelIsMultiKey, cm.ChannelMultiKeyIndex, cm.ChannelBaseUrl, cm.ApiType, cm.ApiVersion, cm.Organization, cm.ChannelCreateTime, cm.UpstreamModelName, cm.IsModelMapped, cm.SupportStreamOptions, cm.MaxFirstTokenLatencySeconds)
 	}
 
 	// Responses usage info (non-sensitive)

@@ -1008,6 +1008,10 @@ func GeminiChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *
 		return true
 	})
 
+	if helper.HasFirstTokenTimeout(c) {
+		return nil, helper.FirstTokenLatencyError(info)
+	}
+
 	if info.SendResponseCount == 0 {
 		// 空补全，报错不计费
 		// empty response, throw an error

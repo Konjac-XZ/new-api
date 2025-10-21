@@ -130,6 +130,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return true
 	})
 
+	if helper.HasFirstTokenTimeout(c) {
+		return nil, helper.FirstTokenLatencyError(info)
+	}
+
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
 		tempStr := responseTextBuilder.String()

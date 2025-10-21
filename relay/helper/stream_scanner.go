@@ -15,6 +15,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 
@@ -32,6 +33,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	if resp == nil || dataHandler == nil {
 		return
 	}
+
+	common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, false)
 
 	// 确保响应体总是被关闭
 	defer func() {
@@ -103,6 +106,42 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	defer cancel()
 
 	ctx = context.WithValue(ctx, "stop_chan", stopChan)
+
+	var firstTokenCancel context.CancelFunc
+	maxFirstTokenLatency := 0
+	if info != nil && info.ChannelMeta != nil {
+		maxFirstTokenLatency = info.ChannelMeta.MaxFirstTokenLatencySeconds
+	}
+	if info != nil && info.IsStream && maxFirstTokenLatency > 0 {
+		firstTokenCtx, cancelFirstToken := context.WithCancel(ctx)
+		firstTokenCancel = cancelFirstToken
+		wg.Add(1)
+		gopool.Go(func() {
+			defer func() {
+				wg.Done()
+				if r := recover(); r != nil {
+					logger.LogError(c, fmt.Sprintf("first token watchdog panic: %v", r))
+				}
+			}()
+			timer := time.NewTimer(time.Duration(maxFirstTokenLatency) * time.Second)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				logger.LogError(c, fmt.Sprintf("first token latency exceeded (%ds)", maxFirstTokenLatency))
+				common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, true)
+				common.SafeSendBool(stopChan, true)
+				if resp.Body != nil {
+					err := resp.Body.Close()
+					if err != nil && common.DebugEnabled {
+						println("resp body close error after first token timeout:", err.Error())
+					}
+				}
+			case <-firstTokenCtx.Done():
+			case <-stopChan:
+			case <-c.Request.Context().Done():
+			}
+		})
+	}
 
 	// Handle ping data sending with improved error handling
 	if pingEnabled && pingTicker != nil {
@@ -209,6 +248,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			data = strings.TrimLeft(data, " ")
 			data = strings.TrimSuffix(data, "\r")
 			if !strings.HasPrefix(data, "[DONE]") {
+				if firstTokenCancel != nil {
+					firstTokenCancel()
+					firstTokenCancel = nil
+				}
 				info.SetFirstResponseTime()
 
 				// 使用超时机制防止写操作阻塞
@@ -260,4 +303,24 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		// 客户端断开连接
 		logger.LogInfo(c, "client disconnected")
 	}
+
+	if firstTokenCancel != nil {
+		firstTokenCancel()
+	}
+}
+
+func HasFirstTokenTimeout(c *gin.Context) bool {
+	return common.GetContextKeyBool(c, constant.ContextKeyFirstTokenLatencyExceeded)
+}
+
+func FirstTokenLatencyError(info *relaycommon.RelayInfo) *types.NewAPIError {
+	limit := 0
+	if info != nil && info.ChannelMeta != nil {
+		limit = info.ChannelMeta.MaxFirstTokenLatencySeconds
+	}
+	message := "first token latency exceeded"
+	if limit > 0 {
+		message = fmt.Sprintf("first token latency exceeded (%ds)", limit)
+	}
+	return types.NewErrorWithStatusCode(fmt.Errorf(message), types.ErrorCodeChannelFirstTokenLatencyExceeded, http.StatusGatewayTimeout)
 }
