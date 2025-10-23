@@ -96,6 +96,104 @@ func RecordLog(userId int, logType int, content string) {
 	}
 }
 
+type ScheduledTestLogParams struct {
+	ChannelID   int
+	ChannelName string
+	ModelName   string
+	Result      string
+	Message     string
+	LatencyMs   *int
+	ThresholdMs *int
+	Error       string
+	AutoAction  string
+	Extra       map[string]interface{}
+	Username    string
+	TokenName   string
+	LogType     int
+	UserID      int
+}
+
+func RecordScheduledTestLog(params ScheduledTestLogParams) {
+	if LOG_DB == nil {
+		return
+	}
+	other := map[string]interface{}{
+		"category": "定时测试",
+	}
+	if params.ChannelName != "" {
+		other["channel_name"] = params.ChannelName
+	}
+	if params.ModelName != "" {
+		other["model_name"] = params.ModelName
+	}
+	if params.Result != "" {
+		other["result"] = params.Result
+	}
+	if params.LatencyMs != nil {
+		other["latency_ms"] = *params.LatencyMs
+	}
+	if params.ThresholdMs != nil {
+		other["threshold_ms"] = *params.ThresholdMs
+	}
+	if params.AutoAction != "" {
+		other["auto_action"] = params.AutoAction
+	}
+	if params.Error != "" {
+		other["error"] = params.Error
+	}
+	if params.Extra != nil {
+		for k, v := range params.Extra {
+			if k == "category" {
+				continue
+			}
+			other[k] = v
+		}
+	}
+	otherStr := ""
+	if len(other) > 0 {
+		otherStr = common.MapToJsonStr(other)
+	}
+	content := params.Message
+	if strings.TrimSpace(content) == "" {
+		content = fmt.Sprintf("Scheduled test executed for channel #%d", params.ChannelID)
+	}
+	userID := params.UserID
+	username := params.Username
+	if userID == 0 {
+		if root := GetRootUser(); root != nil {
+			userID = root.Id
+			if strings.TrimSpace(username) == "" {
+				username = root.Username
+			}
+		}
+	}
+	if strings.TrimSpace(username) == "" {
+		username = "[超级管理员]"
+	}
+	tokenName := params.TokenName
+	if strings.TrimSpace(tokenName) == "" {
+		tokenName = "模型测试"
+	}
+	logType := params.LogType
+	if logType == 0 {
+		logType = LogTypeConsume
+	}
+	log := &Log{
+		UserId:    userID,
+		Username:  username,
+		CreatedAt: common.GetTimestamp(),
+		Type:      logType,
+		Content:   content,
+		TokenName: tokenName,
+		ModelName: params.ModelName,
+		ChannelId: params.ChannelID,
+		Other:     otherStr,
+	}
+	if err := LOG_DB.Create(log).Error; err != nil {
+		common.SysLog("failed to record scheduled test log: " + err.Error())
+	}
+}
+
 func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string, tokenName string, content string, tokenId int, useTimeSeconds int,
 	isStream bool, group string, other map[string]interface{}) {
 	logger.LogInfo(c, fmt.Sprintf("record error log: userId=%d, channelId=%d, modelName=%s, tokenName=%s, content=%s", userId, channelId, modelName, tokenName, content))

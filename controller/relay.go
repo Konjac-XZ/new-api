@@ -445,40 +445,5 @@ func taskRelayHandler(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dto.Tas
 }
 
 func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError, retryTimes int) bool {
-	if taskErr == nil {
-		return false
-	}
-	if retryTimes <= 0 {
-		return false
-	}
-	if _, ok := c.Get("specific_channel_id"); ok {
-		return false
-	}
-	if taskErr.StatusCode == http.StatusTooManyRequests {
-		return true
-	}
-	if taskErr.StatusCode == 307 {
-		return true
-	}
-	if taskErr.StatusCode/100 == 5 {
-		// 超时不重试
-		if taskErr.StatusCode == 504 || taskErr.StatusCode == 524 {
-			return false
-		}
-		return true
-	}
-	if taskErr.StatusCode == http.StatusBadRequest {
-		return false
-	}
-	if taskErr.StatusCode == 408 {
-		// azure处理超时不重试
-		return false
-	}
-	if taskErr.LocalError {
-		return false
-	}
-	if taskErr.StatusCode/100 == 2 {
-		return false
-	}
 	return true
 }
