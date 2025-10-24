@@ -97,20 +97,25 @@ func RecordLog(userId int, logType int, content string) {
 }
 
 type ScheduledTestLogParams struct {
-	ChannelID   int
-	ChannelName string
-	ModelName   string
-	Result      string
-	Message     string
-	LatencyMs   *int
-	ThresholdMs *int
-	Error       string
-	AutoAction  string
-	Extra       map[string]interface{}
-	Username    string
-	TokenName   string
-	LogType     int
-	UserID      int
+	ChannelID        int
+	ChannelName      string
+	ModelName        string
+	Result           string
+	Message          string
+	LatencyMs        *int
+	ThresholdMs      *int
+	Error            string
+	AutoAction       string
+	Extra            map[string]interface{}
+	Username         string
+	TokenName        string
+	LogType          int
+	UserID           int
+	Group            string
+	PromptTokens     int
+	CompletionTokens int
+	UseTimeSeconds   int
+	IsStream         bool
 }
 
 func RecordScheduledTestLog(params ScheduledTestLogParams) {
@@ -131,6 +136,7 @@ func RecordScheduledTestLog(params ScheduledTestLogParams) {
 	}
 	if params.LatencyMs != nil {
 		other["latency_ms"] = *params.LatencyMs
+		other["frt"] = float64(*params.LatencyMs)
 	}
 	if params.ThresholdMs != nil {
 		other["threshold_ms"] = *params.ThresholdMs
@@ -147,6 +153,15 @@ func RecordScheduledTestLog(params ScheduledTestLogParams) {
 				continue
 			}
 			other[k] = v
+		}
+	}
+	if _, exists := other["frt"]; !exists {
+		if params.LatencyMs != nil {
+			other["frt"] = float64(*params.LatencyMs)
+		} else if params.UseTimeSeconds > 0 {
+			other["frt"] = float64(params.UseTimeSeconds * 1000)
+		} else {
+			other["frt"] = float64(0)
 		}
 	}
 	otherStr := ""
@@ -178,16 +193,29 @@ func RecordScheduledTestLog(params ScheduledTestLogParams) {
 	if logType == 0 {
 		logType = LogTypeConsume
 	}
+	group := strings.TrimSpace(params.Group)
+	if group == "" {
+		group = "default"
+	}
+	useTimeSeconds := params.UseTimeSeconds
+	if useTimeSeconds == 0 && params.LatencyMs != nil {
+		useTimeSeconds = (*params.LatencyMs + 999) / 1000
+	}
 	log := &Log{
-		UserId:    userID,
-		Username:  username,
-		CreatedAt: common.GetTimestamp(),
-		Type:      logType,
-		Content:   content,
-		TokenName: tokenName,
-		ModelName: params.ModelName,
-		ChannelId: params.ChannelID,
-		Other:     otherStr,
+		UserId:           userID,
+		Username:         username,
+		CreatedAt:        common.GetTimestamp(),
+		Type:             logType,
+		Content:          content,
+		TokenName:        tokenName,
+		ModelName:        params.ModelName,
+		ChannelId:        params.ChannelID,
+		PromptTokens:     params.PromptTokens,
+		CompletionTokens: params.CompletionTokens,
+		UseTime:          useTimeSeconds,
+		IsStream:         params.IsStream,
+		Group:            group,
+		Other:            otherStr,
 	}
 	if err := LOG_DB.Create(log).Error; err != nil {
 		common.SysLog("failed to record scheduled test log: " + err.Error())

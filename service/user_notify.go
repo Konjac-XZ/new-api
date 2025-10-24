@@ -46,7 +46,7 @@ func NotifyUser(userId int, userEmail string, userSetting dto.UserSetting, data 
 			emailToUse = userEmail
 		}
 		if emailToUse == "" {
-			common.SysLog(fmt.Sprintf("user %d has no email, skip sending email", userId))
+			// common.SysLog(fmt.Sprintf("user %d has no email, skip sending email", userId))
 			return nil
 		}
 		return sendEmailNotify(emailToUse, data)
