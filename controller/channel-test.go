@@ -642,13 +642,13 @@ func AutomaticallyTestChannels() {
 	autoTestChannelsOnce.Do(func() {
 		for {
 			if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
-				time.Sleep(10 * time.Minute)
+				time.Sleep(1 * time.Minute)
 				continue
 			}
 			for {
 				frequency := operation_setting.GetMonitorSetting().AutoTestChannelMinutes
-				time.Sleep(time.Duration(frequency) * time.Minute)
-				common.SysLog(fmt.Sprintf("automatically test channels with interval %d minutes", frequency))
+				time.Sleep(time.Duration(int(math.Round(frequency))) * time.Minute)
+				common.SysLog(fmt.Sprintf("automatically test channels with interval %f minutes", frequency))
 				common.SysLog("automatically testing all channels")
 
 				// Check if current time is within allowed testing hours

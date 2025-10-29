@@ -1194,7 +1194,11 @@
 
     "i18next-browser-languagedetector": ["i18next-browser-languagedetector@7.2.2", "", { "dependencies": { "@babel/runtime": "^7.23.2" } }, "sha512-6b7r75uIJDWCcCflmbof+sJ94k9UQO4X0YR62oUfqGI/GjCLVzlCwu8TFdRZIqVLzWbzNcmkmhfqKEr4TLz4HQ=="],
 
+<<<<<<< HEAD
     "i18next-cli": ["i18next-cli@1.11.12", "", { "dependencies": { "@swc/core": "1.13.19", "chalk": "5.6.2", "chokidar": "4.0.3", "commander": "14.0.1", "execa": "9.6.0", "glob": "11.0.3", "i18next-resources-for-ts": "1.7.4", "inquirer": "12.9.6", "jiti": "2.6.1", "jsonc-parser": "3.3.1", "ora": "9.0.0", "swc-walk": "1.0.0" }, "bin": { "i18next-cli": "dist/esm/cli.js" } }, "sha512-LtFfomR3CgaBW3prQjQrFRgfwPeHua8j/8T80L1mg7CVI23jB+AO15bmGeLfhFOtC9PwhrtTqSguHFKo+K+AHQ=="],
+=======
+    "i18next-cli": ["i18next-cli@1.15.0", "", { "dependencies": { "@swc/core": "1.13.19", "chalk": "5.6.2", "chokidar": "4.0.3", "commander": "14.0.1", "execa": "9.6.0", "glob": "11.0.3", "i18next-resources-for-ts": "1.7.4", "inquirer": "12.9.6", "jiti": "2.6.1", "jsonc-parser": "3.3.1", "minimatch": "10.0.3", "ora": "9.0.0", "swc-walk": "1.0.0" }, "bin": { "i18next-cli": "dist/esm/cli.js" } }, "sha512-XgIvoSTInr0uvf8lun5t9ZDT3wa6aj/annRIYBF0WcpERowLKrRQNBLDeDNkvpddInhNlRtUOhP24F0oOLZY+Q=="],
+>>>>>>> 1f419a3c71db61093d9f466f4414dd7ee6766ce2
 
     "i18next-resources-for-ts": ["i18next-resources-for-ts@1.7.4", "", { "dependencies": { "@babel/runtime": "^7.27.0", "yaml": "^2.7.1" }, "bin": { "i18next-resources-for-ts": "bin/i18next-resources-for-ts.js" } }, "sha512-3NpN2zasOWYR5zWA4JIdFhxrHxRJV8HEsbR7/GHSnotfjArjZzKvOzQnLFZ911QFmmcwq80saw8rccpHH+MYVQ=="],
 
@@ -2174,6 +2178,11 @@
 
     "i18next-cli/chalk": ["chalk@5.6.2", "", {}, "sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA=="],
 
+<<<<<<< HEAD
+=======
+    "i18next-cli/minimatch": ["minimatch@10.0.3", "", { "dependencies": { "@isaacs/brace-expansion": "^5.0.0" } }, "sha512-IPZ167aShDZZUMdRk66cyQAW3qr0WzbHkPdMYa8bzZhlHhO3jALbKdxcaak7W9FfT2rZNpQuUu4Od7ILEpXSaw=="],
+
+>>>>>>> 1f419a3c71db61093d9f466f4414dd7ee6766ce2
     "i18next-resources-for-ts/@babel/runtime": ["@babel/runtime@7.28.4", "", {}, "sha512-Q/N6JNWvIvPnLDvjlE1OUBLPQHH6l3CltCEsHIujp45zQUSSh8K+gHnaEX45yAT1nyngnINhvWtzN+Nb9D8RAQ=="],
 
     "katex/commander": ["commander@8.3.0", "", {}, "sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww=="],
