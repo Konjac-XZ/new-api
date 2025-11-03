@@ -239,44 +239,6 @@ func getChannel(c *gin.Context, group, originalModel string, retryCount int) (*m
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
-	if openaiErr == nil {
-		return false
-	}
-	if types.IsChannelError(openaiErr) {
-		return true
-	}
-	if types.IsSkipRetryError(openaiErr) {
-		return false
-	}
-	if retryTimes <= 0 {
-		return false
-	}
-	if _, ok := c.Get("specific_channel_id"); ok {
-		return false
-	}
-	if openaiErr.StatusCode == http.StatusTooManyRequests {
-		return true
-	}
-	if openaiErr.StatusCode == 307 {
-		return true
-	}
-	if openaiErr.StatusCode/100 == 5 {
-		// 超时不重试
-		if openaiErr.StatusCode == 504 || openaiErr.StatusCode == 524 {
-			return false
-		}
-		return true
-	}
-	if openaiErr.StatusCode == http.StatusBadRequest {
-		return false
-	}
-	if openaiErr.StatusCode == 408 {
-		// azure处理超时不重试
-		return false
-	}
-	if openaiErr.StatusCode/100 == 2 {
-		return false
-	}
 	return true
 }
 
