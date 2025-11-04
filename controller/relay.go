@@ -240,6 +240,43 @@ func getChannel(c *gin.Context, group, originalModel string, retryCount int) (*m
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
+	if openaiErr == nil {
+		return false
+	}
+	if types.IsChannelError(openaiErr) {
+		return true
+	}
+	if types.IsSkipRetryError(openaiErr) {
+		return false
+	}
+	if retryTimes <= 0 {
+		return false
+	}
+	if _, ok := c.Get("specific_channel_id"); ok {
+		return false
+	}
+	if openaiErr.StatusCode == http.StatusTooManyRequests {
+		return true
+	}
+	if openaiErr.StatusCode == 307 {
+		return true
+	}
+	if openaiErr.StatusCode/100 == 5 {
+		// 超时不重试
+		// Konjac-XZ 的特别修改：5xx 全都重试！
+		return true
+	}
+	if openaiErr.StatusCode == http.StatusBadRequest {
+		// Konjac-XZ 的特别修改：上游可能抛出 400，需要重试
+		return true
+	}
+	if openaiErr.StatusCode == 408 {
+		// Konjac-XZ 的特别修改：原来说是处理 Azure 的特别问题，Why not？
+		return true
+	}
+	if openaiErr.StatusCode/100 == 2 {
+		return false
+	}
 	return true
 }
 
