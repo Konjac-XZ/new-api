@@ -300,6 +300,11 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	if channel == nil {
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+
+	// Reset first-token watchdog state for each new channel attempt to avoid leaking
+	// the timeout flag across retries and misclassifying successful attempts as timeouts.
+	common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, false)
+	common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, nil)
 	channelcache.Remember(channel.Id, channel.Name)
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)
 	common.SetContextKey(c, constant.ContextKeyChannelName, channel.Name)

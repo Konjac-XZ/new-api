@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +27,7 @@ type FirstTokenWatchdog struct {
 	cancel      context.CancelFunc
 	reasonMu    sync.Mutex
 	reason      string
+	reqCancelMu sync.Mutex
 	reqCancel   context.CancelFunc
 	respMu      sync.Mutex
 	resp        *http.Response
@@ -72,6 +74,13 @@ func NewFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limitSec
 	go watchdog.run()
 
 	return watchdog
+}
+
+func (w *FirstTokenWatchdog) isRunning() bool {
+    if w == nil {
+        return false
+    }
+    return w.state.Load() == firstTokenWatchdogStateRunning
 }
 
 func (w *FirstTokenWatchdog) run() {
@@ -126,6 +135,15 @@ func (w *FirstTokenWatchdog) AttachResponse(resp *http.Response) {
 	w.resp = resp
 }
 
+func (w *FirstTokenWatchdog) SetRequestCancel(cancel context.CancelFunc) {
+	if w == nil {
+		return
+	}
+	w.reqCancelMu.Lock()
+	defer w.reqCancelMu.Unlock()
+	w.reqCancel = cancel
+}
+
 func (w *FirstTokenWatchdog) Stop(reason string) {
 	if w == nil || reason == "" {
 		return
@@ -178,10 +196,53 @@ func (w *FirstTokenWatchdog) triggerTimeout() {
 	}
 	elapsed := time.Since(w.start)
 	logger.LogWarn(w.c, fmt.Sprintf("first token watchdog triggered after %dms%s (limit %dms)", elapsed.Milliseconds(), w.channelInfo, w.limit.Milliseconds()))
-	logger.LogError(w.c, fmt.Sprintf("first token latency exceeded (limit %dms, elapsed %dms)", w.limit.Milliseconds(), elapsed.Milliseconds()))
 	common.SetContextKey(w.c, constant.ContextKeyFirstTokenLatencyExceeded, true)
-	if w.reqCancel != nil {
-		w.reqCancel()
+	w.reqCancelMu.Lock()
+	reqCancel := w.reqCancel
+	w.reqCancelMu.Unlock()
+	if reqCancel != nil {
+		reqCancel()
 	}
 	w.closeResponse()
+}
+
+func EnsureFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limitSeconds int, reqCancel context.CancelFunc) *FirstTokenWatchdog {
+    if c == nil || info == nil || limitSeconds <= 0 || !info.IsStream {
+        return nil
+    }
+
+    if existing, ok := common.GetContextKeyType[*FirstTokenWatchdog](c, constant.ContextKeyFirstTokenWatchdog); ok && existing != nil {
+        // Only reuse a running watchdog within the same attempt.
+        // If it's stopped/timed out, replace it to avoid leaking state across attempts.
+        if existing.isRunning() {
+            if reqCancel != nil {
+                existing.SetRequestCancel(reqCancel)
+            }
+            return existing
+        }
+        // ensure any lingering resources are closed
+        existing.Stop("replacing watchdog for new attempt")
+    }
+
+	watchdog := NewFirstTokenWatchdog(c, info, limitSeconds, reqCancel)
+	if watchdog != nil {
+		common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, watchdog)
+	}
+	return watchdog
+}
+
+func HasFirstTokenTimeout(c *gin.Context) bool {
+	return common.GetContextKeyBool(c, constant.ContextKeyFirstTokenLatencyExceeded)
+}
+
+func FirstTokenLatencyError(info *relaycommon.RelayInfo) *types.NewAPIError {
+	limit := 0
+	if info != nil && info.ChannelMeta != nil {
+		limit = info.ChannelMeta.MaxFirstTokenLatencySeconds
+	}
+	message := "first token latency exceeded"
+	if limit > 0 {
+		message = fmt.Sprintf("first token latency exceeded (%ds)", limit)
+	}
+	return types.NewErrorWithStatusCode(fmt.Errorf(message), types.ErrorCodeChannelFirstTokenLatencyExceeded, http.StatusGatewayTimeout)
 }

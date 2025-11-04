@@ -1000,6 +1000,12 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 
 	info.InitChannelMeta(c)
 
+	if info.ChannelMeta != nil {
+		if maxLatency := info.ChannelMeta.MaxFirstTokenLatencySeconds; maxLatency > 0 {
+			helper.EnsureFirstTokenWatchdog(c, info, maxLatency, nil)
+		}
+	}
+
 	if meta := testRequest.GetTokenCountMeta(); meta != nil {
 		tokens, countErr := service.CountRequestToken(c, meta, info)
 		if countErr != nil {

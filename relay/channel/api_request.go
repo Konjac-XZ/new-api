@@ -82,10 +82,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 			reqCtx, cancel := context.WithCancel(c.Request.Context())
 			req = req.WithContext(reqCtx)
 			reqCancel = cancel
-			watchdog = helper.NewFirstTokenWatchdog(c, info, maxLatency, reqCancel)
-			if watchdog != nil {
-				common2.SetContextKey(c, appconstant.ContextKeyFirstTokenWatchdog, watchdog)
-			}
+			watchdog = helper.EnsureFirstTokenWatchdog(c, info, maxLatency, reqCancel)
 		}
 	}
 	headers := req.Header

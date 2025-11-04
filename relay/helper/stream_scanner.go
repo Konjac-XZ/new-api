@@ -10,13 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/QuantumNous/new-api/channelcache"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
 
@@ -112,59 +110,8 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	ctx = context.WithValue(ctx, "stop_chan", stopChan)
 
-	var firstTokenCancel context.CancelFunc
-	if watchdog == nil {
-		maxFirstTokenLatency := 0
-		if info != nil && info.ChannelMeta != nil {
-			maxFirstTokenLatency = info.ChannelMeta.MaxFirstTokenLatencySeconds
-		}
-		if info != nil && info.IsStream && maxFirstTokenLatency > 0 {
-			firstTokenCtx, cancelFirstToken := context.WithCancel(ctx)
-			firstTokenCancel = cancelFirstToken
-			watchdogStart := time.Now()
-			channelInfo := ""
-			if info != nil && info.ChannelMeta != nil {
-				channelType := info.ChannelMeta.ChannelType
-				channelName := channelcache.NameOr(info.ChannelMeta.ChannelId, constant.ChannelTypeNames[channelType])
-				if channelName == "" {
-					channelName = "Unknown"
-				}
-				channelInfo = fmt.Sprintf(" (channel #%d %s)", info.ChannelMeta.ChannelId, channelName)
-			}
-			wg.Add(1)
-			go func(start time.Time, channelInfo string) {
-				defer func() {
-					wg.Done()
-					if r := recover(); r != nil {
-						logger.LogError(c, fmt.Sprintf("first token watchdog panic: %v", r))
-					}
-				}()
-				timer := time.NewTimer(time.Duration(maxFirstTokenLatency) * time.Second)
-				defer timer.Stop()
-				select {
-				case <-timer.C:
-					logger.LogWarn(c, fmt.Sprintf("first token watchdog triggered after %ds%s", maxFirstTokenLatency, channelInfo))
-					logger.LogError(c, fmt.Sprintf("first token latency exceeded (%ds)", maxFirstTokenLatency))
-					common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, true)
-					common.SafeSendBool(stopChan, true)
-					if resp.Body != nil {
-						err := resp.Body.Close()
-						if err != nil && common.DebugEnabled {
-							println("resp body close error after first token timeout:", err.Error())
-						}
-					}
-				case <-firstTokenCtx.Done():
-					elapsed := time.Since(start)
-					logger.LogInfo(c, fmt.Sprintf("first token watchdog canceled after %dms%s (first token received)", elapsed.Milliseconds(), channelInfo))
-				case <-stopChan:
-					elapsed := time.Since(start)
-					logger.LogInfo(c, fmt.Sprintf("first token watchdog canceled after %dms%s (stop signal)", elapsed.Milliseconds(), channelInfo))
-				case <-c.Request.Context().Done():
-					elapsed := time.Since(start)
-					logger.LogInfo(c, fmt.Sprintf("first token watchdog canceled after %dms%s (client context done)", elapsed.Milliseconds(), channelInfo))
-				}
-			}(watchdogStart, channelInfo)
-		}
+	if watchdog == nil && info != nil && info.ChannelMeta != nil && info.ChannelMeta.MaxFirstTokenLatencySeconds > 0 {
+		logger.LogWarn(c, "first token watchdog missing; latency limit will not be enforced for this stream")
 	}
 
 	// Handle ping data sending with improved error handling
@@ -283,9 +230,6 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			if !strings.HasPrefix(data, "[DONE]") {
 				if watchdog != nil {
 					watchdog.Stop("first token received")
-				} else if firstTokenCancel != nil {
-					firstTokenCancel()
-					firstTokenCancel = nil
 				}
 				info.SetFirstResponseTime()
 
@@ -358,23 +302,4 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		watchdog.Stop("stream scanner exit")
 		common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, nil)
 	}
-	if firstTokenCancel != nil {
-		firstTokenCancel()
-	}
-}
-
-func HasFirstTokenTimeout(c *gin.Context) bool {
-	return common.GetContextKeyBool(c, constant.ContextKeyFirstTokenLatencyExceeded)
-}
-
-func FirstTokenLatencyError(info *relaycommon.RelayInfo) *types.NewAPIError {
-	limit := 0
-	if info != nil && info.ChannelMeta != nil {
-		limit = info.ChannelMeta.MaxFirstTokenLatencySeconds
-	}
-	message := "first token latency exceeded"
-	if limit > 0 {
-		message = fmt.Sprintf("first token latency exceeded (%ds)", limit)
-	}
-	return types.NewErrorWithStatusCode(fmt.Errorf(message), types.ErrorCodeChannelFirstTokenLatencyExceeded, http.StatusGatewayTimeout)
 }
