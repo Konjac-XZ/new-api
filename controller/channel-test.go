@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/QuantumNous/new-api/channelcache"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
@@ -719,9 +720,15 @@ func ScheduledTestChannels() {
 }
 
 func testScheduledChannel(channel *model.Channel) {
+	if channel == nil {
+		return
+	}
+	channelcache.Remember(channel.Id, channel.Name)
+	channelLabel := channelcache.Label(channel.Id, channel.Name)
+
 	defer func() {
 		if r := recover(); r != nil {
-			common.SysLog(fmt.Sprintf("scheduled test channel #%d panic: %v", channel.Id, r))
+			common.SysLog(fmt.Sprintf("scheduled test %s panic: %v", channelLabel, r))
 		}
 	}()
 
@@ -790,7 +797,7 @@ func testScheduledChannel(channel *model.Channel) {
 
 	if result.localErr != nil {
 		// 测试失败
-		common.SysLog(fmt.Sprintf("scheduled test channel #%d failed: %s", channel.Id, result.localErr.Error()))
+		common.SysLog(fmt.Sprintf("scheduled test %s failed: %s", channelLabel, result.localErr.Error()))
 		autoAction := ""
 		// 如果渠道当前是启用状态，则禁用它
 		if channel.Status == 1 {
@@ -803,7 +810,7 @@ func testScheduledChannel(channel *model.Channel) {
 				"",
 				true,
 			), fmt.Sprintf("定时测试失败: %s", result.localErr.Error()))
-			common.SysLog(fmt.Sprintf("channel #%d disabled due to scheduled test failure", channel.Id))
+			common.SysLog(fmt.Sprintf("%s disabled due to scheduled test failure", channelLabel))
 		}
 		errMsg := result.localErr.Error()
 		params := baseParams
@@ -825,8 +832,8 @@ func testScheduledChannel(channel *model.Channel) {
 			threshold := maxLatencyMs
 			if firstTokenLatencyMs > maxLatencyMs {
 				// 延迟超过阈值
-				common.SysLog(fmt.Sprintf("channel #%d first token latency %dms exceeds max %dms",
-					channel.Id, firstTokenLatencyMs, maxLatencyMs))
+				common.SysLog(fmt.Sprintf("%s first token latency %dms exceeds max %dms",
+					channelLabel, firstTokenLatencyMs, maxLatencyMs))
 
 				// 如果渠道当前是启用状态，则禁用它
 				if channel.Status == 1 {
@@ -839,7 +846,7 @@ func testScheduledChannel(channel *model.Channel) {
 						"",
 						true,
 					), fmt.Sprintf("首Token延迟 %dms 超过最大值 %dms", firstTokenLatencyMs, maxLatencyMs))
-					common.SysLog(fmt.Sprintf("channel #%d disabled due to high latency", channel.Id))
+					common.SysLog(fmt.Sprintf("%s disabled due to high latency", channelLabel))
 					params := baseParams
 					params.Result = "failure"
 					params.Message = fmt.Sprintf("Scheduled test latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs)
@@ -857,14 +864,14 @@ func testScheduledChannel(channel *model.Channel) {
 				}
 			} else {
 				// 延迟在阈值内
-				common.SysLog(fmt.Sprintf("channel #%d first token latency %dms is within limit %dms",
-					channel.Id, firstTokenLatencyMs, maxLatencyMs))
+				common.SysLog(fmt.Sprintf("%s first token latency %dms is within limit %dms",
+					channelLabel, firstTokenLatencyMs, maxLatencyMs))
 
 				// 如果渠道当前是禁用状态，则重新启用它
 				if channel.Status != 1 {
 					autoAction := "auto_enabled"
 					service.EnableChannel(channel.Id, "", channel.Name)
-					common.SysLog(fmt.Sprintf("channel #%d re-enabled due to acceptable latency", channel.Id))
+					common.SysLog(fmt.Sprintf("%s re-enabled due to acceptable latency", channelLabel))
 					params := baseParams
 					params.Result = "success"
 					params.Message = fmt.Sprintf("Scheduled test latency %dms within threshold %dms", firstTokenLatencyMs, maxLatencyMs)
@@ -883,7 +890,7 @@ func testScheduledChannel(channel *model.Channel) {
 			}
 		} else {
 			// 如果无法测量首Token延迟，记录警告
-			common.SysLog(fmt.Sprintf("channel #%d: unable to measure first token latency", channel.Id))
+			common.SysLog(fmt.Sprintf("%s: unable to measure first token latency", channelLabel))
 			params := baseParams
 			params.Result = "warning"
 			params.Message = "Scheduled test could not measure first token latency"

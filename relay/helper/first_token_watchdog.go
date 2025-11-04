@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/QuantumNous/new-api/channelcache"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
@@ -46,7 +47,7 @@ func NewFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limitSec
 	channelInfo := ""
 	if info.ChannelMeta != nil {
 		channelType := info.ChannelMeta.ChannelType
-		channelName := constant.ChannelTypeNames[channelType]
+		channelName := channelcache.NameOr(info.ChannelMeta.ChannelId, constant.ChannelTypeNames[channelType])
 		if channelName == "" {
 			channelName = "Unknown"
 		}

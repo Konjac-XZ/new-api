@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
+	"github.com/mattn/go-isatty"
 )
 
 const (
@@ -25,11 +27,18 @@ const (
 	loggerDebug = "DEBUG"
 )
 
+const (
+	colorReset = "\033[0m"
+	colorWarn  = "\033[33;1m"
+	colorError = "\033[31;1m"
+)
+
 const maxLogCount = 1000000
 
 var logCount int
 var setupLogLock sync.Mutex
 var setupLogWorking bool
+var colorEnabled = detectColorSupport()
 
 func SetupLogger() {
 	defer func() {
@@ -83,7 +92,8 @@ func logHelper(ctx context.Context, level string, msg string) {
 		id = "SYSTEM"
 	}
 	now := time.Now()
-	_, _ = fmt.Fprintf(writer, "[%s] %v | %s | %s \n", level, now.Format("2006/01/02 - 15:04:05"), id, msg)
+	levelLabel := formatLevel(level)
+	_, _ = fmt.Fprintf(writer, "[%s] %v | %s | %s \n", levelLabel, now.Format("2006/01/02 - 15:04:05"), id, msg)
 	logCount++ // we don't need accurate count, so no lock here
 	if logCount > maxLogCount && !setupLogWorking {
 		logCount = 0
@@ -155,4 +165,43 @@ func LogJson(ctx context.Context, msg string, obj any) {
 		return
 	}
 	LogDebug(ctx, fmt.Sprintf("%s | %s", msg, string(jsonStr)))
+}
+
+func formatLevel(level string) string {
+	if !colorEnabled {
+		return level
+	}
+	switch level {
+	case loggerWarn:
+		return colorWarn + level + colorReset
+	case loggerError:
+		return colorError + level + colorReset
+	default:
+		return level
+	}
+}
+
+func detectColorSupport() bool {
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if os.Getenv("COLORTERM") != "" {
+		return true
+	}
+	term := strings.ToLower(os.Getenv("TERM"))
+	if term == "" {
+		return false
+	}
+	if strings.Contains(term, "color") || strings.Contains(term, "xterm") || strings.Contains(term, "screen") || strings.Contains(term, "tmux") {
+		return isTerminal(os.Stdout) || isTerminal(os.Stderr)
+	}
+	return false
+}
+
+func isTerminal(file *os.File) bool {
+	if file == nil {
+		return false
+	}
+	fd := file.Fd()
+	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }
