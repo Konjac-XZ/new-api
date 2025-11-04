@@ -1071,6 +1071,14 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 		}
 	}
 
+	watchdog, _ := common.GetContextKeyType[*helper.FirstTokenWatchdog](c, constant.ContextKeyFirstTokenWatchdog)
+	defer func() {
+		if watchdog != nil {
+			watchdog.Stop("scheduled test finished")
+			common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, nil)
+		}
+	}()
+
 	// 读取流式响应并测量首Token延迟
 	firstTokenTime := time.Duration(0)
 	scanner := bufio.NewScanner(httpResp.Body)
@@ -1102,6 +1110,9 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			}
 			c.Set("scheduled_test_completion_tokens", completionTokens)
 			gotFirstToken = true
+			if watchdog != nil {
+				watchdog.Stop("scheduled test first token received")
+			}
 			// common.SysLog(fmt.Sprintf("channel #%d first token received after %dms", channel.Id, firstTokenTime.Milliseconds()))
 			break // 只需要测量首Token，不需要读取全部响应
 		}

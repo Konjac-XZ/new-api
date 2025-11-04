@@ -37,6 +37,7 @@ const (
 	ContextKeyChannelKey                  ContextKey = "channel_key"
 	ContextKeyChannelMaxFirstTokenLatency ContextKey = "channel_max_first_token_latency"
 	ContextKeyFirstTokenLatencyExceeded   ContextKey = "first_token_latency_exceeded"
+	ContextKeyFirstTokenWatchdog         ContextKey = "first_token_watchdog"
 
 	/* user related keys */
 	ContextKeyUserId      ContextKey = "id"

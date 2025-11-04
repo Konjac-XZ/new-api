@@ -34,7 +34,11 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		return
 	}
 
-	common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, false)
+	if !common.GetContextKeyBool(c, constant.ContextKeyFirstTokenLatencyExceeded) {
+		common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, false)
+	}
+
+	watchdog, _ := common.GetContextKeyType[*FirstTokenWatchdog](c, constant.ContextKeyFirstTokenWatchdog)
 
 	// 确保响应体总是被关闭
 	defer func() {
@@ -108,39 +112,58 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	ctx = context.WithValue(ctx, "stop_chan", stopChan)
 
 	var firstTokenCancel context.CancelFunc
-	maxFirstTokenLatency := 0
-	if info != nil && info.ChannelMeta != nil {
-		maxFirstTokenLatency = info.ChannelMeta.MaxFirstTokenLatencySeconds
-	}
-	if info != nil && info.IsStream && maxFirstTokenLatency > 0 {
-		firstTokenCtx, cancelFirstToken := context.WithCancel(ctx)
-		firstTokenCancel = cancelFirstToken
-		wg.Add(1)
-		gopool.Go(func() {
-			defer func() {
-				wg.Done()
-				if r := recover(); r != nil {
-					logger.LogError(c, fmt.Sprintf("first token watchdog panic: %v", r))
+	if watchdog == nil {
+		maxFirstTokenLatency := 0
+		if info != nil && info.ChannelMeta != nil {
+			maxFirstTokenLatency = info.ChannelMeta.MaxFirstTokenLatencySeconds
+		}
+		if info != nil && info.IsStream && maxFirstTokenLatency > 0 {
+			firstTokenCtx, cancelFirstToken := context.WithCancel(ctx)
+			firstTokenCancel = cancelFirstToken
+			watchdogStart := time.Now()
+			channelInfo := ""
+			if info != nil && info.ChannelMeta != nil {
+				channelType := info.ChannelMeta.ChannelType
+				channelName := constant.ChannelTypeNames[channelType]
+				if channelName == "" {
+					channelName = "Unknown"
 				}
-			}()
-			timer := time.NewTimer(time.Duration(maxFirstTokenLatency) * time.Second)
-			defer timer.Stop()
-			select {
-			case <-timer.C:
-				logger.LogError(c, fmt.Sprintf("first token latency exceeded (%ds)", maxFirstTokenLatency))
-				common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, true)
-				common.SafeSendBool(stopChan, true)
-				if resp.Body != nil {
-					err := resp.Body.Close()
-					if err != nil && common.DebugEnabled {
-						println("resp body close error after first token timeout:", err.Error())
-					}
-				}
-			case <-firstTokenCtx.Done():
-			case <-stopChan:
-			case <-c.Request.Context().Done():
+				channelInfo = fmt.Sprintf(" (channel #%d %s)", info.ChannelMeta.ChannelId, channelName)
 			}
-		})
+			wg.Add(1)
+			go func(start time.Time, channelInfo string) {
+				defer func() {
+					wg.Done()
+					if r := recover(); r != nil {
+						logger.LogError(c, fmt.Sprintf("first token watchdog panic: %v", r))
+					}
+				}()
+				timer := time.NewTimer(time.Duration(maxFirstTokenLatency) * time.Second)
+				defer timer.Stop()
+				select {
+				case <-timer.C:
+					logger.LogWarn(c, fmt.Sprintf("first token watchdog triggered after %ds%s", maxFirstTokenLatency, channelInfo))
+					logger.LogError(c, fmt.Sprintf("first token latency exceeded (%ds)", maxFirstTokenLatency))
+					common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, true)
+					common.SafeSendBool(stopChan, true)
+					if resp.Body != nil {
+						err := resp.Body.Close()
+						if err != nil && common.DebugEnabled {
+							println("resp body close error after first token timeout:", err.Error())
+						}
+					}
+				case <-firstTokenCtx.Done():
+					elapsed := time.Since(start)
+					logger.LogInfo(c, fmt.Sprintf("first token watchdog canceled after %dms%s (first token received)", elapsed.Milliseconds(), channelInfo))
+				case <-stopChan:
+					elapsed := time.Since(start)
+					logger.LogInfo(c, fmt.Sprintf("first token watchdog canceled after %dms%s (stop signal)", elapsed.Milliseconds(), channelInfo))
+				case <-c.Request.Context().Done():
+					elapsed := time.Since(start)
+					logger.LogInfo(c, fmt.Sprintf("first token watchdog canceled after %dms%s (client context done)", elapsed.Milliseconds(), channelInfo))
+				}
+			}(watchdogStart, channelInfo)
+		}
 	}
 
 	// Handle ping data sending with improved error handling
@@ -224,10 +247,19 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			// 检查是否需要停止
 			select {
 			case <-stopChan:
+				if watchdog != nil {
+					watchdog.Stop("stop signal")
+				}
 				return
 			case <-ctx.Done():
+				if watchdog != nil {
+					watchdog.Stop("internal context done")
+				}
 				return
 			case <-c.Request.Context().Done():
+				if watchdog != nil {
+					watchdog.Stop("client context done")
+				}
 				return
 			default:
 			}
@@ -248,7 +280,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			data = strings.TrimLeft(data, " ")
 			data = strings.TrimSuffix(data, "\r")
 			if !strings.HasPrefix(data, "[DONE]") {
-				if firstTokenCancel != nil {
+				if watchdog != nil {
+					watchdog.Stop("first token received")
+				} else if firstTokenCancel != nil {
 					firstTokenCancel()
 					firstTokenCancel = nil
 				}
@@ -271,8 +305,14 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					logger.LogError(c, "data handler timeout")
 					return
 				case <-ctx.Done():
+					if watchdog != nil {
+						watchdog.Stop("internal context done")
+					}
 					return
 				case <-stopChan:
+					if watchdog != nil {
+						watchdog.Stop("stop signal")
+					}
 					return
 				}
 			} else {
@@ -296,14 +336,27 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	case <-ticker.C:
 		// 超时处理逻辑
 		logger.LogError(c, "streaming timeout")
+		if watchdog != nil {
+			watchdog.Stop("streaming timeout")
+		}
 	case <-stopChan:
 		// 正常结束
 		logger.LogInfo(c, "streaming finished")
+		if watchdog != nil {
+			watchdog.Stop("streaming finished")
+		}
 	case <-c.Request.Context().Done():
 		// 客户端断开连接
 		logger.LogInfo(c, "client disconnected")
+		if watchdog != nil {
+			watchdog.Stop("client context done")
+		}
 	}
 
+	if watchdog != nil {
+		watchdog.Stop("stream scanner exit")
+		common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, nil)
+	}
 	if firstTokenCancel != nil {
 		firstTokenCancel()
 	}

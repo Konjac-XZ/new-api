@@ -11,6 +11,7 @@ import (
 	"time"
 
 	common2 "github.com/QuantumNous/new-api/common"
+	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
@@ -70,6 +71,23 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
+
+	var (
+		reqCancel context.CancelFunc
+		watchdog  *helper.FirstTokenWatchdog
+	)
+
+	if info != nil && info.IsStream && info.ChannelMeta != nil {
+		if maxLatency := info.ChannelMeta.MaxFirstTokenLatencySeconds; maxLatency > 0 {
+			reqCtx, cancel := context.WithCancel(c.Request.Context())
+			req = req.WithContext(reqCtx)
+			reqCancel = cancel
+			watchdog = helper.NewFirstTokenWatchdog(c, info, maxLatency, reqCancel)
+			if watchdog != nil {
+				common2.SetContextKey(c, appconstant.ContextKeyFirstTokenWatchdog, watchdog)
+			}
+		}
+	}
 	headers := req.Header
 	headerOverride, err := processHeaderOverride(info)
 	if err != nil {
@@ -84,7 +102,22 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
+		timedOut := helper.HasFirstTokenTimeout(c)
+		if watchdog != nil {
+			if timedOut {
+				watchdog.Stop("first token latency exceeded")
+			} else {
+				watchdog.Stop("upstream request failed")
+			}
+			common2.SetContextKey(c, appconstant.ContextKeyFirstTokenWatchdog, nil)
+		}
+		if timedOut {
+			return nil, helper.FirstTokenLatencyError(info)
+		}
 		return nil, fmt.Errorf("do request failed: %w", err)
+	}
+	if watchdog != nil {
+		watchdog.AttachResponse(resp)
 	}
 	return resp, nil
 }
