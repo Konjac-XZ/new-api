@@ -810,7 +810,7 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
-	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
+    // Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
 
 	// If the request explicitly specifies a new MultiKeyMode, apply it on top of the original info.
@@ -818,7 +818,11 @@ func UpdateChannel(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
 	}
 
-	normalizeChannelDefaults(&channel.Channel)
+    // Detect explicit intent to clear max_first_token_latency (0 means disable per UI copy)
+    // We record it before normalization because normalization converts <=0 to nil.
+    shouldClearMaxFirstTokenLatency := channel.MaxFirstTokenLatency != nil && *channel.MaxFirstTokenLatency <= 0
+
+    normalizeChannelDefaults(&channel.Channel)
 
 	// 处理多key模式下的密钥追加/覆盖逻辑
 	if channel.KeyMode != nil && channel.ChannelInfo.IsMultiKey {
@@ -887,6 +891,15 @@ func UpdateChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+
+    // When user sets max_first_token_latency to 0 (disable), ensure DB column is explicitly set to NULL.
+    if shouldClearMaxFirstTokenLatency {
+        if dbErr := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("max_first_token_latency", nil).Error; dbErr != nil {
+            // Not fatal for the whole update, but report to client for visibility
+            common.ApiError(c, fmt.Errorf("清空最大首 Token 延迟失败: %v", dbErr))
+            return
+        }
+    }
 	model.InitChannelCache()
 	service.ResetProxyClientCache()
 	channel.Key = ""
