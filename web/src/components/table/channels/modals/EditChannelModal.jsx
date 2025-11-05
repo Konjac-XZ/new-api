@@ -108,7 +108,7 @@ function type2secretPrompt(type) {
     case 33:
       return '按照如下格式输入：Ak|Sk|Region';
     case 45:
-        return '请输入渠道对应的鉴权密钥, 豆包语音输入：AppId|AccessToken';
+      return '请输入渠道对应的鉴权密钥, 豆包语音输入：AppId|AccessToken';
     case 50:
       return '按照如下格式输入: AccessKey|SecretKey, 如果上游是New API，则直接输ApiKey';
     case 51:
@@ -1026,7 +1026,7 @@ const EditChannelModal = (props) => {
     localInputs.settings = JSON.stringify(settings);
 
     const latencyValue = Number(localInputs.max_first_token_latency);
-    if (!Number.isFinite(latencyValue) || latencyValue <= 0) {
+    if (!Number.isFinite(latencyValue) || latencyValue < 0) {
       delete localInputs.max_first_token_latency;
     } else {
       localInputs.max_first_token_latency = Math.round(latencyValue);
@@ -1309,7 +1309,7 @@ const EditChannelModal = (props) => {
       'flex items-center gap-3 px-3 py-2 transition-all duration-200 rounded-lg mx-2 my-1',
       focused && 'bg-blue-50 shadow-sm',
       selected &&
-        'bg-blue-100 text-blue-700 shadow-lg ring-2 ring-blue-200 ring-opacity-50',
+      'bg-blue-100 text-blue-700 shadow-lg ring-2 ring-blue-200 ring-opacity-50',
       disabled && 'opacity-50 cursor-not-allowed',
       !disabled && 'hover:bg-gray-50 hover:shadow-md cursor-pointer',
       className,
@@ -1561,7 +1561,7 @@ const EditChannelModal = (props) => {
                     )}
                     {batch ? (
                       inputs.type === 41 &&
-                      (inputs.vertex_key_type || 'json') === 'json' ? (
+                        (inputs.vertex_key_type || 'json') === 'json' ? (
                         <Form.Upload
                           field='vertex_files'
                           label={t('密钥文件 (.json)')}
@@ -1580,11 +1580,11 @@ const EditChannelModal = (props) => {
                             isEdit
                               ? []
                               : [
-                                  {
-                                    required: true,
-                                    message: t('请上传密钥文件'),
-                                  },
-                                ]
+                                {
+                                  required: true,
+                                  message: t('请上传密钥文件'),
+                                },
+                              ]
                           }
                           extraText={batchExtra}
                         />
@@ -1597,8 +1597,8 @@ const EditChannelModal = (props) => {
                               ? inputs.aws_key_type === 'api_key'
                                 ? t('请输入 API Key，一行一个，格式：APIKey|Region')
                                 : t(
-                                    '请输入密钥，一行一个，格式：AccessKey|SecretAccessKey|Region',
-                                  )
+                                  '请输入密钥，一行一个，格式：AccessKey|SecretAccessKey|Region',
+                                )
                               : t('请输入密钥，一行一个')
                           }
                           rules={
@@ -1639,7 +1639,7 @@ const EditChannelModal = (props) => {
                     ) : (
                       <>
                         {inputs.type === 41 &&
-                        (inputs.vertex_key_type || 'json') === 'json' ? (
+                          (inputs.vertex_key_type || 'json') === 'json' ? (
                           <>
                             {!batch && (
                               <div className='flex items-center justify-between mb-3'>
@@ -1707,8 +1707,8 @@ const EditChannelModal = (props) => {
                                 label={
                                   isEdit
                                     ? t(
-                                        '密钥（编辑模式下，保存的密钥不会显示）',
-                                      )
+                                      '密钥（编辑模式下，保存的密钥不会显示）',
+                                    )
                                     : t('密钥')
                                 }
                                 placeholder={t(
@@ -1718,11 +1718,11 @@ const EditChannelModal = (props) => {
                                   isEdit
                                     ? []
                                     : [
-                                        {
-                                          required: true,
-                                          message: t('请输入密钥'),
-                                        },
-                                      ]
+                                      {
+                                        required: true,
+                                        message: t('请输入密钥'),
+                                      },
+                                    ]
                                 }
                                 autoComplete='new-password'
                                 onChange={(value) =>
@@ -1776,11 +1776,11 @@ const EditChannelModal = (props) => {
                                   isEdit
                                     ? []
                                     : [
-                                        {
-                                          required: true,
-                                          message: t('请上传密钥文件'),
-                                        },
-                                      ]
+                                      {
+                                        required: true,
+                                        message: t('请上传密钥文件'),
+                                      },
+                                    ]
                                 }
                                 extraText={batchExtra}
                               />
@@ -2327,7 +2327,7 @@ const EditChannelModal = (props) => {
                                       );
                                       if (Array.isArray(parsed)) items = parsed;
                                     }
-                                  } catch {}
+                                  } catch { }
                                   const current =
                                     formApiRef.current?.getValue('models') ||
                                     inputs.models ||
