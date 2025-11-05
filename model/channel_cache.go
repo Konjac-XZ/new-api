@@ -93,6 +93,9 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
+// GetRandomSatisfiedChannel returns a channel using retry-indexed priority fallback.
+// Deprecated: Prefer GetRandomSatisfiedChannelExclude which excludes used channels
+// on the same priority before falling back to lower priorities.
 func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
@@ -188,6 +191,98 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+// GetRandomSatisfiedChannelExclude selects a channel prioritizing the highest
+// available priority and excluding any channel IDs present in `exclude`.
+// It will keep retrying within the same priority (weighted) until all channels
+// at that priority are exhausted, then fall back to the next lower priority.
+func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[int]bool) (*Channel, error) {
+    // if memory cache is disabled, defer to DB-based implementation
+    if !common.MemoryCacheEnabled {
+        return GetChannelExclude(group, model, exclude)
+    }
+
+    channelSyncLock.RLock()
+    defer channelSyncLock.RUnlock()
+
+    // First, try to find channels with the exact model name.
+    channels := group2model2channels[group][model]
+
+    // If no channels found, try to find channels with the normalized model name.
+    if len(channels) == 0 {
+        normalizedModel := ratio_setting.FormatMatchingModelName(model)
+        channels = group2model2channels[group][normalizedModel]
+    }
+
+    if len(channels) == 0 {
+        return nil, nil
+    }
+
+    // Collect priorities in descending order
+    uniquePriorities := make(map[int]bool)
+    for _, channelId := range channels {
+        ch, ok := channelsIDM[channelId]
+        if !ok {
+            return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+        }
+        uniquePriorities[int(ch.GetPriority())] = true
+    }
+    var sortedPriorities []int
+    for p := range uniquePriorities {
+        sortedPriorities = append(sortedPriorities, p)
+    }
+    sort.Sort(sort.Reverse(sort.IntSlice(sortedPriorities)))
+
+    // Iterate priorities from highest to lowest
+    for _, p := range sortedPriorities {
+        targetPriority := int64(p)
+        var targetChannels []*Channel
+        sumWeight := 0
+        for _, channelId := range channels {
+            ch, ok := channelsIDM[channelId]
+            if !ok {
+                return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+            }
+            if ch.GetPriority() == targetPriority {
+                if exclude != nil && exclude[ch.Id] {
+                    continue
+                }
+                targetChannels = append(targetChannels, ch)
+                sumWeight += ch.GetWeight()
+            }
+        }
+
+        if len(targetChannels) == 0 {
+            // nothing left at this priority, go next lower
+            continue
+        }
+
+        // smoothing factor and adjustment
+        smoothingFactor := 1
+        smoothingAdjustment := 0
+        if sumWeight == 0 {
+            // when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
+            sumWeight = len(targetChannels) * 100
+            smoothingAdjustment = 100
+        } else if sumWeight/len(targetChannels) < 10 {
+            // when the average weight is less than 10, set smoothing factor to 100
+            smoothingFactor = 100
+        }
+
+        totalWeight := sumWeight * smoothingFactor
+        randomWeight := rand.Intn(totalWeight)
+        for _, ch := range targetChannels {
+            randomWeight -= ch.GetWeight()*smoothingFactor + smoothingAdjustment
+            if randomWeight < 0 {
+                return ch, nil
+            }
+        }
+        // go to next if none picked (shouldn't happen)
+    }
+
+    // No channel left after exclusion
+    return nil, errors.New("channel not found after exclusion")
 }
 
 func CacheGetChannel(id int) (*Channel, error) {
