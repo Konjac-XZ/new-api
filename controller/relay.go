@@ -166,6 +166,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		addUsedChannel(c, channel.Id)
+		logger.LogInfo(c, fmt.Sprintf("Currently selected channel: #%d [%s]", channel.Id, channel.Name))
 		requestBody, _ := common.GetRequestBody(c)
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
 
