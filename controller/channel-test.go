@@ -839,6 +839,9 @@ func testScheduledChannel(channel *model.Channel) {
 	if result.context != nil {
 		firstTokenLatencyMs := result.context.GetInt("first_token_latency_ms")
 		if firstTokenLatencyMs > 0 {
+			// record first token latency to keep channel response_time in sync with latest scheduled test
+			channel.UpdateResponseTime(int64(firstTokenLatencyMs))
+
 			// Convert maxLatency from seconds to milliseconds
 			maxLatencyMs := maxLatency * 1000
 			latency := firstTokenLatencyMs
