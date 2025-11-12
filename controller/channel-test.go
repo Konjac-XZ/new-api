@@ -684,6 +684,10 @@ func ScheduledTestChannels() {
 			// 每分钟检查一次
 			time.Sleep(1 * time.Minute)
 
+			if !common.AutomaticDisableChannelEnabled {
+				continue
+			}
+
 			channels, err := model.GetChannelsWithScheduledTest()
 			if err != nil {
 				common.SysLog(fmt.Sprintf("failed to get channels with scheduled test: %s", err.Error()))
@@ -727,6 +731,11 @@ func testScheduledChannel(channel *model.Channel) {
 	if channel == nil {
 		return
 	}
+
+	if !common.AutomaticDisableChannelEnabled {
+		return
+	}
+
 	channelcache.Remember(channel.Id, channel.Name)
 	channelLabel := channelcache.Label(channel.Id, channel.Name)
 
