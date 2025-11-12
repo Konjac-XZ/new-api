@@ -1033,7 +1033,7 @@ const EditChannelModal = (props) => {
     }
 
     const scheduledTestValue = Number(localInputs.scheduled_test_interval);
-    if (!Number.isFinite(scheduledTestValue) || scheduledTestValue <= 0) {
+    if (!Number.isFinite(scheduledTestValue) || scheduledTestValue < 0) {
       delete localInputs.scheduled_test_interval;
     } else {
       localInputs.scheduled_test_interval = Math.round(scheduledTestValue);
