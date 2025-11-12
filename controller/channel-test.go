@@ -736,6 +736,11 @@ func testScheduledChannel(channel *model.Channel) {
 		return
 	}
 
+	// 如果渠道未启用自动禁用，跳过定时测试
+	if !channel.GetAutoBan() {
+		return
+	}
+
 	channelcache.Remember(channel.Id, channel.Name)
 	channelLabel := channelcache.Label(channel.Id, channel.Name)
 
@@ -813,7 +818,7 @@ func testScheduledChannel(channel *model.Channel) {
 		common.SysLog(fmt.Sprintf("scheduled test %s failed: %s", channelLabel, result.localErr.Error()))
 		autoAction := ""
 		// 如果渠道当前是启用状态，则禁用它
-		if channel.Status == 1 {
+		if channel.Status == 1 && channel.GetAutoBan() {
 			autoAction = "auto_disabled"
 			service.DisableChannel(*types.NewChannelError(
 				channel.Id,
@@ -821,7 +826,7 @@ func testScheduledChannel(channel *model.Channel) {
 				channel.Name,
 				channel.ChannelInfo.IsMultiKey,
 				"",
-				true,
+				channel.GetAutoBan(),
 			), fmt.Sprintf("定时测试失败: %s", result.localErr.Error()))
 			common.SysLog(fmt.Sprintf("%s disabled due to scheduled test failure", channelLabel))
 		}
@@ -852,7 +857,7 @@ func testScheduledChannel(channel *model.Channel) {
 					channelLabel, firstTokenLatencyMs, maxLatencyMs))
 
 				// 如果渠道当前是启用状态，则禁用它
-				if channel.Status == 1 {
+				if channel.Status == 1 && channel.GetAutoBan() {
 					autoAction := "auto_disabled"
 					service.DisableChannel(*types.NewChannelError(
 						channel.Id,
@@ -860,7 +865,7 @@ func testScheduledChannel(channel *model.Channel) {
 						channel.Name,
 						channel.ChannelInfo.IsMultiKey,
 						"",
-						true,
+						channel.GetAutoBan(),
 					), fmt.Sprintf("首Token延迟 %dms 超过最大值 %dms", firstTokenLatencyMs, maxLatencyMs))
 					common.SysLog(fmt.Sprintf("%s disabled due to high latency", channelLabel))
 					params := baseParams
