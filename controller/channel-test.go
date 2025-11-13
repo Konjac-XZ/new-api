@@ -23,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay"
+	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -40,6 +41,121 @@ type testResult struct {
 	context     *gin.Context
 	localErr    error
 	newAPIError *types.NewAPIError
+}
+
+func resolveTestModel(channel *model.Channel, requestedModel string) string {
+	testModel := strings.TrimSpace(requestedModel)
+	if testModel != "" {
+		return testModel
+	}
+
+	if channel.TestModel != nil && strings.TrimSpace(*channel.TestModel) != "" {
+		return strings.TrimSpace(*channel.TestModel)
+	}
+
+	models := channel.GetModels()
+	if len(models) > 0 {
+		if candidate := strings.TrimSpace(models[0]); candidate != "" {
+			return candidate
+		}
+	}
+	return "gpt-4o-mini"
+}
+
+func resolveTestRequestPath(channel *model.Channel, testModel string, endpointType string) string {
+	requestPath := "/v1/chat/completions"
+
+	if endpointType != "" {
+		if endpointInfo, ok := common.GetDefaultEndpointInfo(constant.EndpointType(endpointType)); ok {
+			return endpointInfo.Path
+		}
+		return requestPath
+	}
+
+	lowerModel := strings.ToLower(testModel)
+	if strings.Contains(lowerModel, "embedding") ||
+		strings.HasPrefix(testModel, "m3e") ||
+		strings.Contains(testModel, "bge-") ||
+		strings.Contains(lowerModel, "embed") ||
+		channel.Type == constant.ChannelTypeMokaAI {
+		return "/v1/embeddings"
+	}
+
+	if channel.Type == constant.ChannelTypeVolcEngine && strings.Contains(testModel, "seedream") {
+		return "/v1/images/generations"
+	}
+
+	return requestPath
+}
+
+func detectRelayFormat(endpointType string, requestPath string) types.RelayFormat {
+	if endpointType != "" {
+		switch constant.EndpointType(endpointType) {
+		case constant.EndpointTypeOpenAI:
+			return types.RelayFormatOpenAI
+		case constant.EndpointTypeOpenAIResponse:
+			return types.RelayFormatOpenAIResponses
+		case constant.EndpointTypeAnthropic:
+			return types.RelayFormatClaude
+		case constant.EndpointTypeGemini:
+			return types.RelayFormatGemini
+		case constant.EndpointTypeJinaRerank:
+			return types.RelayFormatRerank
+		case constant.EndpointTypeImageGeneration:
+			return types.RelayFormatOpenAIImage
+		case constant.EndpointTypeEmbeddings:
+			return types.RelayFormatEmbedding
+		default:
+			return types.RelayFormatOpenAI
+		}
+	}
+
+	switch {
+	case requestPath == "/v1/embeddings":
+		return types.RelayFormatEmbedding
+	case requestPath == "/v1/images/generations":
+		return types.RelayFormatOpenAIImage
+	case requestPath == "/v1/messages":
+		return types.RelayFormatClaude
+	case strings.Contains(requestPath, "/v1beta/models"):
+		return types.RelayFormatGemini
+	case requestPath == "/v1/rerank" || requestPath == "/rerank":
+		return types.RelayFormatRerank
+	case requestPath == "/v1/responses":
+		return types.RelayFormatOpenAIResponses
+	default:
+		return types.RelayFormatOpenAI
+	}
+}
+
+func convertRequestForAdaptor(c *gin.Context, info *relaycommon.RelayInfo, adaptor relaychannel.Adaptor, request dto.Request) (any, error) {
+	switch info.RelayMode {
+	case relayconstant.RelayModeEmbeddings:
+		if embeddingReq, ok := request.(*dto.EmbeddingRequest); ok {
+			return adaptor.ConvertEmbeddingRequest(c, info, *embeddingReq)
+		}
+		return nil, errors.New("invalid embedding request type")
+	case relayconstant.RelayModeImagesGenerations:
+		if imageReq, ok := request.(*dto.ImageRequest); ok {
+			return adaptor.ConvertImageRequest(c, info, *imageReq)
+		}
+		return nil, errors.New("invalid image request type")
+	case relayconstant.RelayModeRerank:
+		if rerankReq, ok := request.(*dto.RerankRequest); ok {
+			return adaptor.ConvertRerankRequest(c, info.RelayMode, *rerankReq)
+		}
+		return nil, errors.New("invalid rerank request type")
+	case relayconstant.RelayModeResponses:
+		if responseReq, ok := request.(*dto.OpenAIResponsesRequest); ok {
+			return adaptor.ConvertOpenAIResponsesRequest(c, info, *responseReq)
+		}
+		return nil, errors.New("invalid response request type")
+	default:
+		if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
+			return adaptor.ConvertOpenAIRequest(c, info, generalReq)
+		}
+		return nil, errors.New("invalid general request type")
+	}
 }
 
 func testChannel(channel *model.Channel, testModel string, endpointType string) testResult {
@@ -62,44 +178,8 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 
-	testModel = strings.TrimSpace(testModel)
-	if testModel == "" {
-		if channel.TestModel != nil && *channel.TestModel != "" {
-			testModel = strings.TrimSpace(*channel.TestModel)
-		} else {
-			models := channel.GetModels()
-			if len(models) > 0 {
-				testModel = strings.TrimSpace(models[0])
-			}
-			if testModel == "" {
-				testModel = "gpt-4o-mini"
-			}
-		}
-	}
-
-	requestPath := "/v1/chat/completions"
-
-	// 如果指定了端点类型，使用指定的端点类型
-	if endpointType != "" {
-		if endpointInfo, ok := common.GetDefaultEndpointInfo(constant.EndpointType(endpointType)); ok {
-			requestPath = endpointInfo.Path
-		}
-	} else {
-		// 如果没有指定端点类型，使用原有的自动检测逻辑
-		// 先判断是否为 Embedding 模型
-		if strings.Contains(strings.ToLower(testModel), "embedding") ||
-			strings.HasPrefix(testModel, "m3e") || // m3e 系列模型
-			strings.Contains(testModel, "bge-") || // bge 系列模型
-			strings.Contains(testModel, "embed") ||
-			channel.Type == constant.ChannelTypeMokaAI { // 其他 embedding 模型
-			requestPath = "/v1/embeddings" // 修改请求路径
-		}
-
-		// VolcEngine 图像生成模型
-		if channel.Type == constant.ChannelTypeVolcEngine && strings.Contains(testModel, "seedream") {
-			requestPath = "/v1/images/generations"
-		}
-	}
+	testModel = resolveTestModel(channel, testModel)
+	requestPath := resolveTestRequestPath(channel, testModel, endpointType)
 
 	c.Request = &http.Request{
 		Method: "POST",
@@ -134,49 +214,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	}
 
 	// Determine relay format based on endpoint type or request path
-	var relayFormat types.RelayFormat
-	if endpointType != "" {
-		// 根据指定的端点类型设置 relayFormat
-		switch constant.EndpointType(endpointType) {
-		case constant.EndpointTypeOpenAI:
-			relayFormat = types.RelayFormatOpenAI
-		case constant.EndpointTypeOpenAIResponse:
-			relayFormat = types.RelayFormatOpenAIResponses
-		case constant.EndpointTypeAnthropic:
-			relayFormat = types.RelayFormatClaude
-		case constant.EndpointTypeGemini:
-			relayFormat = types.RelayFormatGemini
-		case constant.EndpointTypeJinaRerank:
-			relayFormat = types.RelayFormatRerank
-		case constant.EndpointTypeImageGeneration:
-			relayFormat = types.RelayFormatOpenAIImage
-		case constant.EndpointTypeEmbeddings:
-			relayFormat = types.RelayFormatEmbedding
-		default:
-			relayFormat = types.RelayFormatOpenAI
-		}
-	} else {
-		// 根据请求路径自动检测
-		relayFormat = types.RelayFormatOpenAI
-		if c.Request.URL.Path == "/v1/embeddings" {
-			relayFormat = types.RelayFormatEmbedding
-		}
-		if c.Request.URL.Path == "/v1/images/generations" {
-			relayFormat = types.RelayFormatOpenAIImage
-		}
-		if c.Request.URL.Path == "/v1/messages" {
-			relayFormat = types.RelayFormatClaude
-		}
-		if strings.Contains(c.Request.URL.Path, "/v1beta/models") {
-			relayFormat = types.RelayFormatGemini
-		}
-		if c.Request.URL.Path == "/v1/rerank" || c.Request.URL.Path == "/rerank" {
-			relayFormat = types.RelayFormatRerank
-		}
-		if c.Request.URL.Path == "/v1/responses" {
-			relayFormat = types.RelayFormatOpenAIResponses
-		}
-	}
+	relayFormat := detectRelayFormat(endpointType, c.Request.URL.Path)
 
 	request := buildTestRequest(testModel, endpointType)
 
@@ -231,66 +269,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 
 	adaptor.Init(info)
 
-	var convertedRequest any
-	// 根据 RelayMode 选择正确的转换函数
-	switch info.RelayMode {
-	case relayconstant.RelayModeEmbeddings:
-		// Embedding 请求 - request 已经是正确的类型
-		if embeddingReq, ok := request.(*dto.EmbeddingRequest); ok {
-			convertedRequest, err = adaptor.ConvertEmbeddingRequest(c, info, *embeddingReq)
-		} else {
-			return testResult{
-				context:     c,
-				localErr:    errors.New("invalid embedding request type"),
-				newAPIError: types.NewError(errors.New("invalid embedding request type"), types.ErrorCodeConvertRequestFailed),
-			}
-		}
-	case relayconstant.RelayModeImagesGenerations:
-		// 图像生成请求 - request 已经是正确的类型
-		if imageReq, ok := request.(*dto.ImageRequest); ok {
-			convertedRequest, err = adaptor.ConvertImageRequest(c, info, *imageReq)
-		} else {
-			return testResult{
-				context:     c,
-				localErr:    errors.New("invalid image request type"),
-				newAPIError: types.NewError(errors.New("invalid image request type"), types.ErrorCodeConvertRequestFailed),
-			}
-		}
-	case relayconstant.RelayModeRerank:
-		// Rerank 请求 - request 已经是正确的类型
-		if rerankReq, ok := request.(*dto.RerankRequest); ok {
-			convertedRequest, err = adaptor.ConvertRerankRequest(c, info.RelayMode, *rerankReq)
-		} else {
-			return testResult{
-				context:     c,
-				localErr:    errors.New("invalid rerank request type"),
-				newAPIError: types.NewError(errors.New("invalid rerank request type"), types.ErrorCodeConvertRequestFailed),
-			}
-		}
-	case relayconstant.RelayModeResponses:
-		// Response 请求 - request 已经是正确的类型
-		if responseReq, ok := request.(*dto.OpenAIResponsesRequest); ok {
-			convertedRequest, err = adaptor.ConvertOpenAIResponsesRequest(c, info, *responseReq)
-		} else {
-			return testResult{
-				context:     c,
-				localErr:    errors.New("invalid response request type"),
-				newAPIError: types.NewError(errors.New("invalid response request type"), types.ErrorCodeConvertRequestFailed),
-			}
-		}
-	default:
-		// Chat/Completion 等其他请求类型
-		if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
-			convertedRequest, err = adaptor.ConvertOpenAIRequest(c, info, generalReq)
-		} else {
-			return testResult{
-				context:     c,
-				localErr:    errors.New("invalid general request type"),
-				newAPIError: types.NewError(errors.New("invalid general request type"), types.ErrorCodeConvertRequestFailed),
-			}
-		}
-	}
-
+	convertedRequest, err := convertRequestForAdaptor(c, info, adaptor, request)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -948,18 +927,8 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 
-	testModel = strings.TrimSpace(testModel)
-	if testModel == "" {
-		models := channel.GetModels()
-		if len(models) > 0 {
-			testModel = strings.TrimSpace(models[0])
-		}
-		if testModel == "" {
-			testModel = "gpt-4o-mini"
-		}
-	}
-
-	requestPath := "/v1/chat/completions"
+	testModel = resolveTestModel(channel, testModel)
+	requestPath := resolveTestRequestPath(channel, testModel, "")
 	c.Request = &http.Request{
 		Method: "POST",
 		URL:    &url.URL{Path: requestPath},
@@ -991,26 +960,19 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 		}
 	}
 
-	// 构建流式请求
-	testRequest := &dto.GeneralOpenAIRequest{
-		Model:  testModel,
-		Stream: true, // 关键：设置为流式
-		Messages: []dto.Message{
-			{
-				Role:    "user",
-				Content: "hi",
-			},
-		},
+	request := buildTestRequest(testModel, "")
+	if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
+		generalReq.Stream = true
+		if strings.HasPrefix(testModel, "o") {
+			generalReq.MaxCompletionTokens = 10
+			generalReq.MaxTokens = 0
+		} else if generalReq.MaxTokens == 0 && generalReq.MaxCompletionTokens == 0 {
+			generalReq.MaxTokens = 10
+		}
 	}
 
-	// 设置合理的token限制
-	if strings.HasPrefix(testModel, "o") {
-		testRequest.MaxCompletionTokens = 10
-	} else {
-		testRequest.MaxTokens = 10
-	}
-
-	info, err := relaycommon.GenRelayInfo(c, types.RelayFormatOpenAI, testRequest, nil)
+	relayFormat := detectRelayFormat("", requestPath)
+	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -1027,7 +989,7 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 		}
 	}
 
-	if meta := testRequest.GetTokenCountMeta(); meta != nil {
+	if meta := request.GetTokenCountMeta(); meta != nil {
 		tokens, countErr := service.CountRequestToken(c, meta, info)
 		if countErr != nil {
 			common.SysLog(fmt.Sprintf("scheduled test token counting failed: %v", countErr))
@@ -1038,7 +1000,7 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	}
 	c.Set("scheduled_test_is_stream", info.IsStream)
 
-	err = helper.ModelMappedHelper(c, info, testRequest)
+	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -1048,7 +1010,7 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	}
 
 	testModel = info.UpstreamModelName
-	testRequest.SetModelName(testModel)
+	request.SetModelName(testModel)
 
 	apiType, _ := common.ChannelType2APIType(channel.Type)
 	adaptor := relay.GetAdaptor(apiType)
@@ -1062,7 +1024,7 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 
 	adaptor.Init(info)
 
-	convertedRequest, err := adaptor.ConvertOpenAIRequest(c, info, testRequest)
+	convertedRequest, err := convertRequestForAdaptor(c, info, adaptor, request)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -1116,28 +1078,50 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	// 读取流式响应并测量首Token延迟
 	firstTokenTime := time.Duration(0)
 	scanner := bufio.NewScanner(httpResp.Body)
+	scanner.Buffer(make([]byte, helper.InitialScannerBufferSize), helper.MaxScannerBufferSize)
 	scanner.Split(bufio.ScanLines)
 
 	gotFirstToken := false
 	for scanner.Scan() {
-		data := scanner.Text()
-		if len(data) < 6 || !strings.HasPrefix(data, "data: ") {
+		rawLine := scanner.Text()
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
 			continue
 		}
-		data = strings.TrimPrefix(data, "data: ")
-		data = strings.TrimSpace(data)
-
-		if data == "[DONE]" {
+		if strings.EqualFold(line, "[DONE]") {
 			break
 		}
 
-		if !gotFirstToken && data != "" {
+		// ignore SSE comments like ": ping"
+		if strings.HasPrefix(line, ":") {
+			continue
+		}
+
+		var normalized string
+		switch {
+		case len(line) >= 6 && strings.EqualFold(line[:6], "data: "):
+			normalized = strings.TrimSpace(line[6:])
+		case len(line) >= 5 && strings.EqualFold(line[:5], "data:"):
+			normalized = strings.TrimSpace(line[5:])
+		default:
+			continue
+		}
+
+		if normalized == "" {
+			continue
+		}
+
+		if strings.EqualFold(normalized, "[DONE]") {
+			break
+		}
+
+		if !gotFirstToken && normalized != "" {
 			firstTokenTime = time.Since(startTime)
 			durationMs := int(firstTokenTime.Milliseconds())
 			c.Set("scheduled_test_duration_ms", durationMs)
 			completionTokens := 1
 			var streamResp dto.ChatCompletionsStreamResponse
-			if err := common.Unmarshal([]byte(data), &streamResp); err == nil {
+			if err := common.Unmarshal([]byte(normalized), &streamResp); err == nil {
 				if tokens := service.CountTokenStreamChoices(streamResp.Choices, testModel); tokens > 0 {
 					completionTokens = tokens
 				}
