@@ -887,6 +887,14 @@ func (channel *Channel) GetSetting() dto.ChannelSettings {
 	return setting
 }
 
+func (channel *Channel) GetMaxRetryAttempts() int {
+	setting := channel.GetSetting()
+	if setting.MaxRetryAttempts <= 0 {
+		return 1
+	}
+	return setting.MaxRetryAttempts
+}
+
 func (channel *Channel) SetSetting(setting dto.ChannelSettings) {
 	settingBytes, err := common.Marshal(setting)
 	if err != nil {

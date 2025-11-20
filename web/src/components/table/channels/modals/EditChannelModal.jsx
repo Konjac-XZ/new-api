@@ -134,6 +134,7 @@ const EditChannelModal = (props) => {
     openai_organization: '',
     max_input_tokens: 0,
     max_first_token_latency: 0,
+    max_retry_attempts: 1,
     scheduled_test_interval: 0,
     base_url: '',
     other: '',
@@ -331,6 +332,7 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     system_prompt: '',
+    max_retry_attempts: 1,
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
@@ -512,6 +514,7 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.max_retry_attempts = parsedSettings.max_retry_attempts || 1;
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
@@ -520,6 +523,7 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.max_retry_attempts = 1;
         }
       } else {
         data.force_format = false;
@@ -528,6 +532,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.max_retry_attempts = 1;
       }
 
       if (data.settings) {
@@ -596,6 +601,7 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        max_retry_attempts: data.max_retry_attempts || 1,
       });
       // console.log(data);
     } else {
@@ -1007,6 +1013,12 @@ const EditChannelModal = (props) => {
     }
 
     // 生成渠道额外设置JSON
+    const parsedMaxRetryAttempts = Number(localInputs.max_retry_attempts);
+    const normalizedMaxRetryAttempts =
+      Number.isFinite(parsedMaxRetryAttempts) && parsedMaxRetryAttempts > 0
+        ? Math.round(parsedMaxRetryAttempts)
+        : 1;
+
     const channelExtraSettings = {
       force_format: localInputs.force_format || false,
       thinking_to_content: localInputs.thinking_to_content || false,
@@ -1014,8 +1026,10 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      max_retry_attempts: normalizedMaxRetryAttempts,
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
+    localInputs.max_retry_attempts = normalizedMaxRetryAttempts;
 
     // 处理 settings 字段（包括企业账户设置和字段透传控制）
     let settings = {};
@@ -2525,6 +2539,20 @@ const EditChannelModal = (props) => {
                       }
                       style={{ width: '100%' }}
                       extraText='仅对流式请求生效，0 表示关闭'
+                    />
+
+                    <Form.InputNumber
+                      field='max_retry_attempts'
+                      label={t('单渠道最大重试次数')}
+                      placeholder={t('同一渠道失败后的最大重试次数')}
+                      min={1}
+                      onNumberChange={(value) =>
+                        handleChannelSettingsChange('max_retry_attempts', value)
+                      }
+                      style={{ width: '100%' }}
+                      extraText={t(
+                        '默认 1（仅请求一次）。超过该次数后才切换到下一个渠道',
+                      )}
                     />
 
                     <Form.Switch

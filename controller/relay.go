@@ -168,26 +168,51 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		addUsedChannel(c, channel.Id)
 		logger.LogInfo(c, fmt.Sprintf("Currently selected channel: #%d [%s]", channel.Id, channel.Name))
 		requestBody, _ := common.GetRequestBody(c)
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+		channelRetryAttempts := getChannelRetryAttempts(c, channel)
 
-		switch relayFormat {
-		case types.RelayFormatOpenAIRealtime:
-			newAPIError = relay.WssHelper(c, relayInfo)
-		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
-		case types.RelayFormatGemini:
-			newAPIError = geminiRelayHandler(c, relayInfo)
-		default:
-			newAPIError = relayHandler(c, relayInfo)
+		stopRetrying := false
+		for attempt := 0; attempt < channelRetryAttempts; attempt++ {
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+
+			switch relayFormat {
+			case types.RelayFormatOpenAIRealtime:
+				newAPIError = relay.WssHelper(c, relayInfo)
+			case types.RelayFormatClaude:
+				newAPIError = relay.ClaudeHelper(c, relayInfo)
+			case types.RelayFormatGemini:
+				newAPIError = geminiRelayHandler(c, relayInfo)
+			default:
+				newAPIError = relayHandler(c, relayInfo)
+			}
+
+			if newAPIError == nil {
+				return
+			}
+
+			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+
+			remainingChannelRetries := common.RetryTimes - i
+			retryBudget := remainingChannelRetries
+			if retryBudget <= 0 && attempt+1 < channelRetryAttempts {
+				retryBudget = 1
+			}
+			if !shouldRetry(c, newAPIError, retryBudget) {
+				stopRetrying = true
+				break
+			}
+
+			if attempt+1 < channelRetryAttempts {
+				logger.LogInfo(c, fmt.Sprintf("Retrying channel #%d (%d/%d)", channel.Id, attempt+1, channelRetryAttempts-1))
+				continue
+			}
+
+			// Exhausted retries on current channel, move to next channel in outer loop
+			break
 		}
-
 		if newAPIError == nil {
 			return
 		}
-
-		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
-
-		if !shouldRetry(c, newAPIError, common.RetryTimes-i) {
+		if stopRetrying {
 			break
 		}
 	}
@@ -210,6 +235,21 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func getChannelRetryAttempts(c *gin.Context, channel *model.Channel) int {
+	const defaultAttempts = 1
+	if channel == nil {
+		return defaultAttempts
+	}
+
+	if channelSetting, ok := common.GetContextKeyType[dto.ChannelSettings](c, constant.ContextKeyChannelSetting); ok {
+		if channelSetting.MaxRetryAttempts > 0 {
+			return channelSetting.MaxRetryAttempts
+		}
+	}
+
+	return channel.GetMaxRetryAttempts()
 }
 
 func getChannel(c *gin.Context, group, originalModel string, retryCount int) (*model.Channel, *types.NewAPIError) {
