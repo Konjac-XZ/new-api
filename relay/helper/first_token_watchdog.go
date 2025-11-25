@@ -3,6 +3,7 @@ package helper
 import (
 	"context"
 	"fmt"
+	"github.com/QuantumNous/new-api/logger"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -11,7 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/channelcache"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 
@@ -77,10 +77,10 @@ func NewFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limitSec
 }
 
 func (w *FirstTokenWatchdog) isRunning() bool {
-    if w == nil {
-        return false
-    }
-    return w.state.Load() == firstTokenWatchdogStateRunning
+	if w == nil {
+		return false
+	}
+	return w.state.Load() == firstTokenWatchdogStateRunning
 }
 
 func (w *FirstTokenWatchdog) run() {
@@ -107,8 +107,6 @@ func (w *FirstTokenWatchdog) run() {
 			if reason == "" {
 				reason = "watchdog canceled"
 			}
-			elapsed := time.Since(w.start)
-			logger.LogInfo(w.c, fmt.Sprintf("first token watchdog canceled after %dms%s (%s)", elapsed.Milliseconds(), w.channelInfo, reason))
 			return
 		case <-w.c.Request.Context().Done():
 			if w.setReasonIfEmpty("client context done") {
@@ -207,22 +205,22 @@ func (w *FirstTokenWatchdog) triggerTimeout() {
 }
 
 func EnsureFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limitSeconds int, reqCancel context.CancelFunc) *FirstTokenWatchdog {
-    if c == nil || info == nil || limitSeconds <= 0 || !info.IsStream {
-        return nil
-    }
+	if c == nil || info == nil || limitSeconds <= 0 || !info.IsStream {
+		return nil
+	}
 
-    if existing, ok := common.GetContextKeyType[*FirstTokenWatchdog](c, constant.ContextKeyFirstTokenWatchdog); ok && existing != nil {
-        // Only reuse a running watchdog within the same attempt.
-        // If it's stopped/timed out, replace it to avoid leaking state across attempts.
-        if existing.isRunning() {
-            if reqCancel != nil {
-                existing.SetRequestCancel(reqCancel)
-            }
-            return existing
-        }
-        // ensure any lingering resources are closed
-        existing.Stop("replacing watchdog for new attempt")
-    }
+	if existing, ok := common.GetContextKeyType[*FirstTokenWatchdog](c, constant.ContextKeyFirstTokenWatchdog); ok && existing != nil {
+		// Only reuse a running watchdog within the same attempt.
+		// If it's stopped/timed out, replace it to avoid leaking state across attempts.
+		if existing.isRunning() {
+			if reqCancel != nil {
+				existing.SetRequestCancel(reqCancel)
+			}
+			return existing
+		}
+		// ensure any lingering resources are closed
+		existing.Stop("replacing watchdog for new attempt")
+	}
 
 	watchdog := NewFirstTokenWatchdog(c, info, limitSeconds, reqCancel)
 	if watchdog != nil {

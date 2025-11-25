@@ -309,19 +309,19 @@ func PostClaudeConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, 
 
 	quotaDelta := quota - relayInfo.FinalPreConsumedQuota
 
-	if quotaDelta > 0 {
-		logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
-			logger.FormatQuota(quotaDelta),
-			logger.FormatQuota(quota),
-			logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
-		))
-	} else if quotaDelta < 0 {
-		logger.LogInfo(ctx, fmt.Sprintf("预扣费后返还扣费：%s（实际消耗：%s，预扣费：%s）",
-			logger.FormatQuota(-quotaDelta),
-			logger.FormatQuota(quota),
-			logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
-		))
-	}
+	// if quotaDelta > 0 {
+	// 	logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
+	// 		logger.FormatQuota(quotaDelta),
+	// 		logger.FormatQuota(quota),
+	// 		logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
+	// 	))
+	// } else if quotaDelta < 0 {
+	// 	logger.LogInfo(ctx, fmt.Sprintf("预扣费后返还扣费：%s（实际消耗：%s，预扣费：%s）",
+	// 		logger.FormatQuota(-quotaDelta),
+	// 		logger.FormatQuota(quota),
+	// 		logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
+	// 	))
+	// }
 
 	if quotaDelta != 0 {
 		err := PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
@@ -434,19 +434,19 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 
 	quotaDelta := quota - relayInfo.FinalPreConsumedQuota
 
-	if quotaDelta > 0 {
-		logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
-			logger.FormatQuota(quotaDelta),
-			logger.FormatQuota(quota),
-			logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
-		))
-	} else if quotaDelta < 0 {
-		logger.LogInfo(ctx, fmt.Sprintf("预扣费后返还扣费：%s（实际消耗：%s，预扣费：%s）",
-			logger.FormatQuota(-quotaDelta),
-			logger.FormatQuota(quota),
-			logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
-		))
-	}
+	//if quotaDelta > 0 {
+	//	logger.LogInfo(ctx, fmt.Sprintf("预扣费后补扣费：%s（实际消耗：%s，预扣费：%s）",
+	//		logger.FormatQuota(quotaDelta),
+	//		logger.FormatQuota(quota),
+	//		logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
+	//	))
+	//} else if quotaDelta < 0 {
+	//	logger.LogInfo(ctx, fmt.Sprintf("预扣费后返还扣费：%s（实际消耗：%s，预扣费：%s）",
+	//		logger.FormatQuota(-quotaDelta),
+	//		logger.FormatQuota(quota),
+	//		logger.FormatQuota(relayInfo.FinalPreConsumedQuota),
+	//	))
+	//}
 
 	if quotaDelta != 0 {
 		err := PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)

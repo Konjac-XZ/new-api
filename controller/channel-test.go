@@ -256,7 +256,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	//// 创建一个用于日志的 info 副本，移除 ApiKey
 	//logInfo := info
 	//logInfo.ApiKey = ""
-	common.SysLog(fmt.Sprintf("testing channel %d with model %s , info %+v ", channel.Id, testModel, info.ToString()))
 
 	priceData, err := helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
 	if err != nil {
@@ -324,13 +323,8 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	}
 	usage := usageA.(*dto.Usage)
 	result := w.Result()
-	respBody, err := io.ReadAll(result.Body)
-	if err != nil {
-		return testResult{
-			context:     c,
-			localErr:    err,
-			newAPIError: types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError),
-		}
+	if result.Body != nil {
+		_ = result.Body.Close()
 	}
 	info.PromptTokens = usage.PromptTokens
 
@@ -362,7 +356,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
-	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
 	return testResult{
 		context:     c,
 		localErr:    nil,
@@ -632,8 +625,6 @@ func AutomaticallyTestChannels() {
 			for {
 				frequency := operation_setting.GetMonitorSetting().AutoTestChannelMinutes
 				time.Sleep(time.Duration(int(math.Round(frequency))) * time.Minute)
-				common.SysLog(fmt.Sprintf("automatically test channels with interval %f minutes", frequency))
-				common.SysLog("automatically testing all channels")
 
 				// Check if current time is within allowed testing hours
 				if !isWithinTestTime() {
@@ -641,7 +632,6 @@ func AutomaticallyTestChannels() {
 				}
 
 				_ = testAllChannels(false)
-				common.SysLog("automatically channel test finished")
 				if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
 					break
 				}
@@ -794,7 +784,6 @@ func testScheduledChannel(channel *model.Channel) {
 
 	if result.localErr != nil {
 		// 测试失败
-		common.SysLog(fmt.Sprintf("scheduled test %s failed: %s", channelLabel, result.localErr.Error()))
 		autoAction := ""
 		// 如果渠道当前是启用状态，则禁用它
 		if channel.Status == 1 && channel.GetAutoBan() {
@@ -807,7 +796,6 @@ func testScheduledChannel(channel *model.Channel) {
 				"",
 				channel.GetAutoBan(),
 			), fmt.Sprintf("定时测试失败: %s", result.localErr.Error()))
-			common.SysLog(fmt.Sprintf("%s disabled due to scheduled test failure", channelLabel))
 		}
 		errMsg := result.localErr.Error()
 		params := baseParams
@@ -832,9 +820,6 @@ func testScheduledChannel(channel *model.Channel) {
 			threshold := maxLatencyMs
 			if firstTokenLatencyMs > maxLatencyMs {
 				// 延迟超过阈值
-				common.SysLog(fmt.Sprintf("%s first token latency %dms exceeds max %dms",
-					channelLabel, firstTokenLatencyMs, maxLatencyMs))
-
 				// 如果渠道当前是启用状态，则禁用它
 				if channel.Status == 1 && channel.GetAutoBan() {
 					autoAction := "auto_disabled"
@@ -846,10 +831,9 @@ func testScheduledChannel(channel *model.Channel) {
 						"",
 						channel.GetAutoBan(),
 					), fmt.Sprintf("首Token延迟 %dms 超过最大值 %dms", firstTokenLatencyMs, maxLatencyMs))
-					common.SysLog(fmt.Sprintf("%s disabled due to high latency", channelLabel))
 					params := baseParams
 					params.Result = "failure"
-					params.Message = fmt.Sprintf("Scheduled test latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs)
+					//params.Message = fmt.Sprintf("Scheduled test latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs)
 					params.LatencyMs = &latency
 					params.ThresholdMs = &threshold
 					params.AutoAction = autoAction
@@ -857,21 +841,17 @@ func testScheduledChannel(channel *model.Channel) {
 				} else {
 					params := baseParams
 					params.Result = "failure"
-					params.Message = fmt.Sprintf("Scheduled test latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs)
+					//params.Message = fmt.Sprintf("Scheduled test latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs)
 					params.LatencyMs = &latency
 					params.ThresholdMs = &threshold
 					// model.RecordScheduledTestLog(params)
 				}
 			} else {
 				// 延迟在阈值内
-				common.SysLog(fmt.Sprintf("%s first token latency %dms is within limit %dms",
-					channelLabel, firstTokenLatencyMs, maxLatencyMs))
-
 				// 如果渠道当前是禁用状态，则重新启用它
 				if channel.Status != 1 {
 					autoAction := "auto_enabled"
 					service.EnableChannel(channel.Id, "", channel.Name)
-					common.SysLog(fmt.Sprintf("%s re-enabled due to acceptable latency", channelLabel))
 					params := baseParams
 					params.Result = "success"
 					params.Message = fmt.Sprintf("Scheduled test latency %dms within threshold %dms", firstTokenLatencyMs, maxLatencyMs)
@@ -890,7 +870,6 @@ func testScheduledChannel(channel *model.Channel) {
 			}
 		} else {
 			// 如果无法测量首Token延迟，记录警告
-			common.SysLog(fmt.Sprintf("%s: unable to measure first token latency", channelLabel))
 			params := baseParams
 			params.Result = "warning"
 			params.Message = "Scheduled test could not measure first token latency"
@@ -991,9 +970,7 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 
 	if meta := request.GetTokenCountMeta(); meta != nil {
 		tokens, countErr := service.CountRequestToken(c, meta, info)
-		if countErr != nil {
-			common.SysLog(fmt.Sprintf("scheduled test token counting failed: %v", countErr))
-		} else {
+		if countErr == nil {
 			info.SetPromptTokens(tokens)
 			c.Set("scheduled_test_prompt_tokens", tokens)
 		}
@@ -1131,7 +1108,6 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			if watchdog != nil {
 				watchdog.Stop("scheduled test first token received")
 			}
-			// common.SysLog(fmt.Sprintf("channel #%d first token received after %dms", channel.Id, firstTokenTime.Milliseconds()))
 			break // 只需要测量首Token，不需要读取全部响应
 		}
 	}
