@@ -274,13 +274,17 @@ func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool) ([]*Chan
 	return channels, err
 }
 
-func GetChannelsByTag(tag string, idSort bool) ([]*Channel, error) {
+func GetChannelsByTag(tag string, idSort bool, selectAll bool) ([]*Channel, error) {
 	var channels []*Channel
 	order := "priority desc"
 	if idSort {
 		order = "id desc"
 	}
-	err := DB.Where("tag = ?", tag).Order(order).Find(&channels).Error
+	query := DB.Where("tag = ?", tag).Order(order)
+	if !selectAll {
+		query = query.Omit("key")
+	}
+	err := query.Find(&channels).Error
 	return channels, err
 }
 
@@ -757,7 +761,7 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		return err
 	}
 	if shouldReCreateAbilities {
-		channels, err := GetChannelsByTag(updatedTag, false)
+		channels, err := GetChannelsByTag(updatedTag, false, false)
 		if err == nil {
 			for _, channel := range channels {
 				err = channel.UpdateAbilities(nil)
