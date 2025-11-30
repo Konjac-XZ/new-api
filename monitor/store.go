@@ -105,6 +105,28 @@ func (s *Store) Get(id string) *RequestRecord {
 	return s.records[pos]
 }
 
+// BroadcastChannelUpdate sends a channel update message for the given record ID
+func (s *Store) BroadcastChannelUpdate(id string) {
+	if s.hub == nil {
+		return
+	}
+
+	record := s.Get(id)
+	if record == nil {
+		return
+	}
+
+	update := record.ToChannelUpdate()
+	if update == nil {
+		return
+	}
+
+	s.hub.Broadcast(&WSMessage{
+		Type:    WSMessageTypeChannel,
+		Payload: update,
+	})
+}
+
 // GetAll returns all stored records in chronological order (oldest first)
 func (s *Store) GetAll() []*RequestRecord {
 	s.mu.RLock()

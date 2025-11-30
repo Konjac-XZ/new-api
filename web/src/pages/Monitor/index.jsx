@@ -30,11 +30,41 @@ const statusColors = {
   error: 'red',
 };
 
+const channelPhaseColors = {
+  waiting_upstream: 'blue',
+  streaming: 'green',
+  error: 'red',
+  completed: 'green',
+};
+
+const attemptStatusColors = {
+  waiting_upstream: 'blue',
+  streaming: 'green',
+  failed: 'red',
+  abandoned: 'grey',
+  succeeded: 'green',
+};
+
 const getStatusLabels = (t) => ({
   pending: t('等待中'),
   processing: t('处理中'),
   completed: t('已完成'),
   error: t('错误'),
+});
+
+const getPhaseLabels = (t) => ({
+  waiting_upstream: t('等待上游响应'),
+  streaming: t('流式请求进行中'),
+  error: t('发生错误'),
+  completed: t('已完成'),
+});
+
+const getAttemptStatusLabels = (t) => ({
+  waiting_upstream: t('等待上游响应'),
+  streaming: t('流式进行中'),
+  failed: t('失败'),
+  abandoned: t('已放弃'),
+  succeeded: t('成功'),
 });
 
 // JSON syntax highlighting function
@@ -143,6 +173,9 @@ const HeadersViewer = ({ headers, t }) => {
 };
 
 const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
+  const phaseLabels = useMemo(() => getPhaseLabels(t), [t]);
+  const attemptLabels = useMemo(() => getAttemptStatusLabels(t), [t]);
+
   // Loading state
   if (loading) {
     return (
@@ -197,6 +230,67 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
   return (
     <div style={{ padding: '8px 12px' }}>
       <Space vertical align='start' style={{ width: '100%' }} spacing='medium'>
+        {/* Channel & Retry Status */}
+        <Card title={t('当前渠道 / 重试状态')} style={{ width: '100%' }}>
+          <Space vertical align='start' style={{ width: '100%' }}>
+            <Space align='center'>
+              <Text strong>{t('当前渠道')}:</Text>
+              {record.current_channel ? (
+                <Tag color='blue'>
+                  {record.current_channel.name || '-'} (ID: {record.current_channel.id || '-'}, {t('第{{num}}次', { num: record.current_channel.attempt || 1 })})
+                </Tag>
+              ) : (
+                <Text type='tertiary'>{t('暂未选择渠道')}</Text>
+              )}
+            </Space>
+
+            <Space align='center'>
+              <Text strong>{t('当前响应状态')}:</Text>
+              <Tag color={channelPhaseColors[record.current_phase] || 'grey'}>
+                {phaseLabels[record.current_phase] || t('未知状态')}
+              </Tag>
+            </Space>
+
+            <div style={{ marginTop: '12px', width: '100%' }}>
+              <Text strong style={{ display: 'block', marginBottom: '8px' }}>
+                {t('渠道重试历史')}
+              </Text>
+              {(record.channel_attempts || []).length === 0 ? (
+                <Text type='tertiary'>{t('暂无渠道重试记录')}</Text>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {(record.channel_attempts || []).map((attempt) => (
+                    <Card key={`${attempt.attempt}-${attempt.channel_id}-${attempt.started_at}`} size='small' bordered style={{ background: 'var(--semi-color-fill-0)' }}>
+                      <Space vertical align='start' style={{ width: '100%' }}>
+                        <Space align='center' style={{ justifyContent: 'space-between', width: '100%' }}>
+                          <Space>
+                            <Tag>{t('第{{num}}次', { num: attempt.attempt })}</Tag>
+                            <Text>{attempt.channel_name || t('未知渠道')} (ID: {attempt.channel_id || '-'})</Text>
+                          </Space>
+                          <Tag color={attemptStatusColors[attempt.status] || 'grey'}>
+                            {attemptLabels[attempt.status] || attempt.status || t('未知状态')}
+                          </Tag>
+                        </Space>
+                        <Text type='tertiary' size='small'>
+                          {t('开始')}: {attempt.started_at ? new Date(attempt.started_at).toLocaleTimeString() : '-'}
+                          {attempt.ended_at ? ` | ${t('结束')}: ${new Date(attempt.ended_at).toLocaleTimeString()}` : ''}
+                        </Text>
+                        {(attempt.reason || attempt.error_code || attempt.http_status) && (
+                          <Text size='small' style={{ color: 'var(--semi-color-text-2)' }}>
+                            {t('原因')}: {attempt.reason || '-'}
+                            {attempt.error_code ? ` | ${t('错误码')}: ${attempt.error_code}` : ''}
+                            {attempt.http_status ? ` | HTTP ${attempt.http_status}` : ''}
+                          </Text>
+                        )}
+                      </Space>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Space>
+        </Card>
+
         {/* Basic Info */}
         <Card title={t('请求信息')} style={{ width: '100%' }}>
           <Descriptions
@@ -304,10 +398,10 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
               </div>
             )}
             <Collapse style={{ marginTop: '12px' }}>
-              <Collapse.Panel header={t('请求头')} itemKey='response-headers'>
+              <Collapse.Panel header={t('响应头')} itemKey='response-headers'>
                 <HeadersViewer headers={record.response?.headers} t={t} />
               </Collapse.Panel>
-              <Collapse.Panel header={t('请求体')} itemKey='response-body'>
+              <Collapse.Panel header={t('响应体')} itemKey='response-body'>
                 <JsonViewer data={record.response?.body} t={t} />
               </Collapse.Panel>
             </Collapse>
@@ -320,7 +414,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
 
 const Monitor = () => {
   const { t } = useTranslation();
-  const { summaries, stats, connected, reconnect } = useMonitorWs();
+  const { summaries, stats, connected, reconnect, channelUpdates } = useMonitorWs();
   const {
     selectedDetail,
     loading: detailLoading,
@@ -328,6 +422,7 @@ const Monitor = () => {
     fetchDetail,
     invalidateCache,
     clearCache,
+    applyLiveUpdate,
   } = useRequestDetail();
   const [selectedId, setSelectedId] = useState(null);
   const [filter, setFilter] = useState('all');
@@ -343,6 +438,13 @@ const Monitor = () => {
       fetchDetail(selectedId);
     }
   }, [selectedId, fetchDetail]);
+
+  // Apply live channel updates streamed over WebSocket
+  useEffect(() => {
+    if (selectedId && channelUpdates[selectedId]) {
+      applyLiveUpdate(selectedId, channelUpdates[selectedId]);
+    }
+  }, [selectedId, channelUpdates, applyLiveUpdate]);
 
   // Invalidate cache when a request's status changes (e.g., processing -> completed)
   // This ensures we fetch fresh data with response details

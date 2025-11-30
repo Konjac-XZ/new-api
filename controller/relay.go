@@ -206,6 +206,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}(monitorID, relayInfoForMonitor)
 	}
 
+	attemptCounter := 0
+
 	for i := 0; i <= common.RetryTimes; i++ {
 		channel, err := getChannel(c, group, originalModel, i)
 		if err != nil {
@@ -225,6 +227,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		stopRetrying := false
 		for attempt := 0; attempt < channelRetryAttempts; attempt++ {
+			attemptCounter++
+			monitor.StartChannelAttemptWithContext(c, channel.Id, channel.Name, attemptCounter)
+			monitor.MarkChannelPhaseWithContext(c, monitor.PhaseWaitingUpstream)
+
 			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
 
 			switch relayFormat {
@@ -239,8 +245,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 
 			if newAPIError == nil {
+				monitor.FinishChannelAttemptWithContext(c, monitor.AttemptStatusSucceeded, "", "", c.Writer.Status())
+				monitor.MarkChannelPhaseWithContext(c, monitor.PhaseCompleted)
 				return
 			}
+
+			reason, errCode := monitorReasonFromError(newAPIError)
+			monitor.FinishChannelAttemptWithContext(c, monitor.AttemptStatusFailed, reason, errCode, newAPIError.StatusCode)
+			monitor.MarkChannelPhaseWithContext(c, monitor.PhaseError)
 
 			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
@@ -288,6 +300,17 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func monitorReasonFromError(err *types.NewAPIError) (string, string) {
+	if err == nil {
+		return "", ""
+	}
+	reason := err.MaskSensitiveError()
+	if reason == "" {
+		reason = err.Error()
+	}
+	return reason, string(err.GetErrorCode())
 }
 
 func getChannelRetryAttempts(c *gin.Context, channel *model.Channel) int {

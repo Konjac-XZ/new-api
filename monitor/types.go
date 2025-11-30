@@ -12,6 +12,23 @@ const (
 	StatusError      = "error"
 )
 
+// Channel phases (real-time state of upstream interaction)
+const (
+	PhaseWaitingUpstream = "waiting_upstream"
+	PhaseStreaming       = "streaming"
+	PhaseError           = "error"
+	PhaseCompleted       = "completed"
+)
+
+// Channel attempt status values
+const (
+	AttemptStatusWaiting   = "waiting_upstream"
+	AttemptStatusStreaming = "streaming"
+	AttemptStatusFailed    = "failed"
+	AttemptStatusAbandoned = "abandoned"
+	AttemptStatusSucceeded = "succeeded"
+)
+
 // RequestRecord represents a single API request being monitored
 type RequestRecord struct {
 	ID        string     `json:"id"`
@@ -37,6 +54,31 @@ type RequestRecord struct {
 	ChannelName string `json:"channel_name"`
 	Model       string `json:"model"`
 	IsStream    bool   `json:"is_stream"`
+
+	// Channel switching / retry info
+	CurrentPhase    string           `json:"current_phase,omitempty"`
+	CurrentChannel  *CurrentChannel  `json:"current_channel,omitempty"`
+	ChannelAttempts []ChannelAttempt `json:"channel_attempts,omitempty"`
+}
+
+// CurrentChannel describes which upstream channel is being used right now
+type CurrentChannel struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	Attempt int    `json:"attempt"`
+}
+
+// ChannelAttempt captures a single try against a specific channel
+type ChannelAttempt struct {
+	Attempt     int        `json:"attempt"`
+	ChannelId   int        `json:"channel_id"`
+	ChannelName string     `json:"channel_name"`
+	StartedAt   time.Time  `json:"started_at"`
+	EndedAt     *time.Time `json:"ended_at,omitempty"`
+	Status      string     `json:"status"` // waiting_upstream | streaming | failed | abandoned | succeeded
+	Reason      string     `json:"reason,omitempty"`
+	ErrorCode   string     `json:"error_code,omitempty"`
+	HTTPStatus  int        `json:"http_status,omitempty"`
 }
 
 // DownstreamInfo contains information about the client request
@@ -87,7 +129,16 @@ const (
 	WSMessageTypeUpdate   = "update"
 	WSMessageTypeDelete   = "delete"
 	WSMessageTypeSnapshot = "snapshot"
+	WSMessageTypeChannel  = "channel_update"
 )
+
+// ChannelUpdate is sent over websocket when upstream channel/phase changes
+type ChannelUpdate struct {
+	RequestID       string           `json:"request_id"`
+	CurrentPhase    string           `json:"current_phase,omitempty"`
+	CurrentChannel  *CurrentChannel  `json:"current_channel,omitempty"`
+	ChannelAttempts []ChannelAttempt `json:"channel_attempts,omitempty"`
+}
 
 // MonitorStats contains monitoring statistics
 type MonitorStats struct {
@@ -100,11 +151,11 @@ type MonitorStats struct {
 // RequestSummary is a lightweight version of RequestRecord for WebSocket broadcasts
 // It excludes large body data to reduce bandwidth
 type RequestSummary struct {
-	ID        string     `json:"id"`
-	Status    string     `json:"status"`
-	StartTime time.Time  `json:"start_time"`
-	EndTime   *time.Time `json:"end_time,omitempty"`
-	DurationMs int64     `json:"duration_ms,omitempty"`
+	ID         string     `json:"id"`
+	Status     string     `json:"status"`
+	StartTime  time.Time  `json:"start_time"`
+	EndTime    *time.Time `json:"end_time,omitempty"`
+	DurationMs int64      `json:"duration_ms,omitempty"`
 
 	// Lightweight downstream info (no body/headers)
 	Method   string `json:"method"`
@@ -112,13 +163,15 @@ type RequestSummary struct {
 	ClientIP string `json:"client_ip"`
 
 	// Metadata
-	UserId      int    `json:"user_id"`
-	TokenId     int    `json:"token_id"`
-	TokenName   string `json:"token_name"`
-	ChannelId   int    `json:"channel_id"`
-	ChannelName string `json:"channel_name"`
-	Model       string `json:"model"`
-	IsStream    bool   `json:"is_stream"`
+	UserId         int             `json:"user_id"`
+	TokenId        int             `json:"token_id"`
+	TokenName      string          `json:"token_name"`
+	ChannelId      int             `json:"channel_id"`
+	ChannelName    string          `json:"channel_name"`
+	Model          string          `json:"model"`
+	IsStream       bool            `json:"is_stream"`
+	CurrentPhase   string          `json:"current_phase,omitempty"`
+	CurrentChannel *CurrentChannel `json:"current_channel,omitempty"`
 
 	// Response summary (no body/headers)
 	StatusCode       int  `json:"status_code,omitempty"`
@@ -130,21 +183,23 @@ type RequestSummary struct {
 // ToSummary converts a full RequestRecord to a lightweight RequestSummary
 func (r *RequestRecord) ToSummary() *RequestSummary {
 	summary := &RequestSummary{
-		ID:          r.ID,
-		Status:      r.Status,
-		StartTime:   r.StartTime,
-		EndTime:     r.EndTime,
-		DurationMs:  r.Duration,
-		Method:      r.Downstream.Method,
-		Path:        r.Downstream.Path,
-		ClientIP:    r.Downstream.ClientIP,
-		UserId:      r.UserId,
-		TokenId:     r.TokenId,
-		TokenName:   r.TokenName,
-		ChannelId:   r.ChannelId,
-		ChannelName: r.ChannelName,
-		Model:       r.Model,
-		IsStream:    r.IsStream,
+		ID:             r.ID,
+		Status:         r.Status,
+		StartTime:      r.StartTime,
+		EndTime:        r.EndTime,
+		DurationMs:     r.Duration,
+		Method:         r.Downstream.Method,
+		Path:           r.Downstream.Path,
+		ClientIP:       r.Downstream.ClientIP,
+		UserId:         r.UserId,
+		TokenId:        r.TokenId,
+		TokenName:      r.TokenName,
+		ChannelId:      r.ChannelId,
+		ChannelName:    r.ChannelName,
+		Model:          r.Model,
+		IsStream:       r.IsStream,
+		CurrentPhase:   r.CurrentPhase,
+		CurrentChannel: r.CurrentChannel,
 	}
 
 	if r.Response != nil {
@@ -155,4 +210,14 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 	}
 
 	return summary
+}
+
+// ToChannelUpdate builds a lightweight payload describing channel attempts
+func (r *RequestRecord) ToChannelUpdate() *ChannelUpdate {
+	return &ChannelUpdate{
+		RequestID:       r.ID,
+		CurrentPhase:    r.CurrentPhase,
+		CurrentChannel:  r.CurrentChannel,
+		ChannelAttempts: r.ChannelAttempts,
+	}
 }

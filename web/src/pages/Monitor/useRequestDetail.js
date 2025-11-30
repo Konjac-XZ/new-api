@@ -64,6 +64,36 @@ const useRequestDetail = () => {
     cacheRef.current.delete(id);
   }, []);
 
+  // Apply real-time partial updates (e.g., channel_update over WebSocket)
+  const applyLiveUpdate = useCallback((id, patch) => {
+    if (!id || !patch) return;
+
+    const normalizedPatch = { ...patch };
+    if (patch.request_id && !normalizedPatch.id) {
+      normalizedPatch.id = patch.request_id;
+    }
+
+    setSelectedDetail((prev) => {
+      if (!prev || prev.id !== id) return prev;
+      return {
+        ...prev,
+        ...normalizedPatch,
+        channel_attempts: normalizedPatch.channel_attempts || prev.channel_attempts,
+        current_channel: normalizedPatch.current_channel || prev.current_channel,
+        current_phase: normalizedPatch.current_phase || prev.current_phase,
+      };
+    });
+
+    const existing = cacheRef.current.get(id) || {};
+    cacheRef.current.set(id, {
+      ...existing,
+      ...normalizedPatch,
+      channel_attempts: normalizedPatch.channel_attempts || existing.channel_attempts,
+      current_channel: normalizedPatch.current_channel || existing.current_channel,
+      current_phase: normalizedPatch.current_phase || existing.current_phase,
+    });
+  }, []);
+
   // Clear entire cache (e.g., on reconnect)
   const clearCache = useCallback(({ preserveSelection = false } = {}) => {
     cacheRef.current.clear();
@@ -80,6 +110,7 @@ const useRequestDetail = () => {
     fetchDetail,
     invalidateCache,
     clearCache,
+    applyLiveUpdate,
   };
 };
 

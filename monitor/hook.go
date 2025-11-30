@@ -176,6 +176,13 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 	}
 
 	globalStore.MarkComplete(recordID, response)
+	if err != nil {
+		MarkChannelPhase(recordID, PhaseError)
+		FinishChannelAttempt(recordID, AttemptStatusFailed, err.Error(), "", statusCode)
+	} else {
+		MarkChannelPhase(recordID, PhaseCompleted)
+		FinishChannelAttempt(recordID, AttemptStatusSucceeded, "", "", statusCode)
+	}
 }
 
 // RecordResponseWithContext records response using gin context
@@ -202,12 +209,121 @@ func RecordError(recordID string, err error) {
 			Message: err.Error(),
 		}
 	})
+
+	FinishChannelAttempt(recordID, AttemptStatusFailed, err.Error(), "", 0)
+	MarkChannelPhase(recordID, PhaseError)
 }
 
 // RecordErrorWithContext records an error using gin context
 func RecordErrorWithContext(c *gin.Context, err error) {
 	recordID := c.GetString("monitor_id")
 	RecordError(recordID, err)
+}
+
+// StartChannelAttempt records that we are about to try a specific channel
+func StartChannelAttempt(recordID string, channelId int, channelName string, attemptNo int) {
+	if !enabled || globalStore == nil || recordID == "" {
+		return
+	}
+
+	log.Printf("[Monitor] StartChannelAttempt: id=%s channel=%d (%s) attempt=%d", recordID, channelId, channelName, attemptNo)
+	now := time.Now()
+	globalStore.Update(recordID, func(r *RequestRecord) {
+		attempt := ChannelAttempt{
+			Attempt:     attemptNo,
+			ChannelId:   channelId,
+			ChannelName: channelName,
+			StartedAt:   now,
+			Status:      AttemptStatusWaiting,
+		}
+		r.ChannelAttempts = append(r.ChannelAttempts, attempt)
+		r.ChannelId = channelId
+		r.ChannelName = channelName
+		r.CurrentChannel = &CurrentChannel{ID: channelId, Name: channelName, Attempt: attemptNo}
+		r.CurrentPhase = PhaseWaitingUpstream
+	})
+
+	globalStore.BroadcastChannelUpdate(recordID)
+}
+
+// StartChannelAttemptWithContext is the gin-aware wrapper
+func StartChannelAttemptWithContext(c *gin.Context, channelId int, channelName string, attemptNo int) {
+	recordID := c.GetString("monitor_id")
+	StartChannelAttempt(recordID, channelId, channelName, attemptNo)
+}
+
+// MarkChannelPhase updates the real-time phase (waiting_upstream/streaming/error/completed)
+func MarkChannelPhase(recordID string, phase string) {
+	if !enabled || globalStore == nil || recordID == "" || phase == "" {
+		return
+	}
+
+	globalStore.Update(recordID, func(r *RequestRecord) {
+		r.CurrentPhase = phase
+		if len(r.ChannelAttempts) == 0 {
+			return
+		}
+		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		switch phase {
+		case PhaseWaitingUpstream:
+			last.Status = AttemptStatusWaiting
+		case PhaseStreaming:
+			last.Status = AttemptStatusStreaming
+		case PhaseCompleted:
+			if last.EndedAt == nil {
+				now := time.Now()
+				last.EndedAt = &now
+			}
+			last.Status = AttemptStatusSucceeded
+		case PhaseError:
+			if last.EndedAt == nil {
+				now := time.Now()
+				last.EndedAt = &now
+			}
+			if last.Status != AttemptStatusSucceeded {
+				last.Status = AttemptStatusFailed
+			}
+		}
+	})
+
+	globalStore.BroadcastChannelUpdate(recordID)
+}
+
+// MarkChannelPhaseWithContext wraps MarkChannelPhase using gin context
+func MarkChannelPhaseWithContext(c *gin.Context, phase string) {
+	recordID := c.GetString("monitor_id")
+	MarkChannelPhase(recordID, phase)
+}
+
+// FinishChannelAttempt finalizes the latest attempt with a terminal status and reason
+func FinishChannelAttempt(recordID string, status string, reason string, errorCode string, httpStatus int) {
+	if !enabled || globalStore == nil || recordID == "" {
+		return
+	}
+
+	globalStore.Update(recordID, func(r *RequestRecord) {
+		if len(r.ChannelAttempts) == 0 {
+			return
+		}
+		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		if last.EndedAt != nil {
+			return
+		}
+		now := time.Now()
+		last.EndedAt = &now
+		last.Status = status
+		last.Reason = reason
+		last.ErrorCode = errorCode
+		last.HTTPStatus = httpStatus
+	})
+
+	globalStore.BroadcastChannelUpdate(recordID)
+}
+
+// FinishChannelAttemptWithContext wraps FinishChannelAttempt using gin context
+func FinishChannelAttemptWithContext(c *gin.Context, status string, reason string, errorCode string, httpStatus int) {
+	recordID := c.GetString("monitor_id")
+	FinishChannelAttempt(recordID, status, reason, errorCode, httpStatus)
 }
 
 // UpdateMetadata updates metadata for a request (channel info, stream status, etc.)

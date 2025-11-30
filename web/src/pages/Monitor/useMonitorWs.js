@@ -5,12 +5,14 @@ const WS_MESSAGE_TYPES = {
   UPDATE: 'update',
   DELETE: 'delete',
   SNAPSHOT: 'snapshot',
+  CHANNEL: 'channel_update',
 };
 
 const useMonitorWs = () => {
   const [summaries, setSummaries] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0 });
   const [connected, setConnected] = useState(false);
+  const [channelUpdates, setChannelUpdates] = useState({});
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttempts = useRef(0);
@@ -91,6 +93,15 @@ const useMonitorWs = () => {
               setStats(calculateStats(filtered));
               return filtered;
             });
+            break;
+
+          case WS_MESSAGE_TYPES.CHANNEL:
+            if (message.payload && message.payload.request_id) {
+              setChannelUpdates((prev) => ({
+                ...prev,
+                [message.payload.request_id]: message.payload,
+              }));
+            }
             break;
 
           default:
@@ -205,6 +216,7 @@ const useMonitorWs = () => {
     stats,
     connected,
     reconnect,
+    channelUpdates,
   };
 };
 

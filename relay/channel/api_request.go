@@ -13,6 +13,7 @@ import (
 	common2 "github.com/QuantumNous/new-api/common"
 	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/monitor"
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -151,6 +152,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
+	monitor.MarkChannelPhaseWithContext(c, monitor.PhaseStreaming)
 	return resp, nil
 }
 
@@ -176,6 +178,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if err != nil {
 		return nil, fmt.Errorf("dial failed to %s: %w", fullRequestURL, err)
 	}
+	monitor.MarkChannelPhaseWithContext(c, monitor.PhaseStreaming)
 	// send request body
 	//all, err := io.ReadAll(requestBody)
 	//err = service.WssString(c, targetConn, string(all))
@@ -325,6 +328,8 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		return nil, errors.New("resp is nil")
 	}
 
+	monitor.MarkChannelPhaseWithContext(c, monitor.PhaseStreaming)
+
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
 	return resp, nil
@@ -351,5 +356,6 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
+	monitor.MarkChannelPhaseWithContext(c, monitor.PhaseStreaming)
 	return resp, nil
 }
