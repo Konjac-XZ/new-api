@@ -65,9 +65,11 @@ const useRequestDetail = () => {
   }, []);
 
   // Clear entire cache (e.g., on reconnect)
-  const clearCache = useCallback(() => {
+  const clearCache = useCallback(({ preserveSelection = false } = {}) => {
     cacheRef.current.clear();
-    setSelectedDetail(null);
+    if (!preserveSelection) {
+      setSelectedDetail(null);
+    }
     setError(null);
   }, []);
 

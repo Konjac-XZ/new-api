@@ -115,15 +115,19 @@ func (h *Hub) ClientCount() int {
 
 // ServeWs handles WebSocket requests from clients
 func (h *Hub) ServeWs(c *gin.Context, store *Store) {
-	// Debug: log WebSocket upgrade headers
-	log.Printf("WebSocket upgrade request: Upgrade=%s, Connection=%s, Sec-WebSocket-Key=%s",
+	// Debug: log WebSocket upgrade headers and request metadata
+	log.Printf("WebSocket upgrade request: remote=%s host=%s path=%s origin=%s upgrade=%s connection=%s key=%s",
+		c.Request.RemoteAddr,
+		c.Request.Host,
+		c.Request.URL.Path,
+		c.Request.Header.Get("Origin"),
 		c.Request.Header.Get("Upgrade"),
 		c.Request.Header.Get("Connection"),
 		c.Request.Header.Get("Sec-WebSocket-Key"))
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade failed: %v", err)
+		log.Printf("WebSocket upgrade failed for remote=%s path=%s: %v", c.Request.RemoteAddr, c.Request.URL.Path, err)
 		return
 	}
 
@@ -182,7 +186,9 @@ func (c *Client) readPump() {
 		_, _, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				// Log error if needed
+				log.Printf("[Monitor WS] unexpected close from %s: %v", c.conn.RemoteAddr(), err)
+			} else {
+				log.Printf("[Monitor WS] read closed from %s: %v", c.conn.RemoteAddr(), err)
 			}
 			break
 		}
@@ -210,6 +216,7 @@ func (c *Client) writePump() {
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
+				log.Printf("[Monitor WS] nextWriter failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
 			w.Write(message)
@@ -222,12 +229,14 @@ func (c *Client) writePump() {
 			}
 
 			if err := w.Close(); err != nil {
+				log.Printf("[Monitor WS] writer close failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
 
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("[Monitor WS] ping failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
 		}

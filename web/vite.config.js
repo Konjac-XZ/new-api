@@ -23,6 +23,10 @@ import pkg from '@douyinfe/vite-plugin-semi';
 import path from 'path';
 const { vitePluginSemi } = pkg;
 
+// Share a single backend target across all proxies to avoid port drift.
+// Default to 3001 to match the backend dev server, but allow overrides via env.
+const backendTarget = process.env.VITE_DEV_PROXY_TARGET || 'http://localhost:3001';
+
 // https://vitejs.dev/config/
 export default defineConfig({
   resolve: {
@@ -87,17 +91,17 @@ export default defineConfig({
     host: '0.0.0.0',
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
         ws: true,
       },
       '/mj': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
         ws: true,
       },
       '/pg': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
         ws: true,
       },

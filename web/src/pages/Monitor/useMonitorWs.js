@@ -14,6 +14,8 @@ const useMonitorWs = () => {
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttempts = useRef(0);
+  const disconnectTimerRef = useRef(null);
+  const stableOpenTimerRef = useRef(null);
   const maxReconnectAttempts = 10;
   const baseReconnectDelay = 1000;
 
@@ -116,19 +118,39 @@ const useMonitorWs = () => {
     const wsUrl = buildWsUrl();
 
     try {
+      console.log('Connecting to monitor WebSocket:', wsUrl);
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
         console.log('Monitor WebSocket connected');
+        if (disconnectTimerRef.current) {
+          clearTimeout(disconnectTimerRef.current);
+          disconnectTimerRef.current = null;
+        }
         setConnected(true);
-        reconnectAttempts.current = 0;
+
+        // Only reset attempts after the connection stays up for a bit to avoid flapping
+        if (stableOpenTimerRef.current) {
+          clearTimeout(stableOpenTimerRef.current);
+        }
+        stableOpenTimerRef.current = setTimeout(() => {
+          reconnectAttempts.current = 0;
+        }, 3000);
       };
 
       ws.onmessage = handleMessage;
 
       ws.onclose = (event) => {
         console.log('Monitor WebSocket closed:', event.code, event.reason);
-        setConnected(false);
+        if (stableOpenTimerRef.current) {
+          clearTimeout(stableOpenTimerRef.current);
+          stableOpenTimerRef.current = null;
+        }
+
+        if (disconnectTimerRef.current) {
+          clearTimeout(disconnectTimerRef.current);
+        }
+        disconnectTimerRef.current = setTimeout(() => setConnected(false), 800);
 
         // Attempt to reconnect with exponential backoff
         if (reconnectAttempts.current < maxReconnectAttempts) {
@@ -152,7 +174,7 @@ const useMonitorWs = () => {
     } catch (error) {
       console.error('Failed to create WebSocket:', error);
     }
-  }, [handleMessage]);
+  }, [handleMessage, buildWsUrl]);
 
   const reconnect = useCallback(() => {
     reconnectAttempts.current = 0;
@@ -165,6 +187,12 @@ const useMonitorWs = () => {
     return () => {
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (disconnectTimerRef.current) {
+        clearTimeout(disconnectTimerRef.current);
+      }
+      if (stableOpenTimerRef.current) {
+        clearTimeout(stableOpenTimerRef.current);
       }
       if (wsRef.current) {
         wsRef.current.close();

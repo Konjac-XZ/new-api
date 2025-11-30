@@ -365,10 +365,17 @@ const Monitor = () => {
   // Clear cache on reconnect
   useEffect(() => {
     if (!connected) {
-      clearCache();
+      clearCache({ preserveSelection: true });
       prevStatusRef.current.clear();
     }
   }, [connected, clearCache]);
+
+  // Refresh detail after reconnect to keep the selection visible and updated
+  useEffect(() => {
+    if (connected && selectedId) {
+      fetchDetail(selectedId);
+    }
+  }, [connected, selectedId, fetchDetail]);
 
   const handleRowClick = useCallback((record) => {
     setSelectedId(record.id);
