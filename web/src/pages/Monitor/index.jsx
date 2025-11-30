@@ -225,7 +225,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
               },
               {
                 key: t('耗时'),
-                value: record.duration_ms ? `${record.duration_ms}ms` : '-',
+                value: record.duration_ms ? `${(record.duration_ms / 1000).toFixed(2)}s` : '-',
               },
               { key: t('用户ID'), value: record.user_id || '-' },
               { key: t('令牌'), value: record.token_name || '-' },
@@ -393,6 +393,12 @@ const Monitor = () => {
 
   const columns = [
     {
+      title: t('时间'),
+      dataIndex: 'start_time',
+      width: 120,
+      render: (time) => new Date(time).toLocaleTimeString(),
+    },
+    {
       title: t('状态'),
       dataIndex: 'status',
       width: 100,
@@ -403,26 +409,20 @@ const Monitor = () => {
     {
       title: t('模型'),
       dataIndex: 'model',
-      width: 150,
+      width: 200,
       ellipsis: true,
     },
     {
       title: t('渠道'),
       dataIndex: 'channel_name',
-      width: 120,
+      width: 180,
       ellipsis: true,
     },
     {
       title: t('耗时'),
       dataIndex: 'duration_ms',
       width: 100,
-      render: (duration) => (duration ? `${duration}ms` : '-'),
-    },
-    {
-      title: t('时间'),
-      dataIndex: 'start_time',
-      width: 180,
-      render: (time) => new Date(time).toLocaleTimeString(),
+      render: (duration) => (duration ? `${(duration / 1000).toFixed(2)}s` : '-'),
     },
   ];
 
