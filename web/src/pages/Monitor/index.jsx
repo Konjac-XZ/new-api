@@ -195,8 +195,8 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
   }
 
   return (
-    <div style={{ padding: '16px' }}>
-      <Space vertical align='start' style={{ width: '100%' }} spacing='medium'>
+    <div style={{ padding: '8px 12px' }}>
+      <Space vertical align='start' style={{ width: '100%' }} spacing='small'>
         {/* Basic Info */}
         <Card title={t('请求信息')} style={{ width: '100%' }}>
           <Descriptions
@@ -448,14 +448,15 @@ const Monitor = () => {
   ];
 
   return (
-    <div className='mt-[60px] px-2'>
-      <Card>
+    <div style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', padding: '8px', marginTop: '64px' }}>
+      <Card style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: '16px',
+            marginBottom: '12px',
+            flexShrink: 0,
           }}
         >
           <Space>
@@ -484,7 +485,7 @@ const Monitor = () => {
           type='button'
           activeKey={filter}
           onChange={setFilter}
-          style={{ marginBottom: '16px' }}
+          style={{ marginBottom: '12px', flexShrink: 0 }}
         >
           <TabPane tab={t('全部')} itemKey='all' />
           <TabPane
@@ -500,9 +501,9 @@ const Monitor = () => {
           <TabPane tab={t('错误')} itemKey='error' />
         </Tabs>
 
-        <div style={{ display: 'flex', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 0 }}>
           {/* Request List */}
-          <div style={{ flex: '0 0 50%', maxWidth: '50%' }}>
+          <div style={{ flex: '0 0 50%', maxWidth: '50%', display: 'flex', flexDirection: 'column' }}>
             <Table
               ref={tableRef}
               columns={columns}
@@ -510,7 +511,7 @@ const Monitor = () => {
               rowKey='id'
               pagination={false}
               size='small'
-              scroll={{ y: 500 }}
+              scroll={{ y: 'calc(100vh - 284px)' }}
               onRow={(record) => ({
                 onClick: () => handleRowClick(record),
                 style: {
@@ -539,7 +540,7 @@ const Monitor = () => {
               flex: '1',
               borderLeft: '1px solid var(--semi-color-border)',
               overflow: 'auto',
-              maxHeight: '600px',
+              height: 'calc(100vh - 284px)',
             }}
           >
             <RequestDetail
