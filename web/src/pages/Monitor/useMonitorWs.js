@@ -22,6 +22,24 @@ const useMonitorWs = () => {
     return { total: reqs.length, active };
   }, []);
 
+  const buildWsUrl = useCallback(() => {
+    const envBase = import.meta.env.VITE_REACT_APP_SERVER_URL;
+
+    if (envBase) {
+      try {
+        const parsed = new URL(envBase);
+        const protocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+        const basePath = parsed.pathname.replace(/\/$/, '');
+        return `${protocol}//${parsed.host}${basePath}/api/monitor/ws`;
+      } catch (error) {
+        console.warn('Invalid VITE_REACT_APP_SERVER_URL for monitor websocket:', error);
+      }
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/api/monitor/ws`;
+  }, []);
+
   const handleMessage = useCallback((event) => {
     try {
       // Handle multiple messages separated by newlines
@@ -95,8 +113,7 @@ const useMonitorWs = () => {
     }
 
     // Determine WebSocket URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/monitor/ws`;
+    const wsUrl = buildWsUrl();
 
     try {
       const ws = new WebSocket(wsUrl);

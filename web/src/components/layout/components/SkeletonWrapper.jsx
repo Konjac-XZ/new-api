@@ -51,10 +51,7 @@ const SkeletonWrapper = ({
             loading={true}
             active
             placeholder={
-              <Skeleton.Title
-                active
-                style={{ width: isMobile ? 40 : width, height }}
-              />
+              <Skeleton.Title style={{ width: isMobile ? 40 : width, height }} />
             }
           />
         </div>
@@ -71,7 +68,7 @@ const SkeletonWrapper = ({
           loading={true}
           active
           placeholder={
-            <Skeleton.Avatar active size='extra-small' className='shadow-sm' />
+            <Skeleton.Avatar size='extra-small' className='shadow-sm' />
           }
         />
         <div className='ml-1.5 mr-1'>
@@ -79,10 +76,7 @@ const SkeletonWrapper = ({
             loading={true}
             active
             placeholder={
-              <Skeleton.Title
-                active
-                style={{ width: isMobile ? 15 : width, height: 12 }}
-              />
+              <Skeleton.Title style={{ width: isMobile ? 15 : width, height: 12 }} />
             }
           />
         </div>
@@ -94,16 +88,15 @@ const SkeletonWrapper = ({
   const renderImageSkeleton = () => {
     return (
       <Skeleton
-        loading={true}
-        active
-        placeholder={
-          <Skeleton.Image
-            active
-            className={`absolute inset-0 !rounded-full ${className}`}
-            style={{ width: '100%', height: '100%' }}
-          />
-        }
-      />
+          loading={true}
+          active
+          placeholder={
+            <Skeleton.Image
+              className={`absolute inset-0 !rounded-full ${className}`}
+              style={{ width: '100%', height: '100%' }}
+            />
+          }
+        />
     );
   };
 
@@ -113,7 +106,7 @@ const SkeletonWrapper = ({
       <Skeleton
         loading={true}
         active
-        placeholder={<Skeleton.Title active style={{ width, height: 24 }} />}
+        placeholder={<Skeleton.Title style={{ width, height: 24 }} />}
       />
     );
   };
@@ -125,7 +118,7 @@ const SkeletonWrapper = ({
         <Skeleton
           loading={true}
           active
-          placeholder={<Skeleton.Title active style={{ width, height }} />}
+          placeholder={<Skeleton.Title style={{ width, height }} />}
         />
       </div>
     );
@@ -140,7 +133,6 @@ const SkeletonWrapper = ({
           active
           placeholder={
             <Skeleton.Title
-              active
               style={{ width, height, borderRadius: 9999 }}
             />
           }
@@ -164,7 +156,7 @@ const SkeletonWrapper = ({
               loading={true}
               active
               placeholder={
-                <Skeleton.Avatar active size='extra-small' shape='square' />
+                <Skeleton.Avatar size='extra-small' shape='square' />
               }
             />
           </div>
@@ -174,7 +166,6 @@ const SkeletonWrapper = ({
             active
             placeholder={
               <Skeleton.Title
-                active
                 style={{ width: width || 80, height: height || 14 }}
               />
             }
@@ -192,7 +183,6 @@ const SkeletonWrapper = ({
           active
           placeholder={
             <Skeleton.Title
-              active
               style={{ width: width || 60, height: height || 12 }}
             />
           }
@@ -212,31 +202,29 @@ const SkeletonWrapper = ({
     const TEXT_HEIGHT = 16;
 
     const renderIcon = () => (
-      <Skeleton
-        loading={true}
-        active
-        placeholder={
-          <Skeleton.Avatar
-            active
-            shape='square'
-            style={{ width: ICON_SIZE, height: ICON_SIZE }}
-          />
-        }
-      />
+            <Skeleton
+              loading={true}
+              active
+              placeholder={
+                <Skeleton.Avatar
+                  shape='square'
+                  style={{ width: ICON_SIZE, height: ICON_SIZE }}
+                />
+              }
+            />
     );
 
     const renderLabel = (labelWidth) => (
-      <Skeleton
-        loading={true}
-        active
-        placeholder={
-          <Skeleton.Title
-            active
-            style={{ width: labelWidth, height: TEXT_HEIGHT }}
-          />
-        }
-      />
-    );
+        <Skeleton
+          loading={true}
+          active
+          placeholder={
+            <Skeleton.Title
+              style={{ width: labelWidth, height: TEXT_HEIGHT }}
+            />
+          }
+        />
+      );
 
     const NavRow = ({ labelWidth }) => (
       <div
@@ -254,9 +242,8 @@ const SkeletonWrapper = ({
       </div>
     );
 
-    const CollapsedRow = ({ keyPrefix, index }) => (
+    const CollapsedRow = () => (
       <div
-        key={`${keyPrefix}-${index}`}
         className='flex items-center justify-center'
         style={{
           width: `${COLLAPSED_WIDTH}px`,
@@ -269,7 +256,6 @@ const SkeletonWrapper = ({
           active
           placeholder={
             <Skeleton.Avatar
-              active
               shape='square'
               style={{ width: ICON_SIZE, height: ICON_SIZE }}
             />
@@ -284,22 +270,22 @@ const SkeletonWrapper = ({
           {Array(2)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-chat' index={i} />
+              <CollapsedRow key={`c-chat-${i}`} />
             ))}
           {Array(5)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-console' index={i} />
+              <CollapsedRow key={`c-console-${i}`} />
             ))}
           {Array(2)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-personal' index={i} />
+              <CollapsedRow key={`c-personal-${i}`} />
             ))}
           {Array(5)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-admin' index={i} />
+              <CollapsedRow key={`c-admin-${i}`} />
             ))}
         </div>
       );

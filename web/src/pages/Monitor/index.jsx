@@ -196,7 +196,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
 
   return (
     <div style={{ padding: '8px 12px' }}>
-      <Space vertical align='start' style={{ width: '100%' }} spacing='small'>
+      <Space vertical align='start' style={{ width: '100%' }} spacing='medium'>
         {/* Basic Info */}
         <Card title={t('请求信息')} style={{ width: '100%' }}>
           <Descriptions
