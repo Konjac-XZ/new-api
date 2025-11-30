@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/monitor"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
@@ -149,6 +150,20 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+
+	// Record final streaming response for monitoring
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		body := []byte(responseTextBuilder.String())
+		status := 0
+		var headers http.Header
+		if resp != nil {
+			status = resp.StatusCode
+			headers = resp.Header
+		}
+		monitor.RecordResponse(monitorID, status, headers, body, usage.PromptTokens, usage.CompletionTokens, nil)
+		c.Set("monitor_response_recorded", true)
+		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded OpenAI responses streaming final response: id=%s, status=%d, bytes=%d", monitorID, status, len(body)))
+	}
 
 	return usage, nil
 }
