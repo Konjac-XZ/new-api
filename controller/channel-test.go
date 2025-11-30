@@ -601,8 +601,8 @@ func isWithinTestTime() bool {
 		return true
 	}
 
-	// 14:00 - 21:00
-	if hour >= 14 && hour <= 21 {
+	// 14:00 - 22:00
+	if hour >= 14 && hour <= 22 {
 		return true
 	}
 
@@ -654,6 +654,11 @@ func ScheduledTestChannels() {
 			time.Sleep(1 * time.Minute)
 
 			if !common.AutomaticDisableChannelEnabled {
+				continue
+			}
+
+			// Check if current time is within allowed testing hours
+			if !isWithinTestTime() {
 				continue
 			}
 

@@ -286,7 +286,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		}
 	case <-stopChan:
 		// 正常结束
-		logger.LogInfo(c, "streaming finished")
+		// logger.LogInfo(c, "streaming finished")
 		if watchdog != nil {
 			watchdog.Stop("streaming finished")
 		}
