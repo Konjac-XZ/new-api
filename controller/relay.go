@@ -177,6 +177,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				if monitorID == "" {
 					return
 				}
+				if c.GetBool("monitor_response_recorded") {
+					log.Printf("[Monitor] Response already recorded upstream, skipping controller recorder: id=%s", monitorID)
+					return
+				}
 				// Avoid token lookups that could nil-deref; record zeros instead.
 				if info == nil {
 					log.Printf("[Monitor] relayInfo missing when recording response: id=%s", monitorID)

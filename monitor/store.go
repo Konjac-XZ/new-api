@@ -71,11 +71,13 @@ func (s *Store) Update(id string, updater func(*RequestRecord)) {
 
 	pos, exists := s.index[id]
 	if !exists {
+		log.Printf("[Monitor Store] Update skipped: id=%s not found", id)
 		return
 	}
 
 	record := s.records[pos]
 	if record == nil {
+		log.Printf("[Monitor Store] Update skipped: record nil for id=%s", id)
 		return
 	}
 
@@ -203,6 +205,7 @@ func (s *Store) GetStats() MonitorStats {
 
 // MarkComplete marks a record as completed with response info
 func (s *Store) MarkComplete(id string, response *ResponseInfo) {
+	log.Printf("[Monitor Store] MarkComplete: id=%s, hasResponse=%t", id, response != nil)
 	s.Update(id, func(r *RequestRecord) {
 		now := time.Now()
 		r.EndTime = &now

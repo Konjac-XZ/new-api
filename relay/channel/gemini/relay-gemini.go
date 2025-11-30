@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/monitor"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -1037,6 +1038,22 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		} else {
 			usage = &dto.Usage{}
 		}
+	}
+
+	// Record final response content for monitoring (streaming)
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		body := []byte(responseText.String())
+		status := 0
+		var headers http.Header
+		if resp != nil {
+			status = resp.StatusCode
+			headers = resp.Header
+		}
+		promptTokens := usage.PromptTokens
+		completionTokens := usage.CompletionTokens
+		monitor.RecordResponse(monitorID, status, headers, body, promptTokens, completionTokens, nil)
+		c.Set("monitor_response_recorded", true)
+		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded streaming final response: id=%s, status=%d, bytes=%d", monitorID, status, len(body)))
 	}
 
 	return usage, nil

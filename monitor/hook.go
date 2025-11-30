@@ -46,10 +46,10 @@ func GetHub() *Hub {
 
 // sensitiveHeaders are headers that should be masked
 var sensitiveHeaders = map[string]bool{
-	"authorization":   true,
-	"x-api-key":       true,
-	"api-key":         true,
-	"x-goog-api-key":  true,
+	"authorization":       true,
+	"x-api-key":           true,
+	"api-key":             true,
+	"x-goog-api-key":      true,
 	"proxy-authorization": true,
 }
 
@@ -130,9 +130,11 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 // RecordUpstream records the upstream request details
 func RecordUpstream(recordID string, url string, method string, headers http.Header, body []byte) {
 	if !enabled || globalStore == nil || recordID == "" {
+		log.Printf("[Monitor] RecordUpstream skipped: enabled=%t, store=%p, recordID=%q", enabled, globalStore, recordID)
 		return
 	}
 
+	log.Printf("[Monitor] RecordUpstream: id=%s, method=%s, url=%s, bodyBytes=%d", recordID, method, url, len(body))
 	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
 			URL:      url,
@@ -153,9 +155,11 @@ func RecordUpstreamWithContext(c *gin.Context, url string, method string, header
 // RecordResponse records the response details
 func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
 	if !enabled || globalStore == nil || recordID == "" {
+		log.Printf("[Monitor] RecordResponse skipped: enabled=%t, store=%p, recordID=%q", enabled, globalStore, recordID)
 		return
 	}
 
+	log.Printf("[Monitor] RecordResponse: id=%s, status=%d, prompt=%d, completion=%d, err=%v, bodyBytes=%d", recordID, statusCode, promptTokens, completionTokens, err != nil, len(body))
 	response := &ResponseInfo{
 		StatusCode:       statusCode,
 		Headers:          headersToMap(headers),

@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/monitor"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -724,6 +725,21 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	}
 
 	HandleStreamFinalResponse(c, info, claudeInfo, requestMode)
+
+	// Record final streaming response for monitoring
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		body := []byte(claudeInfo.ResponseText.String())
+		status := 0
+		var headers http.Header
+		if resp != nil {
+			status = resp.StatusCode
+			headers = resp.Header
+		}
+		monitor.RecordResponse(monitorID, status, headers, body, claudeInfo.Usage.PromptTokens, claudeInfo.Usage.CompletionTokens, nil)
+		c.Set("monitor_response_recorded", true)
+		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded Claude streaming final response: id=%s, status=%d, bytes=%d", monitorID, status, len(body)))
+	}
+
 	return claudeInfo.Usage, nil
 }
 
