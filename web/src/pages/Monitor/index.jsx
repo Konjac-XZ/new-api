@@ -262,34 +262,6 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
           </div>
         </Card>
 
-        {/* Upstream Request */}
-        {record.upstream && (
-          <Card title={t('上游请求（服务商）')} style={{ width: '100%' }}>
-            <Collapse>
-              <Collapse.Panel header={t('请求头')} itemKey='upstream-headers'>
-                <HeadersViewer headers={record.upstream?.headers} t={t} />
-              </Collapse.Panel>
-              <Collapse.Panel header={t('请求体')} itemKey='upstream-body'>
-                <JsonViewer data={record.upstream?.body} t={t} />
-                {record.upstream?.body_size > 0 && (
-                  <Text
-                    type='tertiary'
-                    size='small'
-                    style={{ marginTop: '8px', display: 'block' }}
-                  >
-                    {t('大小: {{size}} 字节', { size: record.upstream.body_size })}
-                  </Text>
-                )}
-              </Collapse.Panel>
-            </Collapse>
-            <div style={{ marginTop: '12px' }}>
-              <Text type='tertiary'>
-                {record.upstream?.method} {record.upstream?.url}
-              </Text>
-            </div>
-          </Card>
-        )}
-
         {/* Response */}
         {record.response && (
           <Card title={t('响应')} style={{ width: '100%' }}>

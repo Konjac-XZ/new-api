@@ -153,12 +153,6 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 		logger.LogDebug(c, fmt.Sprintf("text request body: %s", string(jsonData)))
 
-		// Record upstream request for monitoring
-		if monitorID := c.GetString("monitor_id"); monitorID != "" {
-			fullURL := info.ChannelMeta.ChannelBaseUrl + info.RequestURLPath
-			monitor.RecordUpstream(monitorID, fullURL, "POST", nil, jsonData)
-		}
-
 		requestBody = bytes.NewBuffer(jsonData)
 	}
 
