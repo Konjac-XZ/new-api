@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/monitor"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
@@ -152,6 +153,12 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 		logger.LogDebug(c, fmt.Sprintf("text request body: %s", string(jsonData)))
 
+		// Record upstream request for monitoring
+		if monitorID := c.GetString("monitor_id"); monitorID != "" {
+			fullURL := info.ChannelMeta.ChannelBaseUrl + info.RequestURLPath
+			monitor.RecordUpstream(monitorID, fullURL, "POST", nil, jsonData)
+		}
+
 		requestBody = bytes.NewBuffer(jsonData)
 	}
 
@@ -179,6 +186,18 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
 		return newApiErr
+	}
+
+	// Record response for monitoring
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		usageData := usage.(*dto.Usage)
+		var statusCode int
+		var respHeaders http.Header
+		if httpResp != nil {
+			statusCode = httpResp.StatusCode
+			respHeaders = httpResp.Header
+		}
+		monitor.RecordResponse(monitorID, statusCode, respHeaders, nil, usageData.PromptTokens, usageData.CompletionTokens, nil)
 	}
 
 	if strings.HasPrefix(info.OriginModelName, "gpt-4o-audio") {

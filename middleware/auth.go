@@ -172,6 +172,55 @@ func RootAuth() func(c *gin.Context) {
 	}
 }
 
+// AdminAuthForWebSocket is a simplified auth middleware for WebSocket connections
+// It only checks session cookies without requiring the New-Api-User header
+// since WebSocket connections cannot set custom headers from browser
+func AdminAuthForWebSocket() func(c *gin.Context) {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		username := session.Get("username")
+		role := session.Get("role")
+		id := session.Get("id")
+		status := session.Get("status")
+
+		// Debug logging
+		common.SysLog(fmt.Sprintf("WebSocket auth: username=%v, role=%v, id=%v, cookies=%v",
+			username, role, id, c.Request.Header.Get("Cookie")))
+
+		if username == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"message": "未登录，无法访问监控页面",
+			})
+			c.Abort()
+			return
+		}
+
+		if status != nil && status.(int) == common.UserStatusDisabled {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": "用户已被封禁",
+			})
+			c.Abort()
+			return
+		}
+
+		if role == nil || role.(int) < common.RoleAdminUser {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"message": "无权访问，需要管理员权限",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Set("username", username)
+		c.Set("role", role)
+		c.Set("id", id)
+		c.Next()
+	}
+}
+
 func WssAuth(c *gin.Context) {
 
 }

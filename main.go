@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/monitor"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -153,6 +154,9 @@ func main() {
 
 	InjectUmamiAnalytics()
 	InjectGoogleAnalytics()
+
+	// Initialize request monitor
+	monitor.Init()
 
 	// 设置路由
 	router.SetRouter(server, buildFS, indexPage)
