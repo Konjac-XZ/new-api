@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { deriveDisplayStatus, isActiveStatus } from './statusUtils';
 
 const WS_MESSAGE_TYPES = {
   NEW: 'new',
@@ -22,7 +23,7 @@ const useMonitorWs = () => {
   const baseReconnectDelay = 1000;
 
   const calculateStats = useCallback((reqs) => {
-    const active = reqs.filter((r) => r.status === 'processing').length;
+    const active = reqs.filter((r) => isActiveStatus(deriveDisplayStatus(r))).length;
     return { total: reqs.length, active };
   }, []);
 

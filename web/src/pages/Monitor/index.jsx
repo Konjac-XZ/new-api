@@ -14,18 +14,23 @@ import {
   TabPane,
   Collapse,
   Tooltip,
+  Modal,
 } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
 import { WrapText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import useMonitorWs from './useMonitorWs';
 import useRequestDetail from './useRequestDetail';
+import { deriveDisplayStatus, isActiveStatus, isTerminalStatus } from './statusUtils';
+import { renderModelTag, stringToColor } from '../../helpers';
 
 const { Title, Text } = Typography;
 
 const statusColors = {
   pending: 'grey',
   processing: 'blue',
+  waiting_upstream: 'blue',
+  streaming: 'green',
   completed: 'green',
   error: 'red',
 };
@@ -45,9 +50,28 @@ const attemptStatusColors = {
   succeeded: 'green',
 };
 
+const renderDurationTag = (durationMs, t) => {
+  if (!durationMs) return <Text type='tertiary'>-</Text>;
+  const seconds = Number(durationMs / 1000).toFixed(1);
+  const value = parseFloat(seconds);
+  let color = 'green';
+  if (value >= 10) {
+    color = 'red';
+  } else if (value >= 3) {
+    color = 'orange';
+  }
+  return (
+    <Tag color={color} shape='circle'>
+      {seconds}s
+    </Tag>
+  );
+};
+
 const getStatusLabels = (t) => ({
   pending: t('等待中'),
   processing: t('处理中'),
+  waiting_upstream: t('等待上游响应'),
+  streaming: t('流式请求进行中'),
   completed: t('已完成'),
   error: t('错误'),
 });
@@ -175,6 +199,7 @@ const HeadersViewer = ({ headers, t }) => {
 const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
   const phaseLabels = useMemo(() => getPhaseLabels(t), [t]);
   const attemptLabels = useMemo(() => getAttemptStatusLabels(t), [t]);
+  const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
 
   // Loading state
   if (loading) {
@@ -299,12 +324,19 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
               {
                 key: t('状态'),
                 value: (
-                  <Tag color={statusColors[record.status]}>
-                    {statusLabels[record.status]}
+                  <Tag color={statusColors[displayStatus] || statusColors[record.status] || 'grey'}>
+                    {statusLabels[displayStatus] || statusLabels[record.status] || displayStatus || record.status || t('未知状态')}
                   </Tag>
                 ),
               },
-              { key: t('模型'), value: record.model || '-' },
+              {
+                key: t('模型'),
+                value: record.model ? (
+                  renderModelTag(record.model, { shape: 'circle', size: 'small' })
+                ) : (
+                  <Text type='tertiary'>-</Text>
+                ),
+              },
               {
                 key: t('是否流式'),
                 value: record.is_stream ? (
@@ -319,11 +351,24 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
               },
               {
                 key: t('耗时'),
-                value: record.duration_ms ? `${(record.duration_ms / 1000).toFixed(2)}s` : '-',
+                value: renderDurationTag(record.duration_ms, t),
               },
               { key: t('用户ID'), value: record.user_id || '-' },
               { key: t('令牌'), value: record.token_name || '-' },
-              { key: t('渠道'), value: record.channel_name || '-' },
+              {
+                key: t('渠道'),
+                value: record.channel_name ? (
+                  <Tag
+                    color={stringToColor(record.channel_name || String(record.channel_id || ''))}
+                    shape='circle'
+                    size='small'
+                  >
+                    {record.channel_name}
+                  </Tag>
+                ) : (
+                  <Text type='tertiary'>-</Text>
+                ),
+              },
             ]}
           />
         </Card>
@@ -425,6 +470,7 @@ const Monitor = () => {
     applyLiveUpdate,
   } = useRequestDetail();
   const [selectedId, setSelectedId] = useState(null);
+  const [detailVisible, setDetailVisible] = useState(false);
   const [filter, setFilter] = useState('all');
   const tableRef = useRef(null);
   // Track previous status to detect status changes
@@ -450,8 +496,11 @@ const Monitor = () => {
   // This ensures we fetch fresh data with response details
   useEffect(() => {
     summaries.forEach((summary) => {
+      const displayStatus = deriveDisplayStatus(summary);
       const prevStatus = prevStatusRef.current.get(summary.id);
-      if (prevStatus && prevStatus !== summary.status) {
+      const statusChanged = prevStatus && prevStatus !== displayStatus;
+
+      if (statusChanged && isTerminalStatus(displayStatus)) {
         // Status changed, invalidate cache to get fresh data
         invalidateCache(summary.id);
 
@@ -460,7 +509,7 @@ const Monitor = () => {
           fetchDetail(summary.id);
         }
       }
-      prevStatusRef.current.set(summary.id, summary.status);
+      prevStatusRef.current.set(summary.id, displayStatus);
     });
   }, [summaries, selectedId, invalidateCache, fetchDetail]);
 
@@ -481,11 +530,14 @@ const Monitor = () => {
 
   const handleRowClick = useCallback((record) => {
     setSelectedId(record.id);
+    setDetailVisible(true);
   }, []);
 
   const filteredSummaries = summaries.filter((r) => {
+    const displayStatus = deriveDisplayStatus(r);
     if (filter === 'all') return true;
-    return r.status === filter;
+    if (filter === 'processing') return isActiveStatus(displayStatus);
+    return displayStatus === filter;
   });
 
   // Sort by start_time descending (newest first)
@@ -504,27 +556,44 @@ const Monitor = () => {
       title: t('状态'),
       dataIndex: 'status',
       width: 100,
-      render: (status) => (
-        <Tag color={statusColors[status]}>{statusLabels[status]}</Tag>
-      ),
+      render: (_, record) => {
+        const displayStatus = deriveDisplayStatus(record);
+        return (
+          <Tag color={statusColors[displayStatus] || statusColors[record.status] || 'grey'}>
+            {statusLabels[displayStatus] || statusLabels[record.status] || displayStatus || record.status}
+          </Tag>
+        );
+      },
     },
     {
       title: t('模型'),
       dataIndex: 'model',
       width: 200,
       ellipsis: true,
+      render: (_, record) =>
+        renderModelTag(record.model || t('未知模型'), {
+          shape: 'circle',
+        }),
     },
     {
       title: t('渠道'),
       dataIndex: 'channel_name',
       width: 180,
       ellipsis: true,
+      render: (_, record) => (
+        <Tag
+          color={stringToColor(record.channel_name || String(record.channel_id || ''))}
+          shape='circle'
+        >
+          {record.channel_name || t('未知渠道')}
+        </Tag>
+      ),
     },
     {
       title: t('耗时'),
       dataIndex: 'duration_ms',
       width: 100,
-      render: (duration) => (duration ? `${(duration / 1000).toFixed(2)}s` : '-'),
+      render: (duration) => renderDurationTag(duration, t),
     },
   ];
 
@@ -582,58 +651,57 @@ const Monitor = () => {
           <TabPane tab={t('错误')} itemKey='error' />
         </Tabs>
 
-        <div style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 0 }}>
-          {/* Request List */}
-          <div style={{ flex: '0 0 50%', maxWidth: '50%', display: 'flex', flexDirection: 'column' }}>
-            <Table
-              ref={tableRef}
-              columns={columns}
-              dataSource={sortedSummaries}
-              rowKey='id'
-              pagination={false}
-              size='small'
-              scroll={{ y: 'calc(100vh - 284px)' }}
-              onRow={(record) => ({
-                onClick: () => handleRowClick(record),
-                style: {
-                  cursor: 'pointer',
-                  background:
-                    selectedId === record.id
-                      ? 'var(--semi-color-primary-light-default)'
-                      : undefined,
-                },
-              })}
-              empty={
-                <Empty
-                  description={
-                    connected
-                      ? t('暂无请求')
-                      : t('正在连接服务器...')
-                  }
-                />
-              }
-            />
-          </div>
-
-          {/* Request Detail */}
-          <div
-            style={{
-              flex: '1',
-              borderLeft: '1px solid var(--semi-color-border)',
-              overflow: 'auto',
-              height: 'calc(100vh - 284px)',
-            }}
-          >
-            <RequestDetail
-              record={selectedDetail}
-              loading={detailLoading}
-              error={detailError}
-              t={t}
-              statusLabels={statusLabels}
-            />
-          </div>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <Table
+            ref={tableRef}
+            columns={columns}
+            dataSource={sortedSummaries}
+            rowKey='id'
+            pagination={false}
+            size='small'
+            scroll={{ y: 'calc(100vh - 232px)' }}
+            onRow={(record) => ({
+              onClick: () => handleRowClick(record),
+              style: {
+                cursor: 'pointer',
+                background:
+                  selectedId === record.id
+                    ? 'var(--semi-color-primary-light-default)'
+                    : undefined,
+              },
+            })}
+            empty={
+              <Empty
+                description={
+                  connected
+                    ? t('暂无请求')
+                    : t('正在连接服务器...')
+                }
+              />
+            }
+          />
         </div>
       </Card>
+
+      <Modal
+        title={t('请求详情')}
+        visible={detailVisible}
+        onCancel={() => setDetailVisible(false)}
+        footer={null}
+        width={1000}
+        bodyStyle={{ padding: 0 }}
+        style={{ top: 36 }}
+      >
+        <div style={{ maxHeight: '70vh', overflow: 'auto', padding: '12px' }}>
+          <RequestDetail
+            record={selectedDetail}
+            loading={detailLoading}
+            error={detailError}
+            t={t}
+            statusLabels={statusLabels}
+          />
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -241,6 +241,7 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 		r.ChannelName = channelName
 		r.CurrentChannel = &CurrentChannel{ID: channelId, Name: channelName, Attempt: attemptNo}
 		r.CurrentPhase = PhaseWaitingUpstream
+		r.Status = StatusWaitingUpstream
 	})
 
 	globalStore.BroadcastChannelUpdate(recordID)
@@ -260,6 +261,12 @@ func MarkChannelPhase(recordID string, phase string) {
 
 	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.CurrentPhase = phase
+		switch phase {
+		case PhaseWaitingUpstream:
+			r.Status = StatusWaitingUpstream
+		case PhaseStreaming:
+			r.Status = StatusStreaming
+		}
 		if len(r.ChannelAttempts) == 0 {
 			return
 		}

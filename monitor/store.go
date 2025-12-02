@@ -21,6 +21,16 @@ type Store struct {
 	hub     *Hub
 }
 
+// isActiveStatus reports whether a request status should be treated as active/processing
+func isActiveStatus(status string) bool {
+	switch status {
+	case StatusProcessing, StatusWaitingUpstream, StatusStreaming:
+		return true
+	default:
+		return false
+	}
+}
+
 // NewStore creates a new Store instance
 func NewStore(hub *Hub) *Store {
 	return &Store{
@@ -192,7 +202,7 @@ func (s *Store) GetActive() []*RequestRecord {
 	result := make([]*RequestRecord, 0)
 
 	for _, record := range s.records {
-		if record != nil && record.Status == StatusProcessing {
+		if record != nil && isActiveStatus(record.Status) {
 			result = append(result, record)
 		}
 	}
@@ -213,7 +223,7 @@ func (s *Store) GetStats() MonitorStats {
 		}
 		stats.TotalRequests++
 		switch record.Status {
-		case StatusProcessing:
+		case StatusProcessing, StatusWaitingUpstream, StatusStreaming:
 			stats.ActiveRequests++
 		case StatusCompleted:
 			stats.Completed++

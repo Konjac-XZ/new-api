@@ -6,10 +6,12 @@ import (
 
 // Status constants for request records
 const (
-	StatusPending    = "pending"
-	StatusProcessing = "processing"
-	StatusCompleted  = "completed"
-	StatusError      = "error"
+	StatusPending         = "pending"
+	StatusProcessing      = "processing"
+	StatusWaitingUpstream = "waiting_upstream"
+	StatusStreaming       = "streaming"
+	StatusCompleted       = "completed"
+	StatusError           = "error"
 )
 
 // Channel phases (real-time state of upstream interaction)
