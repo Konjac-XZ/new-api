@@ -142,25 +142,17 @@ func (h *Hub) ServeWs(c *gin.Context, store *Store) {
 	// Send initial snapshot of all record summaries
 	if store != nil {
 		summaries := store.GetAllSummaries()
-		log.Printf("[Monitor Hub] Sending snapshot to new client: %d summaries", len(summaries))
 		snapshot := &WSMessage{
 			Type:    WSMessageTypeSnapshot,
 			Payload: summaries,
 		}
 		data, err := json.Marshal(snapshot)
 		if err == nil {
-			log.Printf("[Monitor Hub] Snapshot JSON size: %d bytes", len(data))
 			select {
 			case client.send <- data:
-				log.Printf("[Monitor Hub] Snapshot sent to client send channel")
 			default:
-				log.Printf("[Monitor Hub] Failed to send snapshot - client send channel full")
 			}
-		} else {
-			log.Printf("[Monitor Hub] Failed to marshal snapshot: %v", err)
 		}
-	} else {
-		log.Printf("[Monitor Hub] Store is nil, cannot send snapshot")
 	}
 
 	// Start goroutines for reading and writing
@@ -185,11 +177,6 @@ func (c *Client) readPump() {
 	for {
 		_, _, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("[Monitor WS] unexpected close from %s: %v", c.conn.RemoteAddr(), err)
-			} else {
-				log.Printf("[Monitor WS] read closed from %s: %v", c.conn.RemoteAddr(), err)
-			}
 			break
 		}
 		// We don't expect any messages from clients, just keep connection alive
@@ -216,7 +203,6 @@ func (c *Client) writePump() {
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
-				log.Printf("[Monitor WS] nextWriter failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
 			w.Write(message)
@@ -229,14 +215,12 @@ func (c *Client) writePump() {
 			}
 
 			if err := w.Close(); err != nil {
-				log.Printf("[Monitor WS] writer close failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
 
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Printf("[Monitor WS] ping failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
 		}

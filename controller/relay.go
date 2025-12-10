@@ -177,10 +177,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// Record request start for monitoring
 	requestBody, _ := common.GetRequestBody(c)
 	if monitor.IsEnabled() && shouldMonitorRequest(relayInfo, relayFormat) {
-		log.Printf("[Monitor] Enter monitor block: requestId=%s, relayMode=%d, relayInfo=%p", requestId, relayInfo.RelayMode, relayInfo)
 		monitorID := monitor.RecordStart(c, requestBody)
 		c.Set("monitor_id", monitorID)
-		log.Printf("[Monitor] Started monitoring for request: mode=%d, id=%s", relayInfo.RelayMode, monitorID)
 		relayInfoForMonitor := relayInfo
 		// Mark monitor record complete when function exits
 		defer func(monitorID string, info *relaycommon.RelayInfo) {
@@ -188,21 +186,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				return
 			}
 			if c.GetBool("monitor_response_recorded") {
-				log.Printf("[Monitor] Response already recorded upstream, skipping controller recorder: id=%s", monitorID)
 				return
 			}
 			// Avoid token lookups that could nil-deref; record zeros instead.
-			if info == nil {
-				log.Printf("[Monitor] relayInfo missing when recording response: id=%s", monitorID)
-			}
 			promptTokens, completionTokens := 0, 0
-			log.Printf("[Monitor] Preparing response record: id=%s, info=%p, status=%d", monitorID, info, c.Writer.Status())
 			var errForMonitor error
 			if newAPIError != nil {
 				errForMonitor = newAPIError.Err
 			}
 			monitor.RecordResponse(monitorID, c.Writer.Status(), nil, nil, promptTokens, completionTokens, errForMonitor)
-			log.Printf("[Monitor] Completed monitoring for request: id=%s, status=%d, prompt=%d, completion=%d", monitorID, c.Writer.Status(), promptTokens, completionTokens)
 		}(monitorID, relayInfoForMonitor)
 	}
 

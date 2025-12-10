@@ -130,11 +130,9 @@ const useMonitorWs = () => {
     const wsUrl = buildWsUrl();
 
     try {
-      console.log('Connecting to monitor WebSocket:', wsUrl);
       const ws = new WebSocket(wsUrl);
 
       ws.onopen = () => {
-        console.log('Monitor WebSocket connected');
         if (disconnectTimerRef.current) {
           clearTimeout(disconnectTimerRef.current);
           disconnectTimerRef.current = null;
@@ -153,7 +151,6 @@ const useMonitorWs = () => {
       ws.onmessage = handleMessage;
 
       ws.onclose = (event) => {
-        console.log('Monitor WebSocket closed:', event.code, event.reason);
         if (stableOpenTimerRef.current) {
           clearTimeout(stableOpenTimerRef.current);
           stableOpenTimerRef.current = null;
@@ -170,7 +167,6 @@ const useMonitorWs = () => {
             baseReconnectDelay * Math.pow(2, reconnectAttempts.current),
             30000
           );
-          console.log(`Reconnecting in ${delay}ms...`);
           reconnectTimeoutRef.current = setTimeout(() => {
             reconnectAttempts.current++;
             connect();
@@ -179,12 +175,12 @@ const useMonitorWs = () => {
       };
 
       ws.onerror = (error) => {
-        console.error('Monitor WebSocket error:', error);
+        // WebSocket error occurred
       };
 
       wsRef.current = ws;
     } catch (error) {
-      console.error('Failed to create WebSocket:', error);
+      // Failed to create WebSocket
     }
   }, [handleMessage, buildWsUrl]);
 

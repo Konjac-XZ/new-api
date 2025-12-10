@@ -974,9 +974,9 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	}
 
 	if meta := request.GetTokenCountMeta(); meta != nil {
-		tokens, countErr := service.CountRequestToken(c, meta, info)
+		tokens, countErr := service.EstimateRequestToken(c, meta, info)
 		if countErr == nil {
-			info.SetPromptTokens(tokens)
+			info.SetEstimatePromptTokens(tokens)
 			c.Set("scheduled_test_prompt_tokens", tokens)
 		}
 	}
@@ -1060,7 +1060,8 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	// 读取流式响应并测量首Token延迟
 	firstTokenTime := time.Duration(0)
 	scanner := bufio.NewScanner(httpResp.Body)
-	scanner.Buffer(make([]byte, helper.InitialScannerBufferSize), helper.MaxScannerBufferSize)
+	maxBufferSize := 64 << 20 // 64MB default SSE buffer size
+	scanner.Buffer(make([]byte, helper.InitialScannerBufferSize), maxBufferSize)
 	scanner.Split(bufio.ScanLines)
 
 	gotFirstToken := false
@@ -1104,8 +1105,11 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			completionTokens := 1
 			var streamResp dto.ChatCompletionsStreamResponse
 			if err := common.Unmarshal([]byte(normalized), &streamResp); err == nil {
-				if tokens := service.CountTokenStreamChoices(streamResp.Choices, testModel); tokens > 0 {
-					completionTokens = tokens
+				if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.GetContentString() != "" {
+					contentTokens := service.CountTextToken(streamResp.Choices[0].Delta.GetContentString(), testModel)
+					if contentTokens > 0 {
+						completionTokens = contentTokens
+					}
 				}
 			}
 			c.Set("scheduled_test_completion_tokens", completionTokens)

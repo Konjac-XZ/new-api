@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -21,7 +20,6 @@ func Init() {
 	globalHub = NewHub()
 	globalStore = NewStore(globalHub)
 	go globalHub.Run()
-	log.Printf("[Monitor] Initialized: enabled=%v, globalStore=%p, globalHub=%p", enabled, globalStore, globalHub)
 }
 
 // IsEnabled returns whether monitoring is enabled
@@ -89,14 +87,11 @@ func ginHeadersToMap(c *gin.Context) map[string]string {
 // RecordStart records the start of a request
 // Returns the record ID for subsequent updates
 func RecordStart(c *gin.Context, requestBody []byte) string {
-	log.Printf("[Monitor] RecordStart called: enabled=%v, globalStore=%p", enabled, globalStore)
 	if !enabled || globalStore == nil {
-		log.Printf("[Monitor] RecordStart skipped: enabled=%v, globalStore=%p", enabled, globalStore)
 		return ""
 	}
 
 	requestId := c.GetString(common.RequestIdKey)
-	log.Printf("[Monitor] RecordStart: requestId=%s", requestId)
 
 	// Get metadata from context
 	userId := c.GetInt("id")
@@ -123,18 +118,15 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 	}
 
 	globalStore.Add(record)
-	log.Printf("[Monitor] RecordStart: added record id=%s, model=%s, store count=%d", requestId, model, globalStore.count)
 	return requestId
 }
 
 // RecordUpstream records the upstream request details
 func RecordUpstream(recordID string, url string, method string, headers http.Header, body []byte) {
 	if !enabled || globalStore == nil || recordID == "" {
-		log.Printf("[Monitor] RecordUpstream skipped: enabled=%t, store=%p, recordID=%q", enabled, globalStore, recordID)
 		return
 	}
 
-	log.Printf("[Monitor] RecordUpstream: id=%s, method=%s, url=%s, bodyBytes=%d", recordID, method, url, len(body))
 	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
 			URL:      url,
@@ -155,11 +147,9 @@ func RecordUpstreamWithContext(c *gin.Context, url string, method string, header
 // RecordResponse records the response details
 func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
 	if !enabled || globalStore == nil || recordID == "" {
-		log.Printf("[Monitor] RecordResponse skipped: enabled=%t, store=%p, recordID=%q", enabled, globalStore, recordID)
 		return
 	}
 
-	log.Printf("[Monitor] RecordResponse: id=%s, status=%d, prompt=%d, completion=%d, err=%v, bodyBytes=%d", recordID, statusCode, promptTokens, completionTokens, err != nil, len(body))
 	response := &ResponseInfo{
 		StatusCode:       statusCode,
 		Headers:          headersToMap(headers),
@@ -226,7 +216,6 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 		return
 	}
 
-	log.Printf("[Monitor] StartChannelAttempt: id=%s channel=%d (%s) attempt=%d", recordID, channelId, channelName, attemptNo)
 	now := time.Now()
 	globalStore.Update(recordID, func(r *RequestRecord) {
 		attempt := ChannelAttempt{

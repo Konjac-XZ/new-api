@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"log"
 	"sync"
 	"time"
 )
@@ -45,8 +44,6 @@ func (s *Store) Add(record *RequestRecord) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	log.Printf("[Monitor Store] Add: record.ID=%s, head=%d, count=%d", record.ID, s.head, s.count)
-
 	// If we're overwriting an existing record, remove it from the index
 	if s.records[s.head] != nil {
 		delete(s.index, s.records[s.head].ID)
@@ -62,11 +59,8 @@ func (s *Store) Add(record *RequestRecord) {
 		s.count++
 	}
 
-	log.Printf("[Monitor Store] Add complete: new head=%d, new count=%d, hub=%p", s.head, s.count, s.hub)
-
 	// Broadcast new record summary to WebSocket clients
 	if s.hub != nil {
-		log.Printf("[Monitor Store] Broadcasting new record summary to WebSocket clients")
 		s.hub.Broadcast(&WSMessage{
 			Type:    WSMessageTypeNew,
 			Payload: record.ToSummary(),
@@ -81,13 +75,11 @@ func (s *Store) Update(id string, updater func(*RequestRecord)) {
 
 	pos, exists := s.index[id]
 	if !exists {
-		log.Printf("[Monitor Store] Update skipped: id=%s not found", id)
 		return
 	}
 
 	record := s.records[pos]
 	if record == nil {
-		log.Printf("[Monitor Store] Update skipped: record nil for id=%s", id)
 		return
 	}
 
@@ -142,8 +134,6 @@ func (s *Store) GetAll() []*RequestRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	log.Printf("[Monitor Store] GetAll: count=%d, head=%d", s.count, s.head)
-
 	result := make([]*RequestRecord, 0, s.count)
 
 	if s.count < MaxRecords {
@@ -163,7 +153,6 @@ func (s *Store) GetAll() []*RequestRecord {
 		}
 	}
 
-	log.Printf("[Monitor Store] GetAll: returning %d records", len(result))
 	return result
 }
 
@@ -237,7 +226,6 @@ func (s *Store) GetStats() MonitorStats {
 
 // MarkComplete marks a record as completed with response info
 func (s *Store) MarkComplete(id string, response *ResponseInfo) {
-	log.Printf("[Monitor Store] MarkComplete: id=%s, hasResponse=%t", id, response != nil)
 	s.Update(id, func(r *RequestRecord) {
 		now := time.Now()
 		r.EndTime = &now
