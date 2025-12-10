@@ -54,6 +54,57 @@ export default function SettingsSidebarModulesUser() {
   // 使用useSidebar钩子获取刷新方法
   const { refreshUserConfig } = useSidebar();
 
+  const getAdminSidebarDefaults = () => ({
+    chat: {
+      enabled: true,
+      playground: true,
+      chat: true,
+    },
+    console: {
+      enabled: true,
+      detail: true,
+      token: true,
+      log: true,
+      midjourney: true,
+      task: true,
+    },
+    personal: {
+      enabled: true,
+      topup: true,
+      personal: true,
+    },
+    admin: {
+      enabled: true,
+      channel: true,
+      models: true,
+      redemption: true,
+      user: true,
+      monitor: true,
+      setting: true,
+    },
+  });
+
+  const mergeSidebarConfig = (defaults, overrides) => {
+    const result = { ...defaults };
+
+    Object.keys(overrides || {}).forEach((sectionKey) => {
+      const overrideSection = overrides[sectionKey];
+
+      if (
+        overrideSection &&
+        typeof overrideSection === 'object' &&
+        !Array.isArray(overrideSection)
+      ) {
+        const defaultSection = defaults[sectionKey] || {};
+        result[sectionKey] = { ...defaultSection, ...overrideSection };
+      } else {
+        result[sectionKey] = overrideSection;
+      }
+    });
+
+    return result;
+  };
+
   // 如果没有边栏设置权限，不显示此组件
   if (!permissionsLoading && !hasSidebarSettingsPermission()) {
     return null;
@@ -106,6 +157,7 @@ export default function SettingsSidebarModulesUser() {
         models: isSidebarModuleAllowed('admin', 'models'),
         redemption: isSidebarModuleAllowed('admin', 'redemption'),
         user: isSidebarModuleAllowed('admin', 'user'),
+        monitor: isSidebarModuleAllowed('admin', 'monitor'),
         setting: isSidebarModuleAllowed('admin', 'setting'),
       };
     }
@@ -198,8 +250,16 @@ export default function SettingsSidebarModulesUser() {
         // 获取管理员全局配置
         if (statusState?.status?.SidebarModulesAdmin) {
           const adminConf = JSON.parse(statusState.status.SidebarModulesAdmin);
-          setAdminConfig(adminConf);
-          console.log('加载管理员边栏配置:', adminConf);
+          const mergedAdminConf = mergeSidebarConfig(
+            getAdminSidebarDefaults(),
+            adminConf,
+          );
+          setAdminConfig(mergedAdminConf);
+          console.log('加载管理员边栏配置:', mergedAdminConf);
+        } else {
+          const defaultAdmin = getAdminSidebarDefaults();
+          setAdminConfig(defaultAdmin);
+          console.log('管理员边栏配置缺失，使用默认配置');
         }
 
         // 获取用户个人配置
@@ -230,8 +290,12 @@ export default function SettingsSidebarModulesUser() {
               });
             }
           });
-          setSidebarModulesUser(filteredUserConf);
-          console.log('权限过滤后的用户配置:', filteredUserConf);
+          const mergedUserConf = mergeSidebarConfig(
+            generateDefaultConfig(),
+            filteredUserConf,
+          );
+          setSidebarModulesUser(mergedUserConf);
+          console.log('权限过滤后的用户配置:', mergedUserConf);
         } else {
           // 如果用户没有配置，使用权限过滤后的默认配置
           const defaultConfig = generateDefaultConfig();
@@ -328,6 +392,11 @@ export default function SettingsSidebarModulesUser() {
           description: t('兑换码生成管理'),
         },
         { key: 'user', title: t('用户管理'), description: t('用户账户管理') },
+        {
+          key: 'monitor',
+          title: t('请求监控'),
+          description: t('请求监控'),
+        },
         {
           key: 'setting',
           title: t('系统设置'),

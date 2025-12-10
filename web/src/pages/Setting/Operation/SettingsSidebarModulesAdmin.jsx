@@ -38,8 +38,7 @@ export default function SettingsSidebarModulesAdmin(props) {
   const [loading, setLoading] = useState(false);
   const [statusState, statusDispatch] = useContext(StatusContext);
 
-  // 左侧边栏模块管理状态（管理员全局控制）
-  const [sidebarModulesAdmin, setSidebarModulesAdmin] = useState({
+  const getDefaultModules = () => ({
     chat: {
       enabled: true,
       playground: true,
@@ -64,9 +63,32 @@ export default function SettingsSidebarModulesAdmin(props) {
       models: true,
       redemption: true,
       user: true,
+      monitor: true,
       setting: true,
     },
   });
+
+  const mergeWithDefault = (modules) => {
+    const defaults = getDefaultModules();
+    const merged = { ...defaults };
+
+    Object.keys(modules || {}).forEach((sectionKey) => {
+      const section = modules[sectionKey];
+
+      if (section && typeof section === 'object' && !Array.isArray(section)) {
+        merged[sectionKey] = { ...defaults[sectionKey], ...section };
+      } else {
+        merged[sectionKey] = section;
+      }
+    });
+
+    return merged;
+  };
+
+  // 左侧边栏模块管理状态（管理员全局控制）
+  const [sidebarModulesAdmin, setSidebarModulesAdmin] = useState(
+    getDefaultModules(),
+  );
 
   // 处理区域级别开关变更
   function handleSectionChange(sectionKey) {
@@ -98,35 +120,7 @@ export default function SettingsSidebarModulesAdmin(props) {
 
   // 重置为默认配置
   function resetSidebarModules() {
-    const defaultModules = {
-      chat: {
-        enabled: true,
-        playground: true,
-        chat: true,
-      },
-      console: {
-        enabled: true,
-        detail: true,
-        token: true,
-        log: true,
-        midjourney: true,
-        task: true,
-      },
-      personal: {
-        enabled: true,
-        topup: true,
-        personal: true,
-      },
-      admin: {
-        enabled: true,
-        channel: true,
-        models: true,
-        redemption: true,
-        user: true,
-        setting: true,
-      },
-    };
-    setSidebarModulesAdmin(defaultModules);
+    setSidebarModulesAdmin(getDefaultModules());
     showSuccess(t('已重置为默认配置'));
   }
 
@@ -170,31 +164,13 @@ export default function SettingsSidebarModulesAdmin(props) {
     if (props.options && props.options.SidebarModulesAdmin) {
       try {
         const modules = JSON.parse(props.options.SidebarModulesAdmin);
-        setSidebarModulesAdmin(modules);
+        setSidebarModulesAdmin(mergeWithDefault(modules));
       } catch (error) {
         // 使用默认配置
-        const defaultModules = {
-          chat: { enabled: true, playground: true, chat: true },
-          console: {
-            enabled: true,
-            detail: true,
-            token: true,
-            log: true,
-            midjourney: true,
-            task: true,
-          },
-          personal: { enabled: true, topup: true, personal: true },
-          admin: {
-            enabled: true,
-            channel: true,
-            models: true,
-            redemption: true,
-            user: true,
-            setting: true,
-          },
-        };
-        setSidebarModulesAdmin(defaultModules);
+        setSidebarModulesAdmin(getDefaultModules());
       }
+    } else {
+      setSidebarModulesAdmin(getDefaultModules());
     }
   }, [props.options]);
 
@@ -255,6 +231,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           description: t('兑换码生成管理'),
         },
         { key: 'user', title: t('用户管理'), description: t('用户账户管理') },
+        {
+          key: 'monitor',
+          title: t('请求监控'),
+          description: t('请求监控'),
+        },
         {
           key: 'setting',
           title: t('系统设置'),

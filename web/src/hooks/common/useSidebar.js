@@ -63,8 +63,31 @@ export const useSidebar = () => {
       models: true,
       redemption: true,
       user: true,
+      monitor: true,
       setting: true,
     },
+  };
+
+  // 合并管理员配置与默认配置，确保新增模块有默认值
+  const mergeConfigWithDefaults = (defaults, overrides) => {
+    const result = { ...defaults };
+
+    Object.keys(overrides || {}).forEach((sectionKey) => {
+      const overrideSection = overrides[sectionKey];
+
+      if (
+        overrideSection &&
+        typeof overrideSection === 'object' &&
+        !Array.isArray(overrideSection)
+      ) {
+        const defaultSection = defaults[sectionKey] || {};
+        result[sectionKey] = { ...defaultSection, ...overrideSection };
+      } else {
+        result[sectionKey] = overrideSection;
+      }
+    });
+
+    return result;
   };
 
   // 获取管理员配置
@@ -72,7 +95,7 @@ export const useSidebar = () => {
     if (statusState?.status?.SidebarModulesAdmin) {
       try {
         const config = JSON.parse(statusState.status.SidebarModulesAdmin);
-        return config;
+        return mergeConfigWithDefaults(defaultAdminConfig, config);
       } catch (error) {
         return defaultAdminConfig;
       }

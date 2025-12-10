@@ -310,6 +310,19 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
+	// Record final non-streaming response for monitoring
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		status := 0
+		var headers http.Header
+		if resp != nil {
+			status = resp.StatusCode
+			headers = resp.Header
+		}
+		monitor.RecordResponse(monitorID, status, headers, responseBody, simpleResponse.Usage.PromptTokens, simpleResponse.Usage.CompletionTokens, nil)
+		c.Set("monitor_response_recorded", true)
+		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded OpenAI non-stream response: id=%s, status=%d, bytes=%d", monitorID, status, len(responseBody)))
+	}
+
 	return &simpleResponse.Usage, nil
 }
 

@@ -182,8 +182,8 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		return newApiErr
 	}
 
-	// Record response for monitoring
-	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+	// Record response for monitoring when it hasn't been recorded upstream
+	if monitorID := c.GetString("monitor_id"); monitorID != "" && !c.GetBool("monitor_response_recorded") {
 		usageData := usage.(*dto.Usage)
 		var statusCode int
 		var respHeaders http.Header
@@ -192,6 +192,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			respHeaders = httpResp.Header
 		}
 		monitor.RecordResponse(monitorID, statusCode, respHeaders, nil, usageData.PromptTokens, usageData.CompletionTokens, nil)
+		c.Set("monitor_response_recorded", true)
 	}
 
 	if strings.HasPrefix(info.OriginModelName, "gpt-4o-audio") {
