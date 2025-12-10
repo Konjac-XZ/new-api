@@ -326,7 +326,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	if result.Body != nil {
 		_ = result.Body.Close()
 	}
-	info.PromptTokens = usage.PromptTokens
+	info.SetEstimatePromptTokens(usage.PromptTokens)
 
 	quota := 0
 	if !priceData.UsePrice {
