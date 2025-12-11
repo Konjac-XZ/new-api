@@ -244,10 +244,6 @@ func difyStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		}
 		return true
 	})
-
-	if helper.HasFirstTokenTimeout(c) {
-		return nil, helper.FirstTokenLatencyError(info)
-	}
 	helper.Done(c)
 	if usage.TotalTokens == 0 {
 		usage = service.ResponseText2Usage(c, responseText, info.UpstreamModelName, info.GetEstimatePromptTokens())

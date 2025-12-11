@@ -135,9 +135,6 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		return true
 	})
 	service.CloseResponseBodyGracefully(resp)
-	if helper.HasFirstTokenTimeout(c) {
-		return helper.FirstTokenLatencyError(info), nil
-	}
 	return nil, usage
 }
 
