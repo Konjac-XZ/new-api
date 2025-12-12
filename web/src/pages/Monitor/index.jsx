@@ -21,6 +21,7 @@ import { WrapText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import useMonitorWs from './useMonitorWs';
 import useRequestDetail from './useRequestDetail';
+import { useStopwatch } from './useStopwatch';
 import { deriveDisplayStatus, isActiveStatus, isTerminalStatus } from './statusUtils';
 import { renderModelTag, stringToColor } from '../../helpers';
 
@@ -70,22 +71,22 @@ const renderDurationTag = (durationMs, t) => {
 const getStatusLabels = (t) => ({
   pending: t('等待中'),
   processing: t('处理中'),
-  waiting_upstream: t('等待上游响应'),
-  streaming: t('流式请求进行中'),
+  waiting_upstream: t('等待响应'),
+  streaming: t('流式返回中'),
   completed: t('已完成'),
   error: t('错误'),
 });
 
 const getPhaseLabels = (t) => ({
-  waiting_upstream: t('等待上游响应'),
-  streaming: t('流式请求进行中'),
+  waiting_upstream: t('等待响应'),
+  streaming: t('流式返回中'),
   error: t('发生错误'),
   completed: t('已完成'),
 });
 
 const getAttemptStatusLabels = (t) => ({
-  waiting_upstream: t('等待上游响应'),
-  streaming: t('流式进行中'),
+  waiting_upstream: t('等待响应'),
+  streaming: t('流式返回中'),
   failed: t('失败'),
   abandoned: t('已放弃'),
   succeeded: t('成功'),
@@ -201,6 +202,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
   const attemptLabels = useMemo(() => getAttemptStatusLabels(t), [t]);
   const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
   const [interruptError, setInterruptError] = useState(null);
+  const stopwatch = useStopwatch(record);
 
   // Check if request is active (can be interrupted)
   const isActive = useMemo(() => {
@@ -308,6 +310,16 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
               <Tag color={channelPhaseColors[record.current_phase] || 'grey'}>
                 {phaseLabels[record.current_phase] || t('未知状态')}
               </Tag>
+              {stopwatch.isActive && (
+                <Text style={{
+                  marginLeft: 12,
+                  fontFamily: 'monospace',
+                  color: '#666',
+                  fontSize: '13px'
+                }}>
+                  {stopwatch.display}
+                </Text>
+              )}
             </Space>
 
             <div style={{ marginTop: '12px', width: '100%' }}>

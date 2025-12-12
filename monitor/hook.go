@@ -265,6 +265,10 @@ func MarkChannelPhase(recordID string, phase string) {
 			last.Status = AttemptStatusWaiting
 		case PhaseStreaming:
 			last.Status = AttemptStatusStreaming
+			if last.StreamingStartedAt == nil {
+				now := time.Now()
+				last.StreamingStartedAt = &now
+			}
 		case PhaseCompleted:
 			if last.EndedAt == nil {
 				now := time.Now()

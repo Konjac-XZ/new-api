@@ -72,15 +72,16 @@ type CurrentChannel struct {
 
 // ChannelAttempt captures a single try against a specific channel
 type ChannelAttempt struct {
-	Attempt     int        `json:"attempt"`
-	ChannelId   int        `json:"channel_id"`
-	ChannelName string     `json:"channel_name"`
-	StartedAt   time.Time  `json:"started_at"`
-	EndedAt     *time.Time `json:"ended_at,omitempty"`
-	Status      string     `json:"status"` // waiting_upstream | streaming | failed | abandoned | succeeded
-	Reason      string     `json:"reason,omitempty"`
-	ErrorCode   string     `json:"error_code,omitempty"`
-	HTTPStatus  int        `json:"http_status,omitempty"`
+	Attempt            int        `json:"attempt"`
+	ChannelId          int        `json:"channel_id"`
+	ChannelName        string     `json:"channel_name"`
+	StartedAt          time.Time  `json:"started_at"`
+	StreamingStartedAt *time.Time `json:"streaming_started_at,omitempty"`
+	EndedAt            *time.Time `json:"ended_at,omitempty"`
+	Status             string     `json:"status"` // waiting_upstream | streaming | failed | abandoned | succeeded
+	Reason             string     `json:"reason,omitempty"`
+	ErrorCode          string     `json:"error_code,omitempty"`
+	HTTPStatus         int        `json:"http_status,omitempty"`
 }
 
 // DownstreamInfo contains information about the client request
