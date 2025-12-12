@@ -24,6 +24,7 @@ import useRequestDetail from './useRequestDetail';
 import { useStopwatch } from './useStopwatch';
 import { deriveDisplayStatus, isActiveStatus, isTerminalStatus } from './statusUtils';
 import { renderModelTag, stringToColor, timestamp2string } from '../../helpers';
+import { API } from '../../helpers/api';
 
 const { Title, Text } = Typography;
 
@@ -179,19 +180,12 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
 
       // If content is too large and body is not included, fetch it from API
       if (isLengthExceeded && (!data || data === '') && requestId && bodyType) {
-        const response = await fetch(`/api/monitor/requests/${requestId}/body/${bodyType}`, {
-          headers: {
-            'New-Api-User': localStorage.getItem('user') || '',
-          },
+        const response = await API.get(`/api/monitor/requests/${requestId}/body/${bodyType}`, {
+          skipErrorHandler: true,
         });
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch body content');
-        }
-
-        const result = await response.json();
-        if (result.success && result.data && result.data.body) {
-          downloadContent = result.data.body;
+        if (response.data.success && response.data.data && response.data.data.body) {
+          downloadContent = response.data.data.body;
         } else {
           throw new Error('Invalid response from server');
         }
@@ -215,8 +209,8 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
     }
   }, [formatted, label, isLengthExceeded, data, requestId, bodyType]);
 
-  if (!data) return <Text type="tertiary">{t('暂无数据')}</Text>;
-
+  // Check if content is too large FIRST (before checking !data)
+  // This handles the case where backend intentionally excludes body due to size
   if (isLengthExceeded) {
     return (
       <div
@@ -236,6 +230,8 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
       </div>
     );
   }
+
+  if (!data) return <Text type="tertiary">{t('暂无数据')}</Text>;
 
   return (
     <div style={{ position: 'relative' }}>
