@@ -240,9 +240,10 @@ func (s *Store) MarkComplete(id string, response *ResponseInfo) {
 }
 
 // TruncateBody truncates a body string to MaxBodySize
-func TruncateBody(body string) string {
+// Returns the truncated body and a boolean indicating whether truncation occurred
+func TruncateBody(body string) (string, bool) {
 	if len(body) <= MaxBodySize {
-		return body
+		return body, false
 	}
-	return body[:MaxBodySize] + "... [truncated]"
+	return body[:MaxBodySize] + "... [truncated]", true
 }

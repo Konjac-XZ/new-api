@@ -143,7 +143,7 @@ const highlightJson = (str) => {
   );
 };
 
-const JsonViewer = ({ data, t, isStream = false, label = 'data' }) => {
+const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated = false }) => {
   const [wordWrap, setWordWrap] = useState(false);
 
   const { formatted, highlighted, isLengthExceeded } = useMemo(() => {
@@ -161,11 +161,12 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data' }) => {
       formatted = typeof data === 'string' ? data : JSON.stringify(data);
     }
 
-    const isLengthExceeded = formatted.length > 20000;
+    // Check if content is truncated by backend OR exceeds frontend limit
+    const isLengthExceeded = bodyTruncated || formatted.length > 20000;
     const highlighted = isLengthExceeded ? '' : highlightJson(formatted);
 
     return { formatted, highlighted, isLengthExceeded };
-  }, [data]);
+  }, [data, bodyTruncated]);
 
   const handleDownload = useCallback(() => {
     try {
@@ -544,6 +545,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
                 t={t}
                 isStream={false}
                 label="downstream-request-body"
+                bodyTruncated={record.downstream?.body_truncated}
               />
               {record.downstream?.body_size > 0 && (
                 <Text
@@ -616,6 +618,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
                   t={t}
                   isStream={record.is_stream}
                   label="upstream-response-body"
+                  bodyTruncated={record.response?.body_truncated}
                 />
               </Collapse.Panel>
             </Collapse>

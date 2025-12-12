@@ -99,17 +99,19 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 	tokenName := c.GetString("token_name")
 	model := c.GetString("original_model")
 
+	truncatedBody, bodyTruncated := TruncateBody(string(requestBody))
 	record := &RequestRecord{
 		ID:        requestId,
 		Status:    StatusProcessing,
 		StartTime: time.Now(),
 		Downstream: DownstreamInfo{
-			Method:   c.Request.Method,
-			Path:     c.Request.URL.Path,
-			Headers:  ginHeadersToMap(c),
-			Body:     TruncateBody(string(requestBody)),
-			BodySize: len(requestBody),
-			ClientIP: c.ClientIP(),
+			Method:        c.Request.Method,
+			Path:          c.Request.URL.Path,
+			Headers:       ginHeadersToMap(c),
+			Body:          truncatedBody,
+			BodySize:      len(requestBody),
+			BodyTruncated: bodyTruncated,
+			ClientIP:      c.ClientIP(),
 		},
 		UserId:    userId,
 		TokenId:   tokenId,
@@ -127,13 +129,15 @@ func RecordUpstream(recordID string, url string, method string, headers http.Hea
 		return
 	}
 
+	truncatedBody, bodyTruncated := TruncateBody(string(body))
 	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
-			URL:      url,
-			Method:   method,
-			Headers:  headersToMap(headers),
-			Body:     TruncateBody(string(body)),
-			BodySize: len(body),
+			URL:           url,
+			Method:        method,
+			Headers:       headersToMap(headers),
+			Body:          truncatedBody,
+			BodySize:      len(body),
+			BodyTruncated: bodyTruncated,
 		}
 	})
 }
@@ -150,11 +154,13 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 		return
 	}
 
+	truncatedBody, bodyTruncated := TruncateBody(string(body))
 	response := &ResponseInfo{
 		StatusCode:       statusCode,
 		Headers:          headersToMap(headers),
-		Body:             TruncateBody(string(body)),
+		Body:             truncatedBody,
 		BodySize:         len(body),
+		BodyTruncated:    bodyTruncated,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 	}

@@ -86,21 +86,23 @@ type ChannelAttempt struct {
 
 // DownstreamInfo contains information about the client request
 type DownstreamInfo struct {
-	Method   string            `json:"method"`
-	Path     string            `json:"path"`
-	Headers  map[string]string `json:"headers"`
-	Body     string            `json:"body"`
-	BodySize int               `json:"body_size"`
-	ClientIP string            `json:"client_ip"`
+	Method        string            `json:"method"`
+	Path          string            `json:"path"`
+	Headers       map[string]string `json:"headers"`
+	Body          string            `json:"body"`
+	BodySize      int               `json:"body_size"`
+	BodyTruncated bool              `json:"body_truncated"`
+	ClientIP      string            `json:"client_ip"`
 }
 
 // UpstreamInfo contains information about the request sent to the provider
 type UpstreamInfo struct {
-	URL      string            `json:"url"`
-	Method   string            `json:"method"`
-	Headers  map[string]string `json:"headers"`
-	Body     string            `json:"body"`
-	BodySize int               `json:"body_size"`
+	URL           string            `json:"url"`
+	Method        string            `json:"method"`
+	Headers       map[string]string `json:"headers"`
+	Body          string            `json:"body"`
+	BodySize      int               `json:"body_size"`
+	BodyTruncated bool              `json:"body_truncated"`
 }
 
 // ResponseInfo contains information about the response
@@ -109,6 +111,7 @@ type ResponseInfo struct {
 	Headers          map[string]string `json:"headers"`
 	Body             string            `json:"body"`
 	BodySize         int               `json:"body_size"`
+	BodyTruncated    bool              `json:"body_truncated"`
 	Error            *ErrorInfo        `json:"error,omitempty"`
 	PromptTokens     int               `json:"prompt_tokens,omitempty"`
 	CompletionTokens int               `json:"completion_tokens,omitempty"`
