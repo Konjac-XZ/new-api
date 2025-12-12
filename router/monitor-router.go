@@ -15,6 +15,7 @@ func SetMonitorRouter(router *gin.Engine) {
 		monitorRouter.GET("/requests", monitor.GetRequests())
 		monitorRouter.GET("/requests/active", monitor.GetActiveRequests())
 		monitorRouter.GET("/requests/:id", monitor.GetRequest())
+		monitorRouter.GET("/requests/:id/body/:type", monitor.GetRequestBody())
 		monitorRouter.GET("/stats", monitor.GetStats())
 		monitorRouter.POST("/requests/:id/interrupt", monitor.InterruptRequest())
 	}

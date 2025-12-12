@@ -143,11 +143,15 @@ const highlightJson = (str) => {
   );
 };
 
-const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated = false }) => {
+const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated = false, bodySize = 0, requestId = '', bodyType = '' }) => {
   const [wordWrap, setWordWrap] = useState(false);
 
   // Check if content is too large BEFORE parsing
-  const isLengthExceeded = bodyTruncated;
+  // Two thresholds:
+  // 1. Frontend display limit: 20,000 bytes - refuse to display inline
+  // 2. Backend truncation flag: indicates content was truncated at 1MB
+  // Use bodySize (from backend) instead of checking actual data length
+  const isLengthExceeded = bodyTruncated || bodySize > 20000;
 
   const { formatted, highlighted } = useMemo(() => {
     if (!data || isLengthExceeded) return { formatted: '', highlighted: '' };
@@ -169,11 +173,30 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
     return { formatted, highlighted };
   }, [data, isLengthExceeded]);
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
     try {
-      // Use raw data for download when content is too large
       let downloadContent = formatted;
-      if (isLengthExceeded && data) {
+
+      // If content is too large and body is not included, fetch it from API
+      if (isLengthExceeded && (!data || data === '') && requestId && bodyType) {
+        const response = await fetch(`/api/monitor/requests/${requestId}/body/${bodyType}`, {
+          headers: {
+            'New-Api-User': localStorage.getItem('user') || '',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch body content');
+        }
+
+        const result = await response.json();
+        if (result.success && result.data && result.data.body) {
+          downloadContent = result.data.body;
+        } else {
+          throw new Error('Invalid response from server');
+        }
+      } else if (isLengthExceeded && data) {
+        // Body is included but too large to display
         downloadContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
       }
 
@@ -188,8 +211,9 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Download failed:', error);
+      // TODO: Show error message to user
     }
-  }, [formatted, label, isLengthExceeded, data]);
+  }, [formatted, label, isLengthExceeded, data, requestId, bodyType]);
 
   if (!data) return <Text type="tertiary">{t('暂无数据')}</Text>;
 
@@ -553,6 +577,9 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
                 isStream={false}
                 label="downstream-request-body"
                 bodyTruncated={record.downstream?.body_truncated}
+                bodySize={record.downstream?.body_size || 0}
+                requestId={record.id}
+                bodyType="downstream"
               />
               {record.downstream?.body_size > 0 && (
                 <Text
@@ -626,6 +653,9 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
                   isStream={record.is_stream}
                   label="upstream-response-body"
                   bodyTruncated={record.response?.body_truncated}
+                  bodySize={record.response?.body_size || 0}
+                  requestId={record.id}
+                  bodyType="response"
                 />
               </Collapse.Panel>
             </Collapse>

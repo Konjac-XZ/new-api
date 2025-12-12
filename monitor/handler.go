@@ -26,6 +26,7 @@ func GetRequests() gin.HandlerFunc {
 }
 
 // GetRequest returns a single request by ID
+// For bodies exceeding 20KB, the body content is excluded to save bandwidth
 func GetRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if globalStore == nil {
@@ -46,9 +47,93 @@ func GetRequest() gin.HandlerFunc {
 			return
 		}
 
+		// Create a copy to avoid modifying the stored record
+		recordCopy := *record
+
+		// Exclude body content if it exceeds 20KB to save bandwidth
+		// Frontend will check body_size and fetch body separately if needed
+		const displayThreshold = 20000
+
+		if recordCopy.Downstream.BodySize > displayThreshold {
+			recordCopy.Downstream.Body = ""
+		}
+		if recordCopy.Upstream != nil && recordCopy.Upstream.BodySize > displayThreshold {
+			recordCopy.Upstream.Body = ""
+		}
+		if recordCopy.Response != nil && recordCopy.Response.BodySize > displayThreshold {
+			recordCopy.Response.Body = ""
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data":    record,
+			"data":    &recordCopy,
+		})
+	}
+}
+
+// GetRequestBody returns the body content for a specific request
+// bodyType can be: "downstream", "upstream", or "response"
+func GetRequestBody() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if globalStore == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
+				"message": "Monitor not initialized",
+			})
+			return
+		}
+
+		id := c.Param("id")
+		bodyType := c.Param("type")
+
+		record := globalStore.Get(id)
+		if record == nil {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"message": "Request not found",
+			})
+			return
+		}
+
+		var body string
+		var bodySize int
+
+		switch bodyType {
+		case "downstream":
+			body = record.Downstream.Body
+			bodySize = record.Downstream.BodySize
+		case "upstream":
+			if record.Upstream != nil {
+				body = record.Upstream.Body
+				bodySize = record.Upstream.BodySize
+			}
+		case "response":
+			if record.Response != nil {
+				body = record.Response.Body
+				bodySize = record.Response.BodySize
+			}
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": "Invalid body type. Must be: downstream, upstream, or response",
+			})
+			return
+		}
+
+		if bodySize == 0 {
+			c.JSON(http.StatusNotFound, gin.H{
+				"success": false,
+				"message": "Body not available",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data": gin.H{
+				"body":      body,
+				"body_size": bodySize,
+			},
 		})
 	}
 }
