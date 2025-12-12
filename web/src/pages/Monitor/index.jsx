@@ -68,6 +68,41 @@ const renderDurationTag = (durationMs, t) => {
   );
 };
 
+// Component to display duration with real-time stopwatch for ongoing requests
+const DurationCell = ({ record, t }) => {
+  const [elapsed, setElapsed] = useState(0);
+  const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
+  const isActive = useMemo(() => isActiveStatus(displayStatus), [displayStatus]);
+
+  useEffect(() => {
+    if (!isActive || !record.start_time) {
+      return;
+    }
+
+    const updateElapsed = () => {
+      const now = Date.now();
+      const startTime = new Date(record.start_time).getTime();
+      const elapsedSeconds = (now - startTime) / 1000;
+      setElapsed(elapsedSeconds);
+    };
+
+    updateElapsed();
+    const interval = setInterval(updateElapsed, 100);
+
+    return () => clearInterval(interval);
+  }, [isActive, record.start_time]);
+
+  if (isActive) {
+    return (
+      <Tag color='grey' shape='circle'>
+        {elapsed.toFixed(1)}s
+      </Tag>
+    );
+  }
+
+  return renderDurationTag(record.duration_ms, t);
+};
+
 const getStatusLabels = (t) => ({
   pending: t('等待中'),
   processing: t('处理中'),
@@ -664,7 +699,7 @@ const Monitor = () => {
       title: t('耗时'),
       dataIndex: 'duration_ms',
       width: 100,
-      render: (duration) => renderDurationTag(duration, t),
+      render: (_, record) => <DurationCell record={record} t={t} />,
     },
   ];
 

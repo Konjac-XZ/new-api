@@ -216,8 +216,8 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 		return
 	}
 
-	now := time.Now()
 	globalStore.Update(recordID, func(r *RequestRecord) {
+		now := time.Now()
 		attempt := ChannelAttempt{
 			Attempt:     attemptNo,
 			ChannelId:   channelId,
