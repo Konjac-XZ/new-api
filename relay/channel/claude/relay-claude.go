@@ -737,7 +737,6 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		}
 		monitor.RecordResponse(monitorID, status, headers, body, claudeInfo.Usage.PromptTokens, claudeInfo.Usage.CompletionTokens, nil)
 		c.Set("monitor_response_recorded", true)
-		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded Claude streaming final response: id=%s, status=%d, bytes=%d", monitorID, status, len(body)))
 	}
 
 	return claudeInfo.Usage, nil

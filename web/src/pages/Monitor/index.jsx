@@ -23,7 +23,7 @@ import useMonitorWs from './useMonitorWs';
 import useRequestDetail from './useRequestDetail';
 import { useStopwatch } from './useStopwatch';
 import { deriveDisplayStatus, isActiveStatus, isTerminalStatus } from './statusUtils';
-import { renderModelTag, stringToColor } from '../../helpers';
+import { renderModelTag, stringToColor, timestamp2string } from '../../helpers';
 
 const { Title, Text } = Typography;
 
@@ -143,11 +143,11 @@ const highlightJson = (str) => {
   );
 };
 
-const JsonViewer = ({ data, t }) => {
+const JsonViewer = ({ data, t, isStream = false, label = 'data' }) => {
   const [wordWrap, setWordWrap] = useState(false);
 
-  const highlighted = useMemo(() => {
-    if (!data) return '';
+  const { formatted, highlighted, isLengthExceeded } = useMemo(() => {
+    if (!data) return { formatted: '', highlighted: '', isLengthExceeded: false };
 
     let formatted;
     try {
@@ -158,22 +158,75 @@ const JsonViewer = ({ data, t }) => {
         formatted = JSON.stringify(data, null, 2);
       }
     } catch {
-      formatted = data;
+      formatted = typeof data === 'string' ? data : JSON.stringify(data);
     }
 
-    return highlightJson(formatted);
+    const isLengthExceeded = formatted.length > 20000;
+    const highlighted = isLengthExceeded ? '' : highlightJson(formatted);
+
+    return { formatted, highlighted, isLengthExceeded };
   }, [data]);
+
+  const handleDownload = useCallback(() => {
+    try {
+      const blob = new Blob([formatted], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${label}-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+    }
+  }, [formatted, label]);
 
   if (!data) return <Text type="tertiary">{t('暂无数据')}</Text>;
 
+  if (isLengthExceeded) {
+    return (
+      <div
+        style={{
+          background: 'var(--semi-color-fill-0)',
+          padding: '16px',
+          borderRadius: '6px',
+          textAlign: 'center',
+        }}
+      >
+        <Text type="tertiary" style={{ display: 'block', marginBottom: '12px' }}>
+          {t('内容长度超出限制')}
+        </Text>
+        <Button type="primary" size="small" onClick={handleDownload}>
+          {t('下载为 JSON 文件')}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div style={{ position: 'relative' }}>
+      {isStream && (
+        <div
+          style={{
+            background: 'var(--semi-color-warning-light-default)',
+            padding: '8px 12px',
+            borderRadius: '6px 6px 0 0',
+            marginBottom: '0',
+          }}
+        >
+          <Text size="small" type="tertiary">
+            {t('以下内容为流式响应的拼接汇总，原始内容不可用')}
+          </Text>
+        </div>
+      )}
       <pre
         style={{
           background: '#1e1e1e',
           padding: '12px',
           paddingBottom: '40px',
-          borderRadius: '6px',
+          borderRadius: isStream ? '0 0 6px 6px' : '6px',
           overflow: 'auto',
           maxHeight: '300px',
           fontSize: '12px',
@@ -237,7 +290,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
   const attemptLabels = useMemo(() => getAttemptStatusLabels(t), [t]);
   const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
   const [interruptError, setInterruptError] = useState(null);
-  const stopwatch = useStopwatch(record);
+  const stopwatch = useStopwatch(record, t);
 
   // Check if request is active (can be interrupted)
   const isActive = useMemo(() => {
@@ -348,7 +401,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
               {stopwatch.isActive && (
                 <Text style={{
                   marginLeft: 12,
-                  fontFamily: 'monospace',
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "PingFang SC", "Microsoft YaHei"',
                   color: '#666',
                   fontSize: '13px'
                 }}>
@@ -451,7 +504,9 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
               },
               {
                 key: t('开始时间'),
-                value: new Date(record.start_time).toLocaleString(),
+                value: record.start_time
+                  ? timestamp2string(Math.floor(new Date(record.start_time).getTime() / 1000))
+                  : '-',
               },
               {
                 key: t('耗时'),
@@ -484,7 +539,12 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
               <HeadersViewer headers={record.downstream?.headers} t={t} />
             </Collapse.Panel>
             <Collapse.Panel header={t('请求体')} itemKey='downstream-body'>
-              <JsonViewer data={record.downstream?.body} t={t} />
+              <JsonViewer
+                data={record.downstream?.body}
+                t={t}
+                isStream={false}
+                label="downstream-request-body"
+              />
               {record.downstream?.body_size > 0 && (
                 <Text
                   type='tertiary'
@@ -551,7 +611,12 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
                 <HeadersViewer headers={record.response?.headers} t={t} />
               </Collapse.Panel>
               <Collapse.Panel header={t('响应体')} itemKey='response-body'>
-                <JsonViewer data={record.response?.body} t={t} />
+                <JsonViewer
+                  data={record.response?.body}
+                  t={t}
+                  isStream={record.is_stream}
+                  label="upstream-response-body"
+                />
               </Collapse.Panel>
             </Collapse>
           </Card>
@@ -655,13 +720,17 @@ const Monitor = () => {
     {
       title: t('时间'),
       dataIndex: 'start_time',
-      width: 120,
-      render: (time) => new Date(time).toLocaleTimeString(),
+      width: 160,
+      render: (time) => {
+        if (!time) return '-';
+        const seconds = Math.floor(new Date(time).getTime() / 1000);
+        return timestamp2string(seconds);
+      },
     },
     {
       title: t('状态'),
       dataIndex: 'status',
-      width: 100,
+      width: 110,
       render: (_, record) => {
         const displayStatus = deriveDisplayStatus(record);
         return (
@@ -674,7 +743,7 @@ const Monitor = () => {
     {
       title: t('模型'),
       dataIndex: 'model',
-      width: 200,
+      width: 180,
       ellipsis: true,
       render: (_, record) =>
         renderModelTag(record.model || t('未知模型'), {
@@ -684,7 +753,7 @@ const Monitor = () => {
     {
       title: t('渠道'),
       dataIndex: 'channel_name',
-      width: 180,
+      width: 160,
       ellipsis: true,
       render: (_, record) => (
         <Tag
@@ -698,7 +767,7 @@ const Monitor = () => {
     {
       title: t('耗时'),
       dataIndex: 'duration_ms',
-      width: 100,
+      width: 90,
       render: (_, record) => <DurationCell record={record} t={t} />,
     },
   ];

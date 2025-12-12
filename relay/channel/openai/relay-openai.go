@@ -207,7 +207,6 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		}
 		monitor.RecordResponse(monitorID, status, headers, body, usage.PromptTokens, usage.CompletionTokens, nil)
 		c.Set("monitor_response_recorded", true)
-		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded OpenAI streaming final response: id=%s, status=%d, bytes=%d", monitorID, status, len(body)))
 	}
 
 	return usage, nil
@@ -320,7 +319,6 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		}
 		monitor.RecordResponse(monitorID, status, headers, responseBody, simpleResponse.Usage.PromptTokens, simpleResponse.Usage.CompletionTokens, nil)
 		c.Set("monitor_response_recorded", true)
-		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded OpenAI non-stream response: id=%s, status=%d, bytes=%d", monitorID, status, len(responseBody)))
 	}
 
 	return &simpleResponse.Usage, nil

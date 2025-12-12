@@ -1149,7 +1149,6 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		completionTokens := usage.CompletionTokens
 		monitor.RecordResponse(monitorID, status, headers, body, promptTokens, completionTokens, nil)
 		c.Set("monitor_response_recorded", true)
-		logger.LogInfo(c, fmt.Sprintf("[Monitor] Recorded streaming final response: id=%s, status=%d, bytes=%d", monitorID, status, len(body)))
 	}
 
 	return usage, nil

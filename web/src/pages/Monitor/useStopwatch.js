@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export const useStopwatch = (requestDetail) => {
+export const useStopwatch = (requestDetail, t) => {
   const [display, setDisplay] = useState('');
   const [isActive, setIsActive] = useState(false);
 
@@ -30,7 +30,7 @@ export const useStopwatch = (requestDetail) => {
 
       if (status === 'waiting_upstream') {
         const elapsed = (now - startedAt) / 1000;
-        setDisplay(`Waiting: ${elapsed.toFixed(1)}s`);
+        setDisplay(`${t('等待')}: ${elapsed.toFixed(1)}s`);
       } else if (status === 'streaming') {
         const streamingStartedAt = currentAttempt.streaming_started_at
           ? new Date(currentAttempt.streaming_started_at).getTime()
@@ -39,11 +39,11 @@ export const useStopwatch = (requestDetail) => {
         if (streamingStartedAt) {
           const waitingTime = (streamingStartedAt - startedAt) / 1000;
           const streamingTime = (now - streamingStartedAt) / 1000;
-          setDisplay(`Waiting: ${waitingTime.toFixed(1)}s | Streaming: ${streamingTime.toFixed(1)}s`);
+          setDisplay(`${t('等待')}: ${waitingTime.toFixed(1)}s | ${t('流式返回')}: ${streamingTime.toFixed(1)}s`);
         } else {
           // Fallback if streaming_started_at is missing
           const totalTime = (now - startedAt) / 1000;
-          setDisplay(`Streaming: ${totalTime.toFixed(1)}s`);
+          setDisplay(`${t('流式返回')}: ${totalTime.toFixed(1)}s`);
         }
       }
     };
