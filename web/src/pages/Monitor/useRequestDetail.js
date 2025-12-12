@@ -5,6 +5,7 @@ const useRequestDetail = () => {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [interrupting, setInterrupting] = useState(false);
   // Cache for fetched details: Map<id, RequestRecord>
   const cacheRef = useRef(new Map());
 
@@ -103,14 +104,47 @@ const useRequestDetail = () => {
     setError(null);
   }, []);
 
+  // Interrupt an active request
+  const interruptRequest = useCallback(async (id) => {
+    if (!id) return { success: false, error: 'No request ID provided' };
+
+    setInterrupting(true);
+    try {
+      const response = await API.post(`/api/monitor/requests/${id}/interrupt`, {}, {
+        skipErrorHandler: true,
+      });
+
+      if (response.data.success) {
+        // Invalidate cache to force refetch with updated state
+        invalidateCache(id);
+
+        // Refetch if this is the currently selected request
+        if (selectedDetail?.id === id) {
+          await fetchDetail(id);
+        }
+
+        return { success: true };
+      } else {
+        return { success: false, error: response.data.message || 'Failed to interrupt request' };
+      }
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.message || 'Failed to interrupt request';
+      return { success: false, error: errorMsg };
+    } finally {
+      setInterrupting(false);
+    }
+  }, [invalidateCache, fetchDetail, selectedDetail]);
+
   return {
     selectedDetail,
     loading,
     error,
+    interrupting,
     fetchDetail,
     invalidateCache,
     clearCache,
     applyLiveUpdate,
+    interruptRequest,
   };
 };
 

@@ -78,11 +78,20 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		watchdog  *helper.FirstTokenWatchdog
 	)
 
+	// Create cancellable context for all requests
+	reqCtx, cancel := context.WithCancel(c.Request.Context())
+	req = req.WithContext(reqCtx)
+	reqCancel = cancel
+
+	// Register with monitor for external interruption
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		monitor.GetRegistry().RegisterCancel(monitorID, reqCancel)
+		defer monitor.GetRegistry().UnregisterCancel(monitorID)
+	}
+
+	// Set up watchdog for streaming requests with max latency
 	if info != nil && info.IsStream && info.ChannelMeta != nil {
 		if maxLatency := info.ChannelMeta.MaxFirstTokenLatencySeconds; maxLatency > 0 {
-			reqCtx, cancel := context.WithCancel(c.Request.Context())
-			req = req.WithContext(reqCtx)
-			reqCancel = cancel
 			watchdog = helper.EnsureFirstTokenWatchdog(c, info, maxLatency, reqCancel)
 		}
 	}

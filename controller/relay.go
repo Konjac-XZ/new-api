@@ -2,6 +2,8 @@ package controller
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -240,6 +242,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				monitor.FinishChannelAttemptWithContext(c, monitor.AttemptStatusSucceeded, "", "", c.Writer.Status())
 				monitor.MarkChannelPhaseWithContext(c, monitor.PhaseCompleted)
 				return
+			}
+
+			// Check if error is due to context cancellation (user interrupt)
+			if errors.Is(newAPIError.Err, context.Canceled) {
+				reason, errCode := monitorReasonFromError(newAPIError)
+				monitor.FinishChannelAttemptWithContext(c, monitor.AttemptStatusAbandoned, reason, errCode, newAPIError.StatusCode)
+				monitor.MarkChannelPhaseWithContext(c, monitor.PhaseError)
+				logger.LogInfo(c, "Channel attempt interrupted by user, continuing to next retry")
+				// Continue to next retry instead of breaking
+				continue
 			}
 
 			reason, errCode := monitorReasonFromError(newAPIError)

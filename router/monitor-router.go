@@ -16,6 +16,7 @@ func SetMonitorRouter(router *gin.Engine) {
 		monitorRouter.GET("/requests/active", monitor.GetActiveRequests())
 		monitorRouter.GET("/requests/:id", monitor.GetRequest())
 		monitorRouter.GET("/stats", monitor.GetStats())
+		monitorRouter.POST("/requests/:id/interrupt", monitor.InterruptRequest())
 	}
 
 	// WebSocket endpoint on separate group with session-only auth

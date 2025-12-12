@@ -30,21 +30,21 @@ const statusColors = {
   pending: 'grey',
   processing: 'blue',
   waiting_upstream: 'blue',
-  streaming: 'green',
+  streaming: 'purple',
   completed: 'green',
   error: 'red',
 };
 
 const channelPhaseColors = {
   waiting_upstream: 'blue',
-  streaming: 'green',
+  streaming: 'purple',
   error: 'red',
   completed: 'green',
 };
 
 const attemptStatusColors = {
   waiting_upstream: 'blue',
-  streaming: 'green',
+  streaming: 'purple',
   failed: 'red',
   abandoned: 'grey',
   succeeded: 'green',
@@ -196,10 +196,44 @@ const HeadersViewer = ({ headers, t }) => {
   );
 };
 
-const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
+const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, interrupting }) => {
   const phaseLabels = useMemo(() => getPhaseLabels(t), [t]);
   const attemptLabels = useMemo(() => getAttemptStatusLabels(t), [t]);
   const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
+  const [interruptError, setInterruptError] = useState(null);
+
+  // Check if request is active (can be interrupted)
+  const isActive = useMemo(() => {
+    if (!record) return false;
+    return isActiveStatus(displayStatus);
+  }, [record, displayStatus]);
+
+  // Find the currently active attempt (last attempt with active status)
+  const activeAttemptIndex = useMemo(() => {
+    if (!record?.channel_attempts || record.channel_attempts.length === 0) return -1;
+
+    // Find the last attempt that is in an active state
+    for (let i = record.channel_attempts.length - 1; i >= 0; i--) {
+      const attempt = record.channel_attempts[i];
+      if (attempt.status === 'waiting_upstream' || attempt.status === 'streaming') {
+        return i;
+      }
+    }
+    return -1;
+  }, [record]);
+
+  const handleInterrupt = async () => {
+    if (!record?.id) return;
+
+    setInterruptError(null);
+    const result = await onInterrupt(record.id);
+
+    if (!result.success) {
+      setInterruptError(result.error);
+      // Clear error after 5 seconds
+      setTimeout(() => setInterruptError(null), 5000);
+    }
+  };
 
   // Loading state
   if (loading) {
@@ -284,32 +318,55 @@ const RequestDetail = ({ record, loading, error, t, statusLabels }) => {
                 <Text type='tertiary'>{t('暂无渠道重试记录')}</Text>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {(record.channel_attempts || []).map((attempt) => (
-                    <Card key={`${attempt.attempt}-${attempt.channel_id}-${attempt.started_at}`} size='small' bordered style={{ background: 'var(--semi-color-fill-0)' }}>
-                      <Space vertical align='start' style={{ width: '100%' }}>
-                        <Space align='center' style={{ justifyContent: 'space-between', width: '100%' }}>
-                          <Space>
-                            <Tag>{t('第{{num}}次', { num: attempt.attempt })}</Tag>
-                            <Text>{attempt.channel_name || t('未知渠道')} (ID: {attempt.channel_id || '-'})</Text>
+                  {(record.channel_attempts || []).map((attempt, index) => {
+                    const isActiveAttempt = index === activeAttemptIndex;
+                    return (
+                      <Card key={`${attempt.attempt}-${attempt.channel_id}-${attempt.started_at}`} size='small' bordered style={{ background: 'var(--semi-color-fill-0)' }}>
+                        <Space vertical align='start' style={{ width: '100%' }}>
+                          <Space align='center' style={{ justifyContent: 'space-between', width: '100%' }}>
+                            <Space>
+                              <Tag>{t('第{{num}}次', { num: attempt.attempt })}</Tag>
+                              <Text>{attempt.channel_name || t('未知渠道')} (ID: {attempt.channel_id || '-'})</Text>
+                            </Space>
+                            <Space>
+                              <Tag color={attemptStatusColors[attempt.status] || 'grey'}>
+                                {attemptLabels[attempt.status] || attempt.status || t('未知状态')}
+                              </Tag>
+                              {isActive && isActiveAttempt && (
+                                <Tooltip content={t('中断当前请求并尝试下一个渠道')}>
+                                  <Button
+                                    type='danger'
+                                    size='small'
+                                    loading={interrupting}
+                                    disabled={interrupting}
+                                    onClick={handleInterrupt}
+                                  >
+                                    {t('中断')}
+                                  </Button>
+                                </Tooltip>
+                              )}
+                            </Space>
                           </Space>
-                          <Tag color={attemptStatusColors[attempt.status] || 'grey'}>
-                            {attemptLabels[attempt.status] || attempt.status || t('未知状态')}
-                          </Tag>
-                        </Space>
-                        <Text type='tertiary' size='small'>
-                          {t('开始')}: {attempt.started_at ? new Date(attempt.started_at).toLocaleTimeString() : '-'}
-                          {attempt.ended_at ? ` | ${t('结束')}: ${new Date(attempt.ended_at).toLocaleTimeString()}` : ''}
-                        </Text>
-                        {(attempt.reason || attempt.error_code || attempt.http_status) && (
-                          <Text size='small' style={{ color: 'var(--semi-color-text-2)' }}>
-                            {t('原因')}: {attempt.reason || '-'}
-                            {attempt.error_code ? ` | ${t('错误码')}: ${attempt.error_code}` : ''}
-                            {attempt.http_status ? ` | HTTP ${attempt.http_status}` : ''}
+                          <Text type='tertiary' size='small'>
+                            {t('开始')}: {attempt.started_at ? new Date(attempt.started_at).toLocaleTimeString() : '-'}
+                            {attempt.ended_at ? ` | ${t('结束')}: ${new Date(attempt.ended_at).toLocaleTimeString()}` : ''}
                           </Text>
-                        )}
-                      </Space>
-                    </Card>
-                  ))}
+                          {(attempt.reason || attempt.error_code || attempt.http_status) && (
+                            <Text size='small' style={{ color: 'var(--semi-color-text-2)' }}>
+                              {t('原因')}: {attempt.reason || '-'}
+                              {attempt.error_code ? ` | ${t('错误码')}: ${attempt.error_code}` : ''}
+                              {attempt.http_status ? ` | HTTP ${attempt.http_status}` : ''}
+                            </Text>
+                          )}
+                        </Space>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+              {interruptError && (
+                <div style={{ marginTop: '8px', padding: '8px', background: 'var(--semi-color-danger-light-default)', borderRadius: '4px' }}>
+                  <Text type='danger' size='small'>{t('中断失败')}: {interruptError}</Text>
                 </div>
               )}
             </div>
@@ -464,10 +521,12 @@ const Monitor = () => {
     selectedDetail,
     loading: detailLoading,
     error: detailError,
+    interrupting,
     fetchDetail,
     invalidateCache,
     clearCache,
     applyLiveUpdate,
+    interruptRequest,
   } = useRequestDetail();
   const [selectedId, setSelectedId] = useState(null);
   const [detailVisible, setDetailVisible] = useState(false);
@@ -699,6 +758,8 @@ const Monitor = () => {
             error={detailError}
             t={t}
             statusLabels={statusLabels}
+            onInterrupt={interruptRequest}
+            interrupting={interrupting}
           />
         </div>
       </Modal>
