@@ -6,8 +6,8 @@ import (
 )
 
 const (
-	MaxRecords  = 100
-	MaxBodySize = 10 * 1024 // 10KB max body storage per request
+	MaxRecords        = 100
+	BodySizeThreshold = 1024 * 1024 // Threshold for marking body as "large" (1MB, ~256K tokens)
 )
 
 // Store is a ring buffer storage for request records
@@ -239,11 +239,8 @@ func (s *Store) MarkComplete(id string, response *ResponseInfo) {
 	})
 }
 
-// TruncateBody truncates a body string to MaxBodySize
-// Returns the truncated body and a boolean indicating whether truncation occurred
-func TruncateBody(body string) (string, bool) {
-	if len(body) <= MaxBodySize {
-		return body, false
-	}
-	return body[:MaxBodySize] + "... [truncated]", true
+// CheckBodySize checks if body exceeds the size threshold
+// Returns the full body and a boolean indicating whether it exceeds the threshold
+func CheckBodySize(body string) (string, bool) {
+	return body, len(body) > BodySizeThreshold
 }

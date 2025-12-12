@@ -99,7 +99,7 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 	tokenName := c.GetString("token_name")
 	model := c.GetString("original_model")
 
-	truncatedBody, bodyTruncated := TruncateBody(string(requestBody))
+	body, bodyExceedsThreshold := CheckBodySize(string(requestBody))
 	record := &RequestRecord{
 		ID:        requestId,
 		Status:    StatusProcessing,
@@ -108,9 +108,9 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 			Method:        c.Request.Method,
 			Path:          c.Request.URL.Path,
 			Headers:       ginHeadersToMap(c),
-			Body:          truncatedBody,
+			Body:          body,
 			BodySize:      len(requestBody),
-			BodyTruncated: bodyTruncated,
+			BodyTruncated: bodyExceedsThreshold,
 			ClientIP:      c.ClientIP(),
 		},
 		UserId:    userId,
@@ -129,15 +129,15 @@ func RecordUpstream(recordID string, url string, method string, headers http.Hea
 		return
 	}
 
-	truncatedBody, bodyTruncated := TruncateBody(string(body))
+	bodyStr, bodyExceedsThreshold := CheckBodySize(string(body))
 	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
 			URL:           url,
 			Method:        method,
 			Headers:       headersToMap(headers),
-			Body:          truncatedBody,
+			Body:          bodyStr,
 			BodySize:      len(body),
-			BodyTruncated: bodyTruncated,
+			BodyTruncated: bodyExceedsThreshold,
 		}
 	})
 }
@@ -154,13 +154,13 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 		return
 	}
 
-	truncatedBody, bodyTruncated := TruncateBody(string(body))
+	bodyStr, bodyExceedsThreshold := CheckBodySize(string(body))
 	response := &ResponseInfo{
 		StatusCode:       statusCode,
 		Headers:          headersToMap(headers),
-		Body:             truncatedBody,
+		Body:             bodyStr,
 		BodySize:         len(body),
-		BodyTruncated:    bodyTruncated,
+		BodyTruncated:    bodyExceedsThreshold,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 	}

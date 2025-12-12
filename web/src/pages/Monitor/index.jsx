@@ -146,8 +146,11 @@ const highlightJson = (str) => {
 const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated = false }) => {
   const [wordWrap, setWordWrap] = useState(false);
 
-  const { formatted, highlighted, isLengthExceeded } = useMemo(() => {
-    if (!data) return { formatted: '', highlighted: '', isLengthExceeded: false };
+  // Check if content is too large BEFORE parsing
+  const isLengthExceeded = bodyTruncated;
+
+  const { formatted, highlighted } = useMemo(() => {
+    if (!data || isLengthExceeded) return { formatted: '', highlighted: '' };
 
     let formatted;
     try {
@@ -161,16 +164,20 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
       formatted = typeof data === 'string' ? data : JSON.stringify(data);
     }
 
-    // Check if content is truncated by backend OR exceeds frontend limit
-    const isLengthExceeded = bodyTruncated || formatted.length > 20000;
-    const highlighted = isLengthExceeded ? '' : highlightJson(formatted);
+    const highlighted = highlightJson(formatted);
 
-    return { formatted, highlighted, isLengthExceeded };
-  }, [data, bodyTruncated]);
+    return { formatted, highlighted };
+  }, [data, isLengthExceeded]);
 
   const handleDownload = useCallback(() => {
     try {
-      const blob = new Blob([formatted], { type: 'application/json' });
+      // Use raw data for download when content is too large
+      let downloadContent = formatted;
+      if (isLengthExceeded && data) {
+        downloadContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+      }
+
+      const blob = new Blob([downloadContent], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -182,7 +189,7 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
     } catch (error) {
       console.error('Download failed:', error);
     }
-  }, [formatted, label]);
+  }, [formatted, label, isLengthExceeded, data]);
 
   if (!data) return <Text type="tertiary">{t('暂无数据')}</Text>;
 
