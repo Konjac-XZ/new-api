@@ -64,7 +64,8 @@ const (
 	ErrorCodeAccessDenied          ErrorCode = "access_denied"
 
 	// request error
-	ErrorCodeBadRequestBody ErrorCode = "bad_request_body"
+	ErrorCodeBadRequestBody     ErrorCode = "bad_request_body"
+	ErrorCodeDownstreamCanceled ErrorCode = "downstream_canceled"
 
 	// response error
 	ErrorCodeReadResponseBodyFailed ErrorCode = "read_response_body_failed"
@@ -93,6 +94,19 @@ type NewAPIError struct {
 	errorType      ErrorType
 	errorCode      ErrorCode
 	StatusCode     int
+}
+
+type hiddenError struct {
+	msg string
+	err error
+}
+
+func (e *hiddenError) Error() string {
+	return e.msg
+}
+
+func (e *hiddenError) Unwrap() error {
+	return e.err
 }
 
 func (e *NewAPIError) GetErrorCode() ErrorCode {
@@ -349,7 +363,13 @@ func ErrOptionWithHideErrMsg(replaceStr string) NewAPIErrorOptions {
 		if common.DebugEnabled {
 			fmt.Printf("ErrOptionWithHideErrMsg: %s, origin error: %s", replaceStr, e.Err)
 		}
-		e.Err = errors.New(replaceStr)
+		if e.Err == nil {
+			e.Err = errors.New(replaceStr)
+			return
+		}
+		// Preserve the original error for classification (e.g. context cancellation),
+		// while ensuring the surfaced message does not leak sensitive details.
+		e.Err = &hiddenError{msg: replaceStr, err: e.Err}
 	}
 }
 

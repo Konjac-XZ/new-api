@@ -103,6 +103,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		if newAPIError != nil {
+			// If the downstream has already gone away, avoid treating this as a server error:
+			// - don't spam error logs
+			// - don't attempt to write a JSON response to a dead connection
+			if common.IsDownstreamContextDone(c.Request.Context()) {
+				logger.LogInfo(c, fmt.Sprintf("relay aborted (downstream gone): %s", newAPIError.Error()))
+				return
+			}
+
 			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
@@ -203,6 +211,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	attemptCounter := 0
 
 	for i := 0; i <= common.RetryTimes; i++ {
+		// If the downstream request is already gone, abort immediately instead of
+		// burning through the retry/channel budget.
+		if common.IsDownstreamContextDone(c.Request.Context()) {
+			c.Status(constant.StatusClientClosedRequest)
+			newAPIError = types.NewErrorWithStatusCode(
+				c.Request.Context().Err(),
+				types.ErrorCodeDownstreamCanceled,
+				constant.StatusClientClosedRequest,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+			)
+			return
+		}
+
 		channel, err := getChannel(c, group, originalModel, i)
 		if err != nil {
 			logger.LogError(c, err.Error())
@@ -244,13 +266,37 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				return
 			}
 
-			// Check if error is due to context cancellation (user interrupt)
+			// Downstream is gone (client disconnect / cancel). Stop immediately:
+			// - don't retry other channels (they'll all fail fast anyway)
+			// - don't mark the current channel as unhealthy
+			if common.IsDownstreamContextDone(c.Request.Context()) || common.IsClientGoneError(newAPIError.Err) {
+				c.Status(constant.StatusClientClosedRequest)
+				abortCause := c.Request.Context().Err()
+				if abortCause == nil {
+					abortCause = newAPIError.Err
+				}
+				newAPIError = types.NewErrorWithStatusCode(
+					abortCause,
+					types.ErrorCodeDownstreamCanceled,
+					constant.StatusClientClosedRequest,
+					types.ErrOptionWithSkipRetry(),
+					types.ErrOptionWithNoRecordErrorLog(),
+				)
+				reason, errCode := monitorReasonFromError(newAPIError)
+				monitor.FinishChannelAttemptWithContext(c, monitor.AttemptStatusAbandoned, reason, errCode, newAPIError.StatusCode)
+				monitor.MarkChannelPhaseWithContext(c, monitor.PhaseError)
+				return
+			}
+
+			// Intenal relinquishment: the upstream request for this attempt was canceled
+			// while the downstream is still alive. This indicates an internal cutover
+			// (e.g. watchdog / key rotation / attempt interruption) and should consume the
+			// current attempt and move on, without penalizing the channel.
 			if errors.Is(newAPIError.Err, context.Canceled) {
 				reason, errCode := monitorReasonFromError(newAPIError)
 				monitor.FinishChannelAttemptWithContext(c, monitor.AttemptStatusAbandoned, reason, errCode, newAPIError.StatusCode)
 				monitor.MarkChannelPhaseWithContext(c, monitor.PhaseError)
-				logger.LogInfo(c, "Channel attempt interrupted by user, continuing to next retry")
-				// Continue to next retry instead of breaking
+				logger.LogInfo(c, "Channel attempt canceled (internal), retrying next attempt")
 				continue
 			}
 

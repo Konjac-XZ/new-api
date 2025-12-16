@@ -328,6 +328,33 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	resp, err := client.Do(req)
 	if err != nil {
+		// Internal cancelation: internal code canceled the per-attempt request context,
+		// but the downstream is still present. This should not be treated as an upstream failure.
+		if errors.Is(err, context.Canceled) && !common2.IsDownstreamContextDone(c.Request.Context()) {
+			logger.LogInfo(c, "do request canceled (internal): "+err.Error())
+			return nil, types.NewError(
+				err,
+				types.ErrorCodeDoRequestFailed,
+				types.ErrOptionWithNoRecordErrorLog(),
+				types.ErrOptionWithHideErrMsg("upstream request canceled"),
+			)
+		}
+
+		// When the downstream client disconnects/cancels, the request context is done and
+		// http.Client.Do commonly surfaces as context cancellation or a broken pipe.
+		// This is expected and should not be treated as an upstream/channel failure.
+		if common2.IsDownstreamContextDone(c.Request.Context()) || common2.IsClientGoneError(err) {
+			logger.LogInfo(c, "do request aborted (downstream gone): "+err.Error())
+			return nil, types.NewErrorWithStatusCode(
+				err,
+				types.ErrorCodeDownstreamCanceled,
+				appconstant.StatusClientClosedRequest,
+				types.ErrOptionWithSkipRetry(),
+				types.ErrOptionWithNoRecordErrorLog(),
+				types.ErrOptionWithHideErrMsg("downstream request canceled"),
+			)
+		}
+
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
