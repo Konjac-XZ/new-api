@@ -184,12 +184,12 @@ func AdminAuthForWebSocket() func(c *gin.Context) {
 		status := session.Get("status")
 
 		// Debug logging
-		common.SysLog(fmt.Sprintf("WebSocket auth: username=%v, role=%v, id=%v, cookies=%v",
-			username, role, id, c.Request.Header.Get("Cookie")))
+		// common.SysLog(fmt.Sprintf("WebSocket auth: username=%v, role=%v, id=%v, cookies=%v",
+			// username, role, id, c.Request.Header.Get("Cookie")))
 
 		if username == nil {
-			common.SysLog(fmt.Sprintf("WebSocket auth failed: no session; remote=%s cookies=%s path=%s",
-				c.Request.RemoteAddr, c.Request.Header.Get("Cookie"), c.Request.URL.Path))
+			// common.SysLog(fmt.Sprintf("WebSocket auth failed: no session; remote=%s cookies=%s path=%s",
+				// c.Request.RemoteAddr, c.Request.Header.Get("Cookie"), c.Request.URL.Path))
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"message": "未登录，无法访问监控页面",
@@ -199,8 +199,8 @@ func AdminAuthForWebSocket() func(c *gin.Context) {
 		}
 
 		if status != nil && status.(int) == common.UserStatusDisabled {
-			common.SysLog(fmt.Sprintf("WebSocket auth failed: user disabled; username=%v id=%v remote=%s",
-				username, id, c.Request.RemoteAddr))
+			// common.SysLog(fmt.Sprintf("WebSocket auth failed: user disabled; username=%v id=%v remote=%s",
+				// username, id, c.Request.RemoteAddr))
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"message": "用户已被封禁",
@@ -210,8 +210,8 @@ func AdminAuthForWebSocket() func(c *gin.Context) {
 		}
 
 		if role == nil || role.(int) < common.RoleAdminUser {
-			common.SysLog(fmt.Sprintf("WebSocket auth failed: insufficient role; username=%v role=%v id=%v remote=%s",
-				username, role, id, c.Request.RemoteAddr))
+			// common.SysLog(fmt.Sprintf("WebSocket auth failed: insufficient role; username=%v role=%v id=%v remote=%s",
+				// username, role, id, c.Request.RemoteAddr))
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"message": "无权访问，需要管理员权限",

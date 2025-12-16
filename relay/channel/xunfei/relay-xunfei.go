@@ -235,7 +235,7 @@ func xunfeiMakeRequest(textRequest dto.GeneralOpenAIRequest, domain, authUrl, ap
 			dataChan <- response
 			if response.Payload.Choices.Status == 2 {
 				if err != nil {
-					common.SysLog("error closing websocket connection: " + err.Error())
+					// common.SysLog("error closing websocket connection: " + err.Error())
 				}
 				break
 			}

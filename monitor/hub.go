@@ -2,7 +2,6 @@ package monitor
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -116,18 +115,18 @@ func (h *Hub) ClientCount() int {
 // ServeWs handles WebSocket requests from clients
 func (h *Hub) ServeWs(c *gin.Context, store *Store) {
 	// Debug: log WebSocket upgrade headers and request metadata
-	log.Printf("WebSocket upgrade request: remote=%s host=%s path=%s origin=%s upgrade=%s connection=%s key=%s",
-		c.Request.RemoteAddr,
-		c.Request.Host,
-		c.Request.URL.Path,
-		c.Request.Header.Get("Origin"),
-		c.Request.Header.Get("Upgrade"),
-		c.Request.Header.Get("Connection"),
-		c.Request.Header.Get("Sec-WebSocket-Key"))
+	// log.Printf("WebSocket upgrade request: remote=%s host=%s path=%s origin=%s upgrade=%s connection=%s key=%s",
+		// c.Request.RemoteAddr,
+		// c.Request.Host,
+		// c.Request.URL.Path,
+		// c.Request.Header.Get("Origin"),
+		// c.Request.Header.Get("Upgrade"),
+		// c.Request.Header.Get("Connection"),
+		// c.Request.Header.Get("Sec-WebSocket-Key"))
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade failed for remote=%s path=%s: %v", c.Request.RemoteAddr, c.Request.URL.Path, err)
+		// log.Printf("WebSocket upgrade failed for remote=%s path=%s: %v", c.Request.RemoteAddr, c.Request.URL.Path, err)
 		return
 	}
 
