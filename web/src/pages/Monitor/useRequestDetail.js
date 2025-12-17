@@ -1,5 +1,26 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import { useState, useCallback, useRef } from 'react';
 import { API } from '../../helpers/api';
+
+const MAX_DETAIL_CACHE_SIZE = 50;
 
 const useRequestDetail = () => {
   const [selectedDetail, setSelectedDetail] = useState(null);
@@ -21,7 +42,11 @@ const useRequestDetail = () => {
 
     // Check cache first
     if (cacheRef.current.has(id)) {
-      setSelectedDetail(cacheRef.current.get(id));
+      const cached = cacheRef.current.get(id);
+      // Refresh entry to the end to behave more like an LRU cache.
+      cacheRef.current.delete(id);
+      cacheRef.current.set(id, cached);
+      setSelectedDetail(cached);
       setError(null);
       return;
     }
@@ -43,6 +68,12 @@ const useRequestDetail = () => {
       if (response.data.success) {
         const detail = response.data.data;
         cacheRef.current.set(id, detail);
+        if (cacheRef.current.size > MAX_DETAIL_CACHE_SIZE) {
+          const oldestKey = cacheRef.current.keys().next().value;
+          if (oldestKey) {
+            cacheRef.current.delete(oldestKey);
+          }
+        }
         setSelectedDetail(detail);
       } else {
         setError(response.data.message || 'Failed to fetch request details');

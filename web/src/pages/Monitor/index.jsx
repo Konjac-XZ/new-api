@@ -1,3 +1,22 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Card,
@@ -95,7 +114,7 @@ const DurationCell = ({ record, t }) => {
     };
 
     updateElapsed();
-    const interval = setInterval(updateElapsed, 100);
+    const interval = setInterval(updateElapsed, 250);
 
     return () => clearInterval(interval);
   }, [isActive, record.start_time]);
@@ -325,7 +344,17 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
   const attemptLabels = useMemo(() => getAttemptStatusLabels(t), [t]);
   const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
   const [interruptError, setInterruptError] = useState(null);
+  const interruptErrorTimeoutRef = useRef(null);
   const stopwatch = useStopwatch(record, t);
+
+  useEffect(() => {
+    return () => {
+      if (interruptErrorTimeoutRef.current) {
+        clearTimeout(interruptErrorTimeoutRef.current);
+        interruptErrorTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Check if request is active (can be interrupted)
   const isActive = useMemo(() => {
@@ -356,7 +385,13 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
     if (!result.success) {
       setInterruptError(result.error);
       // Clear error after 5 seconds
-      setTimeout(() => setInterruptError(null), 5000);
+      if (interruptErrorTimeoutRef.current) {
+        clearTimeout(interruptErrorTimeoutRef.current);
+      }
+      interruptErrorTimeoutRef.current = setTimeout(() => {
+        setInterruptError(null);
+        interruptErrorTimeoutRef.current = null;
+      }, 5000);
     }
   };
 
@@ -671,7 +706,16 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
 
 const Monitor = () => {
   const { t } = useTranslation();
-  const { summaries, stats, connected, reconnect, channelUpdates } = useMonitorWs();
+  const [selectedId, setSelectedId] = useState(null);
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const tableRef = useRef(null);
+  // Track previous status to detect status changes
+  const prevStatusRef = useRef(new Map());
+
+  const { summaries, stats, connected, reconnect, channelUpdate } = useMonitorWs({
+    focusedRequestId: selectedId,
+  });
   const {
     selectedDetail,
     loading: detailLoading,
@@ -683,14 +727,8 @@ const Monitor = () => {
     applyLiveUpdate,
     interruptRequest,
   } = useRequestDetail();
-  const [selectedId, setSelectedId] = useState(null);
-  const [detailVisible, setDetailVisible] = useState(false);
-  const [filter, setFilter] = useState('all');
-  const tableRef = useRef(null);
-  // Track previous status to detect status changes
-  const prevStatusRef = useRef(new Map());
 
-  const statusLabels = getStatusLabels(t);
+  const statusLabels = useMemo(() => getStatusLabels(t), [t]);
 
   // Fetch detail when selection changes
   useEffect(() => {
@@ -701,15 +739,20 @@ const Monitor = () => {
 
   // Apply live channel updates streamed over WebSocket
   useEffect(() => {
-    if (selectedId && channelUpdates[selectedId]) {
-      applyLiveUpdate(selectedId, channelUpdates[selectedId]);
+    if (!selectedId || !channelUpdate) return;
+
+    const updateId = channelUpdate.request_id || channelUpdate.id;
+    if (updateId === selectedId) {
+      applyLiveUpdate(selectedId, channelUpdate);
     }
-  }, [selectedId, channelUpdates, applyLiveUpdate]);
+  }, [selectedId, channelUpdate, applyLiveUpdate]);
 
   // Invalidate cache when a request's status changes (e.g., processing -> completed)
   // This ensures we fetch fresh data with response details
   useEffect(() => {
+    const visibleIds = new Set();
     summaries.forEach((summary) => {
+      visibleIds.add(summary.id);
       const displayStatus = deriveDisplayStatus(summary);
       const prevStatus = prevStatusRef.current.get(summary.id);
       const statusChanged = prevStatus && prevStatus !== displayStatus;
@@ -725,6 +768,13 @@ const Monitor = () => {
       }
       prevStatusRef.current.set(summary.id, displayStatus);
     });
+
+    // Prevent unbounded growth: keep status history only for rows we still render.
+    for (const id of prevStatusRef.current.keys()) {
+      if (!visibleIds.has(id)) {
+        prevStatusRef.current.delete(id);
+      }
+    }
   }, [summaries, selectedId, invalidateCache, fetchDetail]);
 
   // Clear cache on reconnect
@@ -747,73 +797,84 @@ const Monitor = () => {
     setDetailVisible(true);
   }, []);
 
-  const filteredSummaries = summaries.filter((r) => {
-    const displayStatus = deriveDisplayStatus(r);
-    if (filter === 'all') return true;
-    if (filter === 'processing') return isActiveStatus(displayStatus);
-    return displayStatus === filter;
-  });
+  const filteredSummaries = useMemo(() => {
+    return summaries.filter((r) => {
+      const displayStatus = deriveDisplayStatus(r);
+      if (filter === 'all') return true;
+      if (filter === 'processing') return isActiveStatus(displayStatus);
+      return displayStatus === filter;
+    });
+  }, [summaries, filter]);
 
   // Sort by start_time descending (newest first)
-  const sortedSummaries = [...filteredSummaries].sort(
-    (a, b) => new Date(b.start_time) - new Date(a.start_time)
-  );
+  const sortedSummaries = useMemo(() => {
+    return [...filteredSummaries].sort((a, b) => {
+      const bTime = b.start_time ? new Date(b.start_time).getTime() : 0;
+      const aTime = a.start_time ? new Date(a.start_time).getTime() : 0;
+      return bTime - aTime;
+    });
+  }, [filteredSummaries]);
 
-  const columns = [
-    {
-      title: t('时间'),
-      dataIndex: 'start_time',
-      width: 160,
-      render: (time) => {
-        if (!time) return '-';
-        const seconds = Math.floor(new Date(time).getTime() / 1000);
-        return timestamp2string(seconds);
+  const columns = useMemo(() => {
+    return [
+      {
+        title: t('时间'),
+        dataIndex: 'start_time',
+        width: 160,
+        render: (time) => {
+          if (!time) return '-';
+          const seconds = Math.floor(new Date(time).getTime() / 1000);
+          return timestamp2string(seconds);
+        },
       },
-    },
-    {
-      title: t('状态'),
-      dataIndex: 'status',
-      width: 110,
-      render: (_, record) => {
-        const displayStatus = deriveDisplayStatus(record);
-        return (
-          <Tag color={statusColors[displayStatus] || statusColors[record.status] || 'grey'}>
-            {statusLabels[displayStatus] || statusLabels[record.status] || displayStatus || record.status}
+      {
+        title: t('状态'),
+        dataIndex: 'status',
+        width: 110,
+        render: (_, record) => {
+          const displayStatus = deriveDisplayStatus(record);
+          return (
+            <Tag color={statusColors[displayStatus] || statusColors[record.status] || 'grey'}>
+              {statusLabels[displayStatus] ||
+                statusLabels[record.status] ||
+                displayStatus ||
+                record.status}
+            </Tag>
+          );
+        },
+      },
+      {
+        title: t('模型'),
+        dataIndex: 'model',
+        width: 180,
+        ellipsis: true,
+        render: (_, record) =>
+          renderModelTag(record.model || t('未知模型'), {
+            shape: 'circle',
+          }),
+      },
+      {
+        title: t('渠道'),
+        dataIndex: 'channel_name',
+        width: 160,
+        ellipsis: true,
+        render: (_, record) => (
+          <Tag
+            color={stringToColor(record.channel_name || String(record.channel_id || ''))}
+            shape='circle'
+          >
+            {record.channel_name || t('未知渠道')}
           </Tag>
-        );
+        ),
       },
-    },
-    {
-      title: t('模型'),
-      dataIndex: 'model',
-      width: 180,
-      ellipsis: true,
-      render: (_, record) =>
-        renderModelTag(record.model || t('未知模型'), {
-          shape: 'circle',
-        }),
-    },
-    {
-      title: t('渠道'),
-      dataIndex: 'channel_name',
-      width: 160,
-      ellipsis: true,
-      render: (_, record) => (
-        <Tag
-          color={stringToColor(record.channel_name || String(record.channel_id || ''))}
-          shape='circle'
-        >
-          {record.channel_name || t('未知渠道')}
-        </Tag>
-      ),
-    },
-    {
-      title: t('耗时'),
-      dataIndex: 'duration_ms',
-      width: 90,
-      render: (_, record) => <DurationCell record={record} t={t} />,
-    },
-  ];
+      {
+        title: t('耗时'),
+        dataIndex: 'duration_ms',
+        width: 90,
+        render: (_, record) => <DurationCell record={record} t={t} />,
+      },
+    ];
+  }, [t, statusLabels]);
 
   return (
     <div style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', padding: '8px', marginTop: '64px' }}>

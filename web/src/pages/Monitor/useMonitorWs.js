@@ -1,3 +1,22 @@
+/*
+Copyright (C) 2025 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { deriveDisplayStatus, isActiveStatus } from './statusUtils';
 import { API } from '../../helpers/api';
@@ -10,19 +29,28 @@ const WS_MESSAGE_TYPES = {
   CHANNEL: 'channel_update',
 };
 
-const useMonitorWs = () => {
+const MAX_SUMMARIES = 100;
+
+const useMonitorWs = ({ focusedRequestId } = {}) => {
   const [summaries, setSummaries] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, memory: 0 });
   const [connected, setConnected] = useState(false);
-  const [channelUpdates, setChannelUpdates] = useState({});
+  // Only keep the most recent channel update for the currently focused request
+  // to avoid unbounded memory growth when the page is open for long periods.
+  const [channelUpdate, setChannelUpdate] = useState(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttempts = useRef(0);
   const disconnectTimerRef = useRef(null);
   const stableOpenTimerRef = useRef(null);
   const statsIntervalRef = useRef(null);
+  const focusedRequestIdRef = useRef(focusedRequestId ?? null);
   const maxReconnectAttempts = 10;
   const baseReconnectDelay = 1000;
+
+  useEffect(() => {
+    focusedRequestIdRef.current = focusedRequestId ?? null;
+  }, [focusedRequestId]);
 
   const calculateStats = useCallback((reqs) => {
     const active = reqs.filter((r) => isActiveStatus(deriveDisplayStatus(r))).length;
@@ -74,11 +102,13 @@ const useMonitorWs = () => {
         switch (message.type) {
           case WS_MESSAGE_TYPES.SNAPSHOT:
             // Initial snapshot of all summaries
-            const snapshotData = Array.isArray(message.payload)
-              ? message.payload
-              : [];
-            setSummaries(snapshotData);
-            setStats((prev) => ({ ...prev, ...calculateStats(snapshotData) }));
+            const snapshotData = Array.isArray(message.payload) ? message.payload : [];
+            const trimmedSnapshot =
+              snapshotData.length > MAX_SUMMARIES
+                ? snapshotData.slice(-MAX_SUMMARIES)
+                : snapshotData;
+            setSummaries(trimmedSnapshot);
+            setStats((prev) => ({ ...prev, ...calculateStats(trimmedSnapshot) }));
             break;
 
           case WS_MESSAGE_TYPES.NEW:
@@ -86,7 +116,7 @@ const useMonitorWs = () => {
             setSummaries((prev) => {
               const newSummaries = [...prev, message.payload];
               // Keep only last 100 records on frontend too
-              if (newSummaries.length > 100) {
+              if (newSummaries.length > MAX_SUMMARIES) {
                 newSummaries.shift();
               }
               setStats((prevStats) => ({ ...prevStats, ...calculateStats(newSummaries) }));
@@ -116,10 +146,10 @@ const useMonitorWs = () => {
 
           case WS_MESSAGE_TYPES.CHANNEL:
             if (message.payload && message.payload.request_id) {
-              setChannelUpdates((prev) => ({
-                ...prev,
-                [message.payload.request_id]: message.payload,
-              }));
+              const focusedId = focusedRequestIdRef.current;
+              if (focusedId && message.payload.request_id === focusedId) {
+                setChannelUpdate(message.payload);
+              }
             }
             break;
 
@@ -143,6 +173,9 @@ const useMonitorWs = () => {
     if (wsRef.current) {
       wsRef.current.close();
     }
+
+    // Drop any stale in-memory live update when reconnecting.
+    setChannelUpdate(null);
 
     // Determine WebSocket URL
     const wsUrl = buildWsUrl();
@@ -245,7 +278,7 @@ const useMonitorWs = () => {
     stats,
     connected,
     reconnect,
-    channelUpdates,
+    channelUpdate,
   };
 };
 
