@@ -148,10 +148,11 @@ type ChannelUpdate struct {
 
 // MonitorStats contains monitoring statistics
 type MonitorStats struct {
-	TotalRequests  int `json:"total_requests"`
-	ActiveRequests int `json:"active_requests"`
-	Completed      int `json:"completed"`
-	Errors         int `json:"errors"`
+	TotalRequests  int   `json:"total_requests"`
+	ActiveRequests int   `json:"active_requests"`
+	Completed      int   `json:"completed"`
+	Errors         int   `json:"errors"`
+	MemoryBytes    int64 `json:"memory_bytes"`
 }
 
 // RequestSummary is a lightweight version of RequestRecord for WebSocket broadcasts
@@ -226,4 +227,67 @@ func (r *RequestRecord) ToChannelUpdate() *ChannelUpdate {
 		CurrentChannel:  r.CurrentChannel,
 		ChannelAttempts: r.ChannelAttempts,
 	}
+}
+
+// EstimateSize returns approximate memory size in bytes for this RequestRecord
+func (r *RequestRecord) EstimateSize() int64 {
+	var size int64
+
+	// Basic struct fields overhead
+	size += 200
+
+	// String fields
+	size += int64(len(r.ID))
+	size += int64(len(r.Status))
+	size += int64(len(r.TokenName))
+	size += int64(len(r.ChannelName))
+	size += int64(len(r.Model))
+	size += int64(len(r.CurrentPhase))
+
+	// Downstream info
+	size += int64(len(r.Downstream.Method))
+	size += int64(len(r.Downstream.Path))
+	size += int64(len(r.Downstream.Body))
+	size += int64(len(r.Downstream.ClientIP))
+	for k, v := range r.Downstream.Headers {
+		size += int64(len(k) + len(v))
+	}
+
+	// Upstream info
+	if r.Upstream != nil {
+		size += int64(len(r.Upstream.URL))
+		size += int64(len(r.Upstream.Method))
+		size += int64(len(r.Upstream.Body))
+		for k, v := range r.Upstream.Headers {
+			size += int64(len(k) + len(v))
+		}
+	}
+
+	// Response info
+	if r.Response != nil {
+		size += int64(len(r.Response.Body))
+		for k, v := range r.Response.Headers {
+			size += int64(len(k) + len(v))
+		}
+		if r.Response.Error != nil {
+			size += int64(len(r.Response.Error.Code))
+			size += int64(len(r.Response.Error.Message))
+		}
+	}
+
+	// CurrentChannel
+	if r.CurrentChannel != nil {
+		size += int64(len(r.CurrentChannel.Name))
+		size += 50 // overhead
+	}
+
+	// Channel attempts
+	for _, attempt := range r.ChannelAttempts {
+		size += int64(len(attempt.ChannelName))
+		size += int64(len(attempt.Reason))
+		size += int64(len(attempt.ErrorCode))
+		size += 100 // overhead
+	}
+
+	return size
 }

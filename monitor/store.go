@@ -205,6 +205,7 @@ func (s *Store) GetStats() MonitorStats {
 	defer s.mu.RUnlock()
 
 	stats := MonitorStats{}
+	var memoryBytes int64
 
 	for _, record := range s.records {
 		if record == nil {
@@ -219,9 +220,39 @@ func (s *Store) GetStats() MonitorStats {
 		case StatusError:
 			stats.Errors++
 		}
+		
+		// Calculate memory for this record
+		memoryBytes += record.EstimateSize()
 	}
 
+	// Add index map overhead (approximate)
+	// Each map entry: key (string) + value (int) + overhead
+	memoryBytes += int64(len(s.index) * (32 + 8 + 16))
+
+	stats.MemoryBytes = memoryBytes
+
 	return stats
+}
+
+// GetMemoryUsage calculates the approximate memory used by the monitor store
+func (s *Store) GetMemoryUsage() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var totalBytes int64
+
+	// Calculate memory for each RequestRecord
+	for _, record := range s.records {
+		if record != nil {
+			totalBytes += record.EstimateSize()
+		}
+	}
+
+	// Add index map overhead (approximate)
+	// Each map entry: key (string) + value (int) + overhead
+	totalBytes += int64(len(s.index) * (32 + 8 + 16))
+
+	return totalBytes
 }
 
 // MarkComplete marks a record as completed with response info

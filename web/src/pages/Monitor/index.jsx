@@ -69,6 +69,13 @@ const renderDurationTag = (durationMs, t) => {
   );
 };
 
+const formatMemory = (bytes) => {
+  if (!bytes || bytes === 0) return '0B';
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+};
+
 // Component to display duration with real-time stopwatch for ongoing requests
 const DurationCell = ({ record, t }) => {
   const [elapsed, setElapsed] = useState(0);
@@ -831,7 +838,11 @@ const Monitor = () => {
           </Space>
           <Space>
             <Text type='tertiary'>
-              {t('活跃: {{active}} | 总计: {{total}}', { active: stats.active || 0, total: stats.total || 0 })}
+              {t('活跃: {{active}} | 总计: {{total}} | 内存: {{memory}}', {
+                active: stats.active || 0,
+                total: stats.total || 0,
+                memory: formatMemory(stats.memory || 0)
+              })}
             </Text>
             {!connected && (
               <Button icon={<IconRefresh />} onClick={reconnect}>
