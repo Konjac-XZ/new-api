@@ -12,12 +12,19 @@ const (
 
 // Store is a ring buffer storage for request records
 type Store struct {
-	records []*RequestRecord
-	index   map[string]int // ID -> position mapping
-	mu      sync.RWMutex
-	head    int
-	count   int
-	hub     *Hub
+	records      []*RequestRecord
+	index        map[string]int // ID -> position mapping
+	mu           sync.RWMutex
+	head         int
+	count        int
+	hub          *Hub
+	evictionSink EvictionSink
+}
+
+// EvictionSink receives records that are evicted due to the ring buffer being full.
+// Implementations must be non-blocking and concurrency-safe.
+type EvictionSink interface {
+	OnEvicted(record *RequestRecord)
 }
 
 // isActiveStatus reports whether a request status should be treated as active/processing
@@ -39,57 +46,79 @@ func NewStore(hub *Hub) *Store {
 	}
 }
 
-// Add adds a new record to the store
-func (s *Store) Add(record *RequestRecord) {
+func (s *Store) SetEvictionSink(sink EvictionSink) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.evictionSink = sink
+}
+
+// Add adds a new record to the store
+func (s *Store) Add(record *RequestRecord) {
+	var evicted *RequestRecord
+	var sink EvictionSink
+	var summary *RequestSummary
+
+	s.mu.Lock()
 
 	// If we're overwriting an existing record, remove it from the index
 	if s.records[s.head] != nil {
-		delete(s.index, s.records[s.head].ID)
+		evicted = s.records[s.head]
+		delete(s.index, evicted.ID)
 	}
 
 	// Store the new record
 	s.records[s.head] = record
 	s.index[record.ID] = s.head
+	summary = record.ToSummary()
+	sink = s.evictionSink
 
 	// Move head forward
 	s.head = (s.head + 1) % MaxRecords
 	if s.count < MaxRecords {
 		s.count++
 	}
+	s.mu.Unlock()
+
+	if evicted != nil && sink != nil {
+		sink.OnEvicted(evicted)
+	}
 
 	// Broadcast new record summary to WebSocket clients
 	if s.hub != nil {
 		s.hub.Broadcast(&WSMessage{
 			Type:    WSMessageTypeNew,
-			Payload: record.ToSummary(),
+			Payload: summary,
 		})
 	}
 }
 
 // Update updates an existing record by ID
 func (s *Store) Update(id string, updater func(*RequestRecord)) {
+	var summary *RequestSummary
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	pos, exists := s.index[id]
 	if !exists {
+		s.mu.Unlock()
 		return
 	}
 
 	record := s.records[pos]
 	if record == nil {
+		s.mu.Unlock()
 		return
 	}
 
 	updater(record)
+	summary = record.ToSummary()
+	s.mu.Unlock()
 
 	// Broadcast update summary to WebSocket clients
 	if s.hub != nil {
 		s.hub.Broadcast(&WSMessage{
 			Type:    WSMessageTypeUpdate,
-			Payload: record.ToSummary(),
+			Payload: summary,
 		})
 	}
 }
@@ -220,7 +249,7 @@ func (s *Store) GetStats() MonitorStats {
 		case StatusError:
 			stats.Errors++
 		}
-		
+
 		// Calculate memory for this record
 		memoryBytes += record.EstimateSize()
 	}
