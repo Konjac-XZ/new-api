@@ -336,7 +336,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
-			remainingChannelRetries := common.RetryTimes - i
+			remainingChannelRetries := common.RetryTimes - retryParam.GetRetry()
 			retryBudget := remainingChannelRetries
 			if retryBudget <= 0 && attempt+1 < channelRetryAttempts {
 				retryBudget = 1
