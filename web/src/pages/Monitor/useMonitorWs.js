@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { deriveDisplayStatus, isActiveStatus } from './statusUtils';
 import { API } from '../../helpers/api';
 
 const WS_MESSAGE_TYPES = {
@@ -51,11 +50,6 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
   useEffect(() => {
     focusedRequestIdRef.current = focusedRequestId ?? null;
   }, [focusedRequestId]);
-
-  const calculateStats = useCallback((reqs) => {
-    const active = reqs.filter((r) => isActiveStatus(deriveDisplayStatus(r))).length;
-    return { total: reqs.length, active };
-  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -108,7 +102,6 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
                 ? snapshotData.slice(-MAX_SUMMARIES)
                 : snapshotData;
             setSummaries(trimmedSnapshot);
-            setStats((prev) => ({ ...prev, ...calculateStats(trimmedSnapshot) }));
             break;
 
           case WS_MESSAGE_TYPES.NEW:
@@ -119,7 +112,6 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
               if (newSummaries.length > MAX_SUMMARIES) {
                 newSummaries.shift();
               }
-              setStats((prevStats) => ({ ...prevStats, ...calculateStats(newSummaries) }));
               return newSummaries;
             });
             break;
@@ -130,7 +122,6 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
               const updated = prev.map((r) =>
                 r.id === message.payload.id ? message.payload : r
               );
-              setStats((prevStats) => ({ ...prevStats, ...calculateStats(updated) }));
               return updated;
             });
             break;
@@ -139,7 +130,6 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
             // Request deleted (shouldn't happen often)
             setSummaries((prev) => {
               const filtered = prev.filter((r) => r.id !== message.payload.id);
-              setStats((prevStats) => ({ ...prevStats, ...calculateStats(filtered) }));
               return filtered;
             });
             break;
@@ -160,7 +150,7 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
     }
-  }, [calculateStats]);
+  }, []);
 
   const connect = useCallback(() => {
     // Clear any existing reconnect timeout

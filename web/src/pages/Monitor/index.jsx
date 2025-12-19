@@ -114,7 +114,7 @@ const DurationCell = ({ record, t }) => {
     };
 
     updateElapsed();
-    const interval = setInterval(updateElapsed, 250);
+    const interval = setInterval(updateElapsed, 100);
 
     return () => clearInterval(interval);
   }, [isActive, record.start_time]);
