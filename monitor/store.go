@@ -27,6 +27,60 @@ type EvictionSink interface {
 	OnEvicted(record *RequestRecord)
 }
 
+func cloneStringMap(in map[string]string) map[string]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneRequestRecordForAPI(in *RequestRecord) *RequestRecord {
+	if in == nil {
+		return nil
+	}
+
+	out := *in
+
+	// Downstream
+	out.Downstream = in.Downstream
+	out.Downstream.Headers = cloneStringMap(in.Downstream.Headers)
+
+	// Upstream
+	if in.Upstream != nil {
+		up := *in.Upstream
+		up.Headers = cloneStringMap(in.Upstream.Headers)
+		out.Upstream = &up
+	}
+
+	// Response
+	if in.Response != nil {
+		resp := *in.Response
+		resp.Headers = cloneStringMap(in.Response.Headers)
+		if in.Response.Error != nil {
+			errInfo := *in.Response.Error
+			resp.Error = &errInfo
+		}
+		out.Response = &resp
+	}
+
+	// CurrentChannel
+	if in.CurrentChannel != nil {
+		cc := *in.CurrentChannel
+		out.CurrentChannel = &cc
+	}
+
+	// ChannelAttempts
+	if in.ChannelAttempts != nil {
+		out.ChannelAttempts = append([]ChannelAttempt(nil), in.ChannelAttempts...)
+	}
+
+	return &out
+}
+
 // isActiveStatus reports whether a request status should be treated as active/processing
 func isActiveStatus(status string) bool {
 	switch status {
@@ -50,6 +104,27 @@ func (s *Store) SetEvictionSink(sink EvictionSink) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.evictionSink = sink
+}
+
+// Count returns the number of records currently held in the ring buffer.
+func (s *Store) Count() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.count
+}
+
+// GetSnapshot retrieves a deep-copied record by ID suitable for JSON serialization
+// without racing with concurrent updates.
+func (s *Store) GetSnapshot(id string) *RequestRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	pos, exists := s.index[id]
+	if !exists {
+		return nil
+	}
+
+	return cloneRequestRecordForAPI(s.records[pos])
 }
 
 // Add adds a new record to the store
@@ -142,12 +217,29 @@ func (s *Store) BroadcastChannelUpdate(id string) {
 		return
 	}
 
-	record := s.Get(id)
-	if record == nil {
-		return
+	// Copy only the fields required for channel update under lock, so we don't
+	// race with concurrent updates or copy large bodies unnecessarily.
+	var update *ChannelUpdate
+	s.mu.RLock()
+	pos, exists := s.index[id]
+	if exists {
+		record := s.records[pos]
+		if record != nil {
+			var currentChannel *CurrentChannel
+			if record.CurrentChannel != nil {
+				cc := *record.CurrentChannel
+				currentChannel = &cc
+			}
+			attempts := append([]ChannelAttempt(nil), record.ChannelAttempts...)
+			update = &ChannelUpdate{
+				RequestID:       record.ID,
+				CurrentPhase:    record.CurrentPhase,
+				CurrentChannel:  currentChannel,
+				ChannelAttempts: attempts,
+			}
+		}
 	}
-
-	update := record.ToChannelUpdate()
+	s.mu.RUnlock()
 	if update == nil {
 		return
 	}
@@ -156,6 +248,32 @@ func (s *Store) BroadcastChannelUpdate(id string) {
 		Type:    WSMessageTypeChannel,
 		Payload: update,
 	})
+}
+
+// GetAllSnapshot returns deep-copied records in chronological order, suitable for
+// JSON serialization without racing with concurrent updates.
+func (s *Store) GetAllSnapshot() []*RequestRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*RequestRecord, 0, s.count)
+
+	if s.count < MaxRecords {
+		for i := 0; i < s.count; i++ {
+			if s.records[i] != nil {
+				result = append(result, cloneRequestRecordForAPI(s.records[i]))
+			}
+		}
+	} else {
+		for i := 0; i < MaxRecords; i++ {
+			pos := (s.head + i) % MaxRecords
+			if s.records[pos] != nil {
+				result = append(result, cloneRequestRecordForAPI(s.records[pos]))
+			}
+		}
+	}
+
+	return result
 }
 
 // GetAll returns all stored records in chronological order (oldest first)
@@ -228,19 +346,35 @@ func (s *Store) GetActive() []*RequestRecord {
 	return result
 }
 
+// GetActiveSnapshot returns deep-copied active records without racing with updates.
+func (s *Store) GetActiveSnapshot() []*RequestRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*RequestRecord, 0)
+
+	for _, record := range s.records {
+		if record != nil && isActiveStatus(record.Status) {
+			result = append(result, cloneRequestRecordForAPI(record))
+		}
+	}
+
+	return result
+}
+
 // GetStats returns monitoring statistics
 func (s *Store) GetStats() MonitorStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	stats := MonitorStats{}
+	stats.TotalRequests = s.count
 	var memoryBytes int64
 
 	for _, record := range s.records {
 		if record == nil {
 			continue
 		}
-		stats.TotalRequests++
 		switch record.Status {
 		case StatusProcessing, StatusWaitingUpstream, StatusStreaming:
 			stats.ActiveRequests++

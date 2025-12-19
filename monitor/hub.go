@@ -75,25 +75,27 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 
-		case message := <-h.broadcast:
-			data, err := json.Marshal(message)
-			if err != nil {
-				continue
-			}
-
-			h.mu.RLock()
-			for client := range h.clients {
-				select {
-				case client.send <- data:
-				default:
-					// Client's send buffer is full, close connection
-					close(client.send)
-					delete(h.clients, client)
-				}
-			}
-			h.mu.RUnlock()
+	case message := <-h.broadcast:
+		data, err := json.Marshal(message)
+		if err != nil {
+			continue
 		}
+
+		// We may delete clients whose send buffers are full, so we must hold the
+		// write lock while iterating.
+		h.mu.Lock()
+		for client := range h.clients {
+			select {
+			case client.send <- data:
+			default:
+				// Client's send buffer is full, close connection
+				close(client.send)
+				delete(h.clients, client)
+			}
+		}
+		h.mu.Unlock()
 	}
+}
 }
 
 // Broadcast sends a message to all connected clients

@@ -17,7 +17,7 @@ func GetRequests() gin.HandlerFunc {
 			return
 		}
 
-		records := globalStore.GetAll()
+		records := globalStore.GetAllSnapshot()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    records,
@@ -38,7 +38,7 @@ func GetRequest() gin.HandlerFunc {
 		}
 
 		id := c.Param("id")
-		record := globalStore.Get(id)
+		record := globalStore.GetSnapshot(id)
 		if record == nil {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
@@ -47,26 +47,23 @@ func GetRequest() gin.HandlerFunc {
 			return
 		}
 
-		// Create a copy to avoid modifying the stored record
-		recordCopy := *record
-
 		// Exclude body content if it exceeds 20KB to save bandwidth
 		// Frontend will check body_size and fetch body separately if needed
 		const displayThreshold = 20000
 
-		if recordCopy.Downstream.BodySize > displayThreshold {
-			recordCopy.Downstream.Body = ""
+		if record.Downstream.BodySize > displayThreshold {
+			record.Downstream.Body = ""
 		}
-		if recordCopy.Upstream != nil && recordCopy.Upstream.BodySize > displayThreshold {
-			recordCopy.Upstream.Body = ""
+		if record.Upstream != nil && record.Upstream.BodySize > displayThreshold {
+			record.Upstream.Body = ""
 		}
-		if recordCopy.Response != nil && recordCopy.Response.BodySize > displayThreshold {
-			recordCopy.Response.Body = ""
+		if record.Response != nil && record.Response.BodySize > displayThreshold {
+			record.Response.Body = ""
 		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data":    &recordCopy,
+			"data":    record,
 		})
 	}
 }
@@ -86,7 +83,7 @@ func GetRequestBody() gin.HandlerFunc {
 		id := c.Param("id")
 		bodyType := c.Param("type")
 
-		record := globalStore.Get(id)
+		record := globalStore.GetSnapshot(id)
 		if record == nil {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
@@ -150,7 +147,6 @@ func GetStats() gin.HandlerFunc {
 		}
 
 		stats := globalStore.GetStats()
-		stats.TotalRequests = globalStore.count
 
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
@@ -186,7 +182,7 @@ func GetActiveRequests() gin.HandlerFunc {
 			return
 		}
 
-		records := globalStore.GetActive()
+		records := globalStore.GetActiveSnapshot()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    records,
@@ -215,7 +211,7 @@ func InterruptRequest() gin.HandlerFunc {
 		}
 
 		// Check if request exists and is active
-		record := globalStore.Get(id)
+		record := globalStore.GetSnapshot(id)
 		if record == nil {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
