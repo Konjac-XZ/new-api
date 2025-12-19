@@ -28,8 +28,6 @@ const WS_MESSAGE_TYPES = {
   CHANNEL: 'channel_update',
 };
 
-const MAX_SUMMARIES = 100;
-
 const useMonitorWs = ({ focusedRequestId } = {}) => {
   const [summaries, setSummaries] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, memory: 0 });
@@ -97,23 +95,12 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
           case WS_MESSAGE_TYPES.SNAPSHOT:
             // Initial snapshot of all summaries
             const snapshotData = Array.isArray(message.payload) ? message.payload : [];
-            const trimmedSnapshot =
-              snapshotData.length > MAX_SUMMARIES
-                ? snapshotData.slice(-MAX_SUMMARIES)
-                : snapshotData;
-            setSummaries(trimmedSnapshot);
+            setSummaries(snapshotData);
             break;
 
           case WS_MESSAGE_TYPES.NEW:
             // New request summary added
-            setSummaries((prev) => {
-              const newSummaries = [...prev, message.payload];
-              // Keep only last 100 records on frontend too
-              if (newSummaries.length > MAX_SUMMARIES) {
-                newSummaries.shift();
-              }
-              return newSummaries;
-            });
+            setSummaries((prev) => [...prev, message.payload]);
             break;
 
           case WS_MESSAGE_TYPES.UPDATE:

@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	MaxRecords        = 500
+	MaxRecords        = 100
 	BodySizeThreshold = 1024 * 1024 // Threshold for marking body as "large" (1MB, ~256K tokens)
 )
 
