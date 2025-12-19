@@ -182,9 +182,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		return newApiErr
 	}
 
+	usageData := usage.(*dto.Usage)
+
 	// Record response for monitoring when it hasn't been recorded upstream
 	if monitorID := c.GetString("monitor_id"); monitorID != "" && !c.GetBool("monitor_response_recorded") {
-		usageData := usage.(*dto.Usage)
 		var statusCode int
 		var respHeaders http.Header
 		if httpResp != nil {
@@ -195,10 +196,10 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		c.Set("monitor_response_recorded", true)
 	}
 
-	if strings.HasPrefix(info.OriginModelName, "gpt-4o-audio") {
-		service.PostAudioConsumeQuota(c, info, usage.(*dto.Usage), "")
+	if usageData.CompletionTokenDetails.AudioTokens > 0 || usageData.PromptTokensDetails.AudioTokens > 0 || strings.HasPrefix(info.OriginModelName, "gpt-4o-audio") {
+		service.PostAudioConsumeQuota(c, info, usageData, "")
 	} else {
-		postConsumeQuota(c, info, usage.(*dto.Usage), "")
+		postConsumeQuota(c, info, usageData, "")
 	}
 	return nil
 }
@@ -386,8 +387,6 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 	}
 
 	quotaDelta := quota - relayInfo.FinalPreConsumedQuota
-
-
 
 	if quotaDelta != 0 {
 		err := service.PostConsumeQuota(relayInfo, quotaDelta, relayInfo.FinalPreConsumedQuota, true)
