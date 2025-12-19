@@ -10,15 +10,28 @@ import (
 )
 
 var (
-	globalStore *Store
-	globalHub   *Hub
-	enabled     = true // Enabled by default
+	globalStore      *Store
+	globalHub        *Hub
+	enabled          = true // Enabled by default
+	evictedPersister *EvictedRecordPersister
 )
 
 // Init initializes the monitor system
 func Init() {
 	globalHub = NewHub()
 	globalStore = NewStore(globalHub)
+
+	cfg := loadEvictedPersistenceConfigFromEnv()
+	if cfg.Enabled {
+		persister, err := NewEvictedRecordPersister(cfg)
+		if err != nil {
+			common.SysError("monitor evicted persistence disabled: " + err.Error())
+			return
+		}
+		evictedPersister = persister
+		globalStore.SetEvictionSink(evictedPersister)
+		evictedPersister.Start()
+	}
 	go globalHub.Run()
 }
 
