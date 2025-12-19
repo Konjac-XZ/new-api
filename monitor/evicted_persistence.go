@@ -70,6 +70,19 @@ type evictedItem struct {
 	Record     *RequestRecord
 }
 
+type hourBucket struct {
+	date string // yyyy-mm-dd
+	hour string // HH
+}
+
+type hourWriter struct {
+	dir      string
+	filename string
+	file     *os.File
+	writer   *bufio.Writer
+	lastUsed time.Time
+}
+
 // EvictedRecordPersister persists records that are evicted from the in-memory FIFO/ring buffer.
 //
 // Design goals:
@@ -84,6 +97,8 @@ type EvictedRecordPersister struct {
 	purge  chan struct{}
 	once   sync.Once
 	fileMu sync.Mutex
+
+	writers map[hourBucket]*hourWriter
 
 	purgeHour   int
 	purgeMinute int
@@ -104,6 +119,7 @@ func NewEvictedRecordPersister(cfg EvictedPersistenceConfig) (*EvictedRecordPers
 		cfg:         cfg,
 		in:          make(chan evictedItem, cfg.ChannelSize),
 		purge:       make(chan struct{}, 1),
+		writers:     make(map[hourBucket]*hourWriter, 32),
 		purgeHour:   h,
 		purgeMinute: m,
 	}, nil
@@ -165,7 +181,7 @@ func (p *EvictedRecordPersister) run() {
 		p.fileMu.Lock()
 		defer p.fileMu.Unlock()
 
-		if err := p.flushToDisk(filtered); err != nil {
+		if err := p.flushToDiskLocked(filtered); err != nil {
 			common.SysError("failed to persist evicted monitor records: " + err.Error())
 		}
 	}
@@ -227,6 +243,7 @@ func (p *EvictedRecordPersister) run() {
 			}
 
 			p.fileMu.Lock()
+			_ = p.closeAllWritersLocked()
 			if err := purgeDirContents(p.cfg.Dir); err != nil {
 				common.SysError("failed to purge monitor evicted persistence dir: " + err.Error())
 			}
@@ -235,35 +252,110 @@ func (p *EvictedRecordPersister) run() {
 	}
 }
 
-func (p *EvictedRecordPersister) flushToDisk(items []evictedItem) error {
+func (p *EvictedRecordPersister) flushToDiskLocked(items []evictedItem) error {
 	if err := os.MkdirAll(p.cfg.Dir, 0o755); err != nil {
 		return err
 	}
 
-	now := time.Now()
-	filename := filepath.Join(p.cfg.Dir, fmt.Sprintf("evicted-%s.jsonl", now.Format("2006-01-02")))
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	// 1MB buffer for fewer syscalls under load.
-	w := bufio.NewWriterSize(f, 1<<20)
+	// Group by local day/hour so we get an on-disk layout:
+	//   <dir>/yyyy-mm-dd/HH/evicted.jsonl
+	// This provides good separation while still using append-only writes for throughput.
+	buckets := make(map[hourBucket][]*RequestRecord, 8)
 	for _, it := range items {
-		// JSON encode one record per line for easier inspection/streaming.
-		b, err := json.Marshal(it.Record)
-		if err != nil {
+		if it.Record == nil {
 			continue
 		}
-		if _, err := w.Write(b); err != nil {
+		t := it.EnqueuedAt.Local()
+		key := hourBucket{
+			date: t.Format("2006-01-02"),
+			hour: t.Format("15"),
+		}
+		buckets[key] = append(buckets[key], it.Record)
+	}
+
+	for key, records := range buckets {
+		if len(records) == 0 {
+			continue
+		}
+
+		hw, err := p.getWriterLocked(key)
+		if err != nil {
 			return err
 		}
-		if err := w.WriteByte('\n'); err != nil {
+		for _, r := range records {
+			b, err := json.Marshal(r)
+			if err != nil {
+				continue
+			}
+			if _, err := hw.writer.Write(b); err != nil {
+				return err
+			}
+			if err := hw.writer.WriteByte('\n'); err != nil {
+				return err
+			}
+		}
+		// Flush per bucket on each batch flush so data hits disk promptly,
+		// while still avoiding repeated open/close syscalls.
+		if err := hw.writer.Flush(); err != nil {
 			return err
 		}
 	}
-	return w.Flush()
+
+	return nil
+}
+
+func (p *EvictedRecordPersister) getWriterLocked(key hourBucket) (*hourWriter, error) {
+	now := time.Now()
+	if existing := p.writers[key]; existing != nil && existing.file != nil && existing.writer != nil {
+		existing.lastUsed = now
+		return existing, nil
+	}
+
+	dir := filepath.Join(p.cfg.Dir, key.date, key.hour)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	filename := filepath.Join(dir, "evicted.jsonl")
+
+	// Append-only hourly file: highest throughput for this access pattern.
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
+	// Larger buffer reduces syscalls further when batching records.
+	w := bufio.NewWriterSize(f, 4<<20) // 4MB
+	hw := &hourWriter{
+		dir:      dir,
+		filename: filename,
+		file:     f,
+		writer:   w,
+		lastUsed: now,
+	}
+	p.writers[key] = hw
+	return hw, nil
+}
+
+func (p *EvictedRecordPersister) closeAllWritersLocked() error {
+	var firstErr error
+	for key, hw := range p.writers {
+		if hw == nil {
+			delete(p.writers, key)
+			continue
+		}
+		if hw.writer != nil {
+			if err := hw.writer.Flush(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		if hw.file != nil {
+			if err := hw.file.Close(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+		delete(p.writers, key)
+	}
+	return firstErr
 }
 
 func (p *EvictedRecordPersister) runPurgeScheduler() {
