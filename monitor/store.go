@@ -132,12 +132,14 @@ func (s *Store) Add(record *RequestRecord) {
 	var evicted *RequestRecord
 	var sink EvictionSink
 	var summary *RequestSummary
+	var evictedID string
 
 	s.mu.Lock()
 
 	// If we're overwriting an existing record, remove it from the index
 	if s.records[s.head] != nil {
 		evicted = s.records[s.head]
+		evictedID = evicted.ID
 		delete(s.index, evicted.ID)
 	}
 
@@ -156,6 +158,14 @@ func (s *Store) Add(record *RequestRecord) {
 
 	if evicted != nil && sink != nil {
 		sink.OnEvicted(evicted)
+	}
+
+	// Notify clients that a record was evicted from the ring buffer.
+	if evictedID != "" && s.hub != nil {
+		s.hub.Broadcast(&WSMessage{
+			Type:    WSMessageTypeDelete,
+			Payload: &RequestSummary{ID: evictedID},
+		})
 	}
 
 	// Broadcast new record summary to WebSocket clients
