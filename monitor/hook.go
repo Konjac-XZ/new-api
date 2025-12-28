@@ -10,28 +10,15 @@ import (
 )
 
 var (
-	globalStore      *Store
-	globalHub        *Hub
-	enabled          = true // Enabled by default
-	evictedPersister *EvictedRecordPersister
+	globalStore *Store
+	globalHub   *Hub
+	enabled     = true // Enabled by default
 )
 
 // Init initializes the monitor system
 func Init() {
 	globalHub = NewHub()
 	globalStore = NewStore(globalHub)
-
-	cfg := loadEvictedPersistenceConfigFromEnv()
-	if cfg.Enabled {
-		persister, err := NewEvictedRecordPersister(cfg)
-		if err != nil {
-			common.SysError("monitor evicted persistence disabled: " + err.Error())
-			return
-		}
-		evictedPersister = persister
-		globalStore.SetEvictionSink(evictedPersister)
-		evictedPersister.Start()
-	}
 	go globalHub.Run()
 }
 
@@ -112,19 +99,17 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 	tokenName := c.GetString("token_name")
 	model := c.GetString("original_model")
 
-	body, bodyExceedsThreshold := CheckBodySize(string(requestBody))
 	record := &RequestRecord{
 		ID:        requestId,
 		Status:    StatusProcessing,
 		StartTime: time.Now(),
 		Downstream: DownstreamInfo{
-			Method:        c.Request.Method,
-			Path:          c.Request.URL.Path,
-			Headers:       ginHeadersToMap(c),
-			Body:          body,
-			BodySize:      len(requestBody),
-			BodyTruncated: bodyExceedsThreshold,
-			ClientIP:      c.ClientIP(),
+			Method:   c.Request.Method,
+			Path:     c.Request.URL.Path,
+			Headers:  ginHeadersToMap(c),
+			Body:     TruncateBody(string(requestBody)),
+			BodySize: len(requestBody),
+			ClientIP: c.ClientIP(),
 		},
 		UserId:    userId,
 		TokenId:   tokenId,
@@ -137,20 +122,17 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 }
 
 // RecordUpstream records the upstream request details
+// RecordUpstream records the upstream request details
 func RecordUpstream(recordID string, url string, method string, headers http.Header, body []byte) {
 	if !enabled || globalStore == nil || recordID == "" {
 		return
 	}
-
-	bodyStr, bodyExceedsThreshold := CheckBodySize(string(body))
-	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
-			URL:           url,
-			Method:        method,
-			Headers:       headersToMap(headers),
-			Body:          bodyStr,
-			BodySize:      len(body),
-			BodyTruncated: bodyExceedsThreshold,
+			URL:      url,
+			Method:   method,
+			Headers:  headersToMap(headers),
+			Body:     TruncateBody(string(body)),
+			BodySize: len(body),
 		}
 	})
 }
@@ -164,16 +146,13 @@ func RecordUpstreamWithContext(c *gin.Context, url string, method string, header
 // RecordResponse records the response details
 func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
 	if !enabled || globalStore == nil || recordID == "" {
+// RecordResponse records the response details
+func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
+	if !enabled || globalStore == nil || recordID == "" {
 		return
 	}
-
-	bodyStr, bodyExceedsThreshold := CheckBodySize(string(body))
-	response := &ResponseInfo{
-		StatusCode:       statusCode,
-		Headers:          headersToMap(headers),
-		Body:             bodyStr,
+		Body:             TruncateBody(string(body)),
 		BodySize:         len(body),
-		BodyTruncated:    bodyExceedsThreshold,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 	}
@@ -235,8 +214,9 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 		return
 	}
 
+	log.Printf("[Monitor] StartChannelAttempt: id=%s channel=%d (%s) attempt=%d", recordID, channelId, channelName, attemptNo)
+	now := time.Now()
 	globalStore.Update(recordID, func(r *RequestRecord) {
-		now := time.Now()
 		attempt := ChannelAttempt{
 			Attempt:     attemptNo,
 			ChannelId:   channelId,
@@ -249,7 +229,6 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 		r.ChannelName = channelName
 		r.CurrentChannel = &CurrentChannel{ID: channelId, Name: channelName, Attempt: attemptNo}
 		r.CurrentPhase = PhaseWaitingUpstream
-		r.Status = StatusWaitingUpstream
 	})
 
 	globalStore.BroadcastChannelUpdate(recordID)
@@ -269,12 +248,6 @@ func MarkChannelPhase(recordID string, phase string) {
 
 	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.CurrentPhase = phase
-		switch phase {
-		case PhaseWaitingUpstream:
-			r.Status = StatusWaitingUpstream
-		case PhaseStreaming:
-			r.Status = StatusStreaming
-		}
 		if len(r.ChannelAttempts) == 0 {
 			return
 		}
@@ -284,10 +257,6 @@ func MarkChannelPhase(recordID string, phase string) {
 			last.Status = AttemptStatusWaiting
 		case PhaseStreaming:
 			last.Status = AttemptStatusStreaming
-			if last.StreamingStartedAt == nil {
-				now := time.Now()
-				last.StreamingStartedAt = &now
-			}
 		case PhaseCompleted:
 			if last.EndedAt == nil {
 				now := time.Now()

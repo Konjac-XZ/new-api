@@ -51,7 +51,9 @@ const SkeletonWrapper = ({
             loading={true}
             active
             placeholder={
-              <Skeleton.Title style={{ width: isMobile ? 40 : width, height }} />
+              <Skeleton.Title
+                style={{ width: isMobile ? 40 : width, height }}
+              />
             }
           />
         </div>
@@ -76,7 +78,9 @@ const SkeletonWrapper = ({
             loading={true}
             active
             placeholder={
-              <Skeleton.Title style={{ width: isMobile ? 15 : width, height: 12 }} />
+              <Skeleton.Title
+                style={{ width: isMobile ? 15 : width, height: 12 }}
+              />
             }
           />
         </div>
@@ -88,15 +92,15 @@ const SkeletonWrapper = ({
   const renderImageSkeleton = () => {
     return (
       <Skeleton
-          loading={true}
-          active
-          placeholder={
-            <Skeleton.Image
-              className={`absolute inset-0 !rounded-full ${className}`}
-              style={{ width: '100%', height: '100%' }}
-            />
-          }
-        />
+        loading={true}
+        active
+        placeholder={
+          <Skeleton.Image
+            className={`absolute inset-0 !rounded-full ${className}`}
+            style={{ width: '100%', height: '100%' }}
+          />
+        }
+      />
     );
   };
 
@@ -182,9 +186,7 @@ const SkeletonWrapper = ({
           loading={true}
           active
           placeholder={
-            <Skeleton.Title
-              style={{ width: width || 60, height: height || 12 }}
-            />
+            <Skeleton.Title style={{ width: width || 60, height: height || 12 }} />
           }
         />
       </div>
@@ -202,29 +204,29 @@ const SkeletonWrapper = ({
     const TEXT_HEIGHT = 16;
 
     const renderIcon = () => (
-            <Skeleton
-              loading={true}
-              active
-              placeholder={
-                <Skeleton.Avatar
-                  shape='square'
-                  style={{ width: ICON_SIZE, height: ICON_SIZE }}
-                />
-              }
-            />
+      <Skeleton
+        loading={true}
+        active
+        placeholder={
+          <Skeleton.Avatar
+            shape='square'
+            style={{ width: ICON_SIZE, height: ICON_SIZE }}
+          />
+        }
+      />
     );
 
     const renderLabel = (labelWidth) => (
-        <Skeleton
-          loading={true}
-          active
-          placeholder={
-            <Skeleton.Title
-              style={{ width: labelWidth, height: TEXT_HEIGHT }}
-            />
-          }
-        />
-      );
+      <Skeleton
+        loading={true}
+        active
+        placeholder={
+          <Skeleton.Title
+            style={{ width: labelWidth, height: TEXT_HEIGHT }}
+          />
+        }
+      />
+    );
 
     const NavRow = ({ labelWidth }) => (
       <div
@@ -315,7 +317,6 @@ const SkeletonWrapper = ({
                     active
                     placeholder={
                       <Skeleton.Title
-                        active
                         style={{ width: sec.titleWidth, height: TITLE_HEIGHT }}
                       />
                     }
@@ -336,7 +337,6 @@ const SkeletonWrapper = ({
                     active
                     placeholder={
                       <Skeleton.Title
-                        active
                         style={{ width: sec.titleWidth, height: TITLE_HEIGHT }}
                       />
                     }

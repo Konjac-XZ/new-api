@@ -75,27 +75,25 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 
-	case message := <-h.broadcast:
-		data, err := json.Marshal(message)
-		if err != nil {
-			continue
-		}
-
-		// We may delete clients whose send buffers are full, so we must hold the
-		// write lock while iterating.
-		h.mu.Lock()
-		for client := range h.clients {
-			select {
-			case client.send <- data:
-			default:
-				// Client's send buffer is full, close connection
-				close(client.send)
-				delete(h.clients, client)
+		case message := <-h.broadcast:
+			data, err := json.Marshal(message)
+			if err != nil {
+				continue
 			}
+
+			h.mu.RLock()
+			for client := range h.clients {
+				select {
+				case client.send <- data:
+				default:
+					// Client's send buffer is full, close connection
+					close(client.send)
+					delete(h.clients, client)
+				}
+			}
+			h.mu.RUnlock()
 		}
-		h.mu.Unlock()
 	}
-}
 }
 
 // Broadcast sends a message to all connected clients
@@ -116,19 +114,8 @@ func (h *Hub) ClientCount() int {
 
 // ServeWs handles WebSocket requests from clients
 func (h *Hub) ServeWs(c *gin.Context, store *Store) {
-	// Debug: log WebSocket upgrade headers and request metadata
-	// log.Printf("WebSocket upgrade request: remote=%s host=%s path=%s origin=%s upgrade=%s connection=%s key=%s",
-		// c.Request.RemoteAddr,
-		// c.Request.Host,
-		// c.Request.URL.Path,
-		// c.Request.Header.Get("Origin"),
-		// c.Request.Header.Get("Upgrade"),
-		// c.Request.Header.Get("Connection"),
-		// c.Request.Header.Get("Sec-WebSocket-Key"))
-
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		// log.Printf("WebSocket upgrade failed for remote=%s path=%s: %v", c.Request.RemoteAddr, c.Request.URL.Path, err)
 		return
 	}
 
@@ -204,26 +191,26 @@ func (c *Client) writePump() {
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
+				log.Printf("[Monitor WS] nextWriter failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
-			w.Write(message)
-
-			// Add queued messages to the current WebSocket message
-			n := len(c.send)
-			for i := 0; i < n; i++ {
+			w, err := c.conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}or i := 0; i < n; i++ {
 				w.Write([]byte{'\n'})
 				w.Write(<-c.send)
 			}
 
 			if err := w.Close(); err != nil {
+			if err := w.Close(); err != nil {
 				return
 			}
-
+		case <-ticker.C:
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
-		}
 	}
 }
