@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -84,6 +85,15 @@ func ginHeadersToMap(c *gin.Context) map[string]string {
 	return result
 }
 
+// truncatedBody returns truncated body and whether truncation occurred
+func truncatedBody(body []byte) (string, bool) {
+	bodyStr := string(body)
+	if len(bodyStr) <= MaxBodySize {
+		return bodyStr, false
+	}
+	return TruncateBody(bodyStr), true
+}
+
 // RecordStart records the start of a request
 // Returns the record ID for subsequent updates
 func RecordStart(c *gin.Context, requestBody []byte) string {
@@ -99,17 +109,20 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 	tokenName := c.GetString("token_name")
 	model := c.GetString("original_model")
 
+	bodyStr, truncated := truncatedBody(requestBody)
+
 	record := &RequestRecord{
 		ID:        requestId,
 		Status:    StatusProcessing,
 		StartTime: time.Now(),
 		Downstream: DownstreamInfo{
-			Method:   c.Request.Method,
-			Path:     c.Request.URL.Path,
-			Headers:  ginHeadersToMap(c),
-			Body:     TruncateBody(string(requestBody)),
-			BodySize: len(requestBody),
-			ClientIP: c.ClientIP(),
+			Method:        c.Request.Method,
+			Path:          c.Request.URL.Path,
+			Headers:       ginHeadersToMap(c),
+			Body:          bodyStr,
+			BodySize:      len(requestBody),
+			BodyTruncated: truncated,
+			ClientIP:      c.ClientIP(),
 		},
 		UserId:    userId,
 		TokenId:   tokenId,
@@ -122,17 +135,20 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 }
 
 // RecordUpstream records the upstream request details
-// RecordUpstream records the upstream request details
 func RecordUpstream(recordID string, url string, method string, headers http.Header, body []byte) {
 	if !enabled || globalStore == nil || recordID == "" {
 		return
 	}
+
+	bodyStr, truncated := truncatedBody(body)
+	globalStore.Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
-			URL:      url,
-			Method:   method,
-			Headers:  headersToMap(headers),
-			Body:     TruncateBody(string(body)),
-			BodySize: len(body),
+			URL:           url,
+			Method:        method,
+			Headers:       headersToMap(headers),
+			Body:          bodyStr,
+			BodySize:      len(body),
+			BodyTruncated: truncated,
 		}
 	})
 }
@@ -146,21 +162,22 @@ func RecordUpstreamWithContext(c *gin.Context, url string, method string, header
 // RecordResponse records the response details
 func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
 	if !enabled || globalStore == nil || recordID == "" {
-// RecordResponse records the response details
-func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
-	if !enabled || globalStore == nil || recordID == "" {
 		return
 	}
-		Body:             TruncateBody(string(body)),
+
+	bodyStr, truncated := truncatedBody(body)
+	response := &ResponseInfo{
+		StatusCode:       statusCode,
+		Headers:          headersToMap(headers),
+		Body:             bodyStr,
 		BodySize:         len(body),
+		BodyTruncated:    truncated,
 		PromptTokens:     promptTokens,
 		CompletionTokens: completionTokens,
 	}
 
 	if err != nil {
-		response.Error = &ErrorInfo{
-			Message: err.Error(),
-		}
+		response.Error = &ErrorInfo{Message: err.Error()}
 	}
 
 	globalStore.MarkComplete(recordID, response)
@@ -193,9 +210,7 @@ func RecordError(recordID string, err error) {
 		if r.Response == nil {
 			r.Response = &ResponseInfo{}
 		}
-		r.Response.Error = &ErrorInfo{
-			Message: err.Error(),
-		}
+		r.Response.Error = &ErrorInfo{Message: err.Error()}
 	})
 
 	FinishChannelAttempt(recordID, AttemptStatusFailed, err.Error(), "", 0)

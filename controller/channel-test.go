@@ -962,7 +962,7 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 		}
 	}
 
-	request := buildTestRequest(testModel, "")
+	request := buildTestRequest(testModel, "", channel)
 	if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
 		generalReq.Stream = true
 		if strings.HasPrefix(testModel, "o") {

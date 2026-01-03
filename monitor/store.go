@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -11,6 +12,7 @@ const (
 )
 
 // Store is a ring buffer storage for request records
+// Not concurrency-safe for iteration; uses internal mutexes for callers.
 type Store struct {
 	records []*RequestRecord
 	index   map[string]int // ID -> position mapping
@@ -121,12 +123,12 @@ func (s *Store) BroadcastChannelUpdate(id string) {
 
 // GetAll returns all stored records in chronological order (oldest first)
 func (s *Store) GetAll() []*RequestRecord {
-// GetAll returns all stored records in chronological order (oldest first)
-func (s *Store) GetAll() []*RequestRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	result := make([]*RequestRecord, 0, s.count)
+
+	if s.count < MaxRecords {
 		// Buffer not full yet, start from 0
 		for i := 0; i < s.count; i++ {
 			if s.records[i] != nil {
@@ -142,10 +144,10 @@ func (s *Store) GetAll() []*RequestRecord {
 			}
 		}
 	}
-		}
-	}
 
 	return result
+}
+
 // GetAllSummaries returns lightweight summaries of all stored records in chronological order
 func (s *Store) GetAllSummaries() []*RequestSummary {
 	s.mu.RLock()
@@ -217,9 +219,10 @@ func (s *Store) GetStats() MonitorStats {
 // MarkComplete marks a record as completed with response info
 func (s *Store) MarkComplete(id string, response *ResponseInfo) {
 	log.Printf("[Monitor Store] MarkComplete: id=%s, hasResponse=%t", id, response != nil)
-// MarkComplete marks a record as completed with response info
-func (s *Store) MarkComplete(id string, response *ResponseInfo) {
-	s.Update(id, func(r *RequestRecord) {lliseconds()
+	s.Update(id, func(r *RequestRecord) {
+		now := time.Now()
+		r.EndTime = &now
+		r.Duration = now.Sub(r.StartTime).Milliseconds()
 		r.Response = response
 		if response != nil && response.Error != nil {
 			r.Status = StatusError

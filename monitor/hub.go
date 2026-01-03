@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -163,8 +164,7 @@ func (c *Client) readPump() {
 	})
 
 	for {
-		_, _, err := c.conn.ReadMessage()
-		if err != nil {
+		if _, _, err := c.conn.ReadMessage(); err != nil {
 			break
 		}
 		// We don't expect any messages from clients, just keep connection alive
@@ -194,23 +194,29 @@ func (c *Client) writePump() {
 				log.Printf("[Monitor WS] nextWriter failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
-			w, err := c.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
+			if _, err := w.Write(message); err != nil {
 				return
-			}or i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-c.send)
+			}
+
+			// Add queued messages to the same WebSocket message
+			n := len(c.send)
+			for i := 0; i < n; i++ {
+				if _, err := w.Write([]byte{'\n'}); err != nil {
+					break
+				}
+				if _, err := w.Write(<-c.send); err != nil {
+					break
+				}
 			}
 
 			if err := w.Close(); err != nil {
-			if err := w.Close(); err != nil {
 				return
 			}
-		case <-ticker.C:
 		case <-ticker.C:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
+		}
 	}
 }

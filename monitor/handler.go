@@ -1,7 +1,9 @@
 package monitor
 
 import (
+	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -54,10 +56,10 @@ func GetRequest() gin.HandlerFunc {
 }
 
 // GetStats returns monitoring statistics
-// GetStats returns monitoring statistics
 func GetStats() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalStore == nil {iceUnavailable, gin.H{
+		if globalStore == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"success": false,
 				"message": "Monitor not initialized",
 			})
@@ -67,19 +69,24 @@ func GetStats() gin.HandlerFunc {
 		stats := globalStore.GetStats()
 		stats.TotalRequests = globalStore.count
 
+		connections := 0
+		if globalHub != nil {
+			connections = globalHub.ClientCount()
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
 			"data":        stats,
-			"connections": globalHub.ClientCount(),
+			"connections": connections,
 		})
 	}
 }
 
 // WebSocketHandler handles WebSocket connections for real-time updates
-// WebSocketHandler handles WebSocket connections for real-time updates
 func WebSocketHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalHub == nil || globalStore == nil {H{
+		if globalHub == nil || globalStore == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
 				"success": false,
 				"message": "Monitor not initialized",
 			})
@@ -92,10 +99,10 @@ func WebSocketHandler() gin.HandlerFunc {
 
 // GetActiveRequests returns only currently processing requests
 func GetActiveRequests() gin.HandlerFunc {
-// GetActiveRequests returns only currently processing requests
-func GetActiveRequests() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if globalStore == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"success": false,
 				"message": "Monitor not initialized",
 			})
 			return
@@ -103,8 +110,89 @@ func GetActiveRequests() gin.HandlerFunc {
 
 		records := globalStore.GetActive()
 		log.Printf("[Monitor Handler] GetActiveRequests returning %d records", len(records))
-		records := globalStore.GetActive()
 		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    records,
 		})
+	}
+}
+
+// GetRequestBody returns stored body content for a request (downstream, upstream, response)
+func GetRequestBody() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if globalStore == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "Monitor not initialized"})
+			return
+		}
+
+		id := c.Param("id")
+		bodyType := strings.ToLower(c.Param("type"))
+
+		record := globalStore.Get(id)
+		if record == nil {
+			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Request not found"})
+			return
+		}
+
+		switch bodyType {
+		case "downstream":
+			c.JSON(http.StatusOK, gin.H{
+				"success":   true,
+				"type":      bodyType,
+				"body":      record.Downstream.Body,
+				"size":      record.Downstream.BodySize,
+				"truncated": record.Downstream.BodyTruncated,
+			})
+		case "upstream":
+			if record.Upstream == nil {
+				c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Upstream body not recorded"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"success":   true,
+				"type":      bodyType,
+				"body":      record.Upstream.Body,
+				"size":      record.Upstream.BodySize,
+				"truncated": record.Upstream.BodyTruncated,
+			})
+		case "response":
+			if record.Response == nil {
+				c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Response body not recorded"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{
+				"success":   true,
+				"type":      bodyType,
+				"body":      record.Response.Body,
+				"size":      record.Response.BodySize,
+				"truncated": record.Response.BodyTruncated,
+			})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid body type"})
+		}
+	}
+}
+
+// InterruptRequest cancels an in-flight request if a cancel func is registered
+func InterruptRequest() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		if id == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Missing request id"})
+			return
+		}
+
+		registry := GetRegistry()
+		if registry == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "Cancellation registry not available"})
+			return
+		}
+
+		if registry.CancelRequest(id) {
+			c.JSON(http.StatusOK, gin.H{"success": true, "message": "Request interrupted"})
+			return
+		}
+
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Request not cancellable or not found"})
 	}
 }
