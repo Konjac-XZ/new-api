@@ -25,6 +25,57 @@ import { API } from '../../helpers';
 const sidebarEventTarget = new EventTarget();
 const SIDEBAR_REFRESH_EVENT = 'sidebar-refresh';
 
+export const DEFAULT_ADMIN_CONFIG = {
+  chat: {
+    enabled: true,
+    playground: true,
+    chat: true,
+  },
+  console: {
+    enabled: true,
+    detail: true,
+    token: true,
+    log: true,
+    midjourney: true,
+    task: true,
+  },
+  personal: {
+    enabled: true,
+    topup: true,
+    personal: true,
+  },
+  admin: {
+    enabled: true,
+    channel: true,
+    models: true,
+    deployment: true,
+    redemption: true,
+    user: true,
+    monitor: true,
+    setting: true,
+  },
+};
+
+const deepClone = (value) => JSON.parse(JSON.stringify(value));
+
+export const mergeAdminConfig = (savedConfig) => {
+  const merged = deepClone(DEFAULT_ADMIN_CONFIG);
+  if (!savedConfig || typeof savedConfig !== 'object') return merged;
+
+  for (const [sectionKey, sectionConfig] of Object.entries(savedConfig)) {
+    if (!sectionConfig || typeof sectionConfig !== 'object') continue;
+
+    if (!merged[sectionKey]) {
+      merged[sectionKey] = { ...sectionConfig };
+      continue;
+    }
+
+    merged[sectionKey] = { ...merged[sectionKey], ...sectionConfig };
+  }
+
+  return merged;
+};
+
 export const useSidebar = () => {
   const [statusState] = useContext(StatusContext);
   const [userConfig, setUserConfig] = useState(null);
@@ -36,72 +87,17 @@ export const useSidebar = () => {
     const randomPart = Math.random().toString(16).slice(2);
     instanceIdRef.current = `sidebar-${Date.now()}-${randomPart}`;
   }
-
-  // 默认配置
-  const defaultAdminConfig = {
-    chat: {
-      enabled: true,
-      playground: true,
-      chat: true,
-    },
-    console: {
-      enabled: true,
-      detail: true,
-      token: true,
-      log: true,
-      midjourney: true,
-      task: true,
-    },
-    personal: {
-      enabled: true,
-      topup: true,
-      personal: true,
-    },
-    admin: {
-      enabled: true,
-      channel: true,
-      models: true,
-      deployment: true,
-      redemption: true,
-      user: true,
-      monitor: true,
-      setting: true,
-    },
-  };
-
-  // 合并管理员配置与默认配置，确保新增模块有默认值
-  const mergeConfigWithDefaults = (defaults, overrides) => {
-    const result = { ...defaults };
-
-    Object.keys(overrides || {}).forEach((sectionKey) => {
-      const overrideSection = overrides[sectionKey];
-
-      if (
-        overrideSection &&
-        typeof overrideSection === 'object' &&
-        !Array.isArray(overrideSection)
-      ) {
-        const defaultSection = defaults[sectionKey] || {};
-        result[sectionKey] = { ...defaultSection, ...overrideSection };
-      } else {
-        result[sectionKey] = overrideSection;
-      }
-    });
-
-    return result;
-  };
-
   // 获取管理员配置
   const adminConfig = useMemo(() => {
     if (statusState?.status?.SidebarModulesAdmin) {
       try {
         const config = JSON.parse(statusState.status.SidebarModulesAdmin);
-        return mergeConfigWithDefaults(defaultAdminConfig, config);
+        return mergeAdminConfig(config);
       } catch (error) {
-        return defaultAdminConfig;
+        return mergeAdminConfig(null);
       }
     }
-    return defaultAdminConfig;
+    return mergeAdminConfig(null);
   }, [statusState?.status?.SidebarModulesAdmin]);
 
   // 加载用户配置的通用方法
