@@ -2558,6 +2558,8 @@
     "默认区域，如: us-central1": "Default region, e.g.: us-central1",
     "默认折叠侧边栏": "Default collapse sidebar",
     "默认测试模型": "Default Test Model",
+    "自定义测试用例": "Custom Test Case",
+    "不填则使用默认值 \"hi\"": "If not filled, default value \"hi\" will be used",
     "默认用户消息": "Default User Message",
     "默认补全倍率": "Default completion ratio",
     "跨分组重试": "Cross-group retry",

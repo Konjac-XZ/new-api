@@ -144,6 +144,7 @@ const EditChannelModal = (props) => {
     models: [],
     auto_ban: 1,
     test_model: '',
+    test_case: '',
     groups: ['default'],
     priority: 0,
     weight: 0,
@@ -2659,6 +2660,17 @@ const EditChannelModal = (props) => {
                       onChange={(value) =>
                         handleInputChange('test_model', value)
                       }
+                      showClear
+                    />
+
+                    <Form.TextArea
+                      field='test_case'
+                      label={t('自定义测试用例')}
+                      placeholder={t('不填则使用默认值 "hi"')}
+                      onChange={(value) =>
+                        handleInputChange('test_case', value)
+                      }
+                      autosize={{ minRows: 2, maxRows: 6 }}
                       showClear
                     />
 

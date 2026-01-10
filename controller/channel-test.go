@@ -374,6 +374,14 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 }
 
 func buildTestRequest(model string, endpointType string, channel *model.Channel) dto.Request {
+	// Get custom test case from channel, default to "hi" for chat and "hello world" for embeddings
+	testCase := "hi"
+	embeddingTestCase := "hello world"
+	if channel.TestCase != nil && strings.TrimSpace(*channel.TestCase) != "" {
+		testCase = strings.TrimSpace(*channel.TestCase)
+		embeddingTestCase = testCase
+	}
+
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
 		switch constant.EndpointType(endpointType) {
@@ -381,7 +389,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			// 返回 EmbeddingRequest
 			return &dto.EmbeddingRequest{
 				Model: model,
-				Input: []any{"hello world"},
+				Input: []any{embeddingTestCase},
 			}
 		case constant.EndpointTypeImageGeneration:
 			// 返回 ImageRequest
@@ -401,26 +409,26 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			}
 		case constant.EndpointTypeOpenAIResponse:
 			// 返回 OpenAIResponsesRequest
+			testCaseJSON, _ := json.Marshal(testCase)
 			return &dto.OpenAIResponsesRequest{
 				Model: model,
-				Input: json.RawMessage("\"hi\""),
+				Input: json.RawMessage(testCaseJSON),
 			}
 		case constant.EndpointTypeAnthropic, constant.EndpointTypeGemini, constant.EndpointTypeOpenAI:
 			// 返回 GeneralOpenAIRequest
-			maxTokens := uint(16)
-			if constant.EndpointType(endpointType) == constant.EndpointTypeGemini {
-				maxTokens = 3000
-			}
+			// maxTokens := uint(16)
+			// if constant.EndpointType(endpointType) == constant.EndpointTypeGemini {
+			// 	maxTokens = 3000
+			// }
 			return &dto.GeneralOpenAIRequest{
 				Model:  model,
 				Stream: false,
 				Messages: []dto.Message{
 					{
 						Role:    "user",
-						Content: "hi",
+						Content: testCase,
 					},
 				},
-				MaxTokens: maxTokens,
 			}
 		}
 	}
@@ -433,15 +441,16 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 		// 返回 EmbeddingRequest
 		return &dto.EmbeddingRequest{
 			Model: model,
-			Input: []any{"hello world"},
+			Input: []any{embeddingTestCase},
 		}
 	}
 
 	// Responses-only models (e.g. codex series)
 	if strings.Contains(strings.ToLower(model), "codex") {
+		testCaseJSON, _ := json.Marshal(testCase)
 		return &dto.OpenAIResponsesRequest{
 			Model: model,
-			Input: json.RawMessage("\"hi\""),
+			Input: json.RawMessage(testCaseJSON),
 		}
 	}
 
@@ -452,7 +461,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 		Messages: []dto.Message{
 			{
 				Role:    "user",
-				Content: "hi",
+				Content: testCase,
 			},
 		},
 	}
@@ -1120,24 +1129,13 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			firstTokenTime = time.Since(startTime)
 			durationMs := int(firstTokenTime.Milliseconds())
 			c.Set("scheduled_test_duration_ms", durationMs)
-			completionTokens := 1
-			var streamResp dto.ChatCompletionsStreamResponse
-			if err := common.Unmarshal([]byte(normalized), &streamResp); err == nil {
-				if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.GetContentString() != "" {
-					contentTokens := service.CountTextToken(streamResp.Choices[0].Delta.GetContentString(), testModel)
-					if contentTokens > 0 {
-						completionTokens = contentTokens
-					}
-				}
-			}
-			c.Set("scheduled_test_completion_tokens", completionTokens)
 			gotFirstToken = true
 			if watchdog != nil {
 				watchdog.Stop("scheduled test first token received")
 			}
-			break // 只需要测量首Token，不需要读取全部响应
 		}
 	}
+
 
 	if httpResp.Body != nil {
 		httpResp.Body.Close()
