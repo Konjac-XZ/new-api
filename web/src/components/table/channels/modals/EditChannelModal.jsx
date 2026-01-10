@@ -145,6 +145,7 @@ const EditChannelModal = (props) => {
     auto_ban: 1,
     test_model: '',
     test_case: '',
+    expected_answer: '',
     groups: ['default'],
     priority: 0,
     weight: 0,
@@ -2669,6 +2670,17 @@ const EditChannelModal = (props) => {
                       placeholder={t('不填则使用默认值 "hi"')}
                       onChange={(value) =>
                         handleInputChange('test_case', value)
+                      }
+                      autosize={{ minRows: 2, maxRows: 6 }}
+                      showClear
+                    />
+
+                    <Form.TextArea
+                      field='expected_answer'
+                      label={t('预期回答')}
+                      placeholder={t('测试时检查响应是否包含此字符串，不填则不检查')}
+                      onChange={(value) =>
+                        handleInputChange('expected_answer', value)
                       }
                       autosize={{ minRows: 2, maxRows: 6 }}
                       showClear
