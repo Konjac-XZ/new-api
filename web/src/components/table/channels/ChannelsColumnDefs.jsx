@@ -276,6 +276,7 @@ export const getChannelsColumns = ({
   manageTag,
   submitTagEdit,
   testChannel,
+  testChannelStream,
   setCurrentTestChannel,
   setShowModelTestModal,
   setEditingChannel,
@@ -652,6 +653,14 @@ export const getChannelsColumns = ({
                   }}
                 />
               </SplitButtonGroup>
+
+              <Button
+                size='small'
+                type='tertiary'
+                onClick={() => testChannelStream(record, '')}
+              >
+                {t('流式测试')}
+              </Button>
 
               {record.status === 1 ? (
                 <Button

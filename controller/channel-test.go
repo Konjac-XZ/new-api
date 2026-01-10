@@ -549,6 +549,64 @@ func TestChannel(c *gin.Context) {
 	})
 }
 
+func TestChannelStream(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.CacheGetChannel(channelId)
+	if err != nil {
+		channel, err = model.GetChannelById(channelId, true)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	testModel := c.Query("model")
+	tik := time.Now()
+	result := testChannelStream(channel, testModel)
+	if result.localErr != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": result.localErr.Error(),
+			"time":    0.0,
+		})
+		return
+	}
+
+	// Extract first token latency from context
+	firstTokenLatencyMs := 0
+	if result.context != nil {
+		firstTokenLatencyMs = result.context.GetInt("first_token_latency_ms")
+	}
+
+	tok := time.Now()
+	milliseconds := tok.Sub(tik).Milliseconds()
+
+	// Use first token latency if available, otherwise use total time
+	if firstTokenLatencyMs > 0 {
+		milliseconds = int64(firstTokenLatencyMs)
+	}
+
+	go channel.UpdateResponseTime(milliseconds)
+	consumedTime := float64(milliseconds) / 1000.0
+
+	if result.newAPIError != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": result.newAPIError.Error(),
+			"time":    consumedTime,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"time":    consumedTime,
+	})
+}
+
 var testAllChannelsLock sync.Mutex
 var testAllChannelsRunning bool = false
 

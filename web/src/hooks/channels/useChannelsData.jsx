@@ -922,6 +922,91 @@ export const useChannelsData = () => {
     }
   };
 
+  // Test channel stream - measures first token latency
+  const testChannelStream = async (record, model) => {
+    const testKey = `${record.id}-${model}-stream`;
+
+    // Check if batch testing should stop
+    if (shouldStopBatchTestingRef.current && isBatchTesting) {
+      return Promise.resolve();
+    }
+
+    // Add to testing models set
+    setTestingModels((prev) => new Set([...prev, `${model}-stream`]));
+
+    try {
+      let url = `/api/channel/test/${record.id}/stream?model=${model}`;
+      const res = await API.get(url);
+
+      // Check if stopped during request
+      if (shouldStopBatchTestingRef.current && isBatchTesting) {
+        return Promise.resolve();
+      }
+
+      const { success, message, time } = res.data;
+
+      // Update test results
+      setModelTestResults((prev) => ({
+        ...prev,
+        [testKey]: {
+          success,
+          message,
+          time: time || 0,
+          timestamp: Date.now(),
+          isStream: true,
+        },
+      }));
+
+      if (success) {
+        // Update channel response time
+        updateChannelProperty(record.id, (channel) => {
+          channel.response_time = time * 1000;
+          channel.test_time = Date.now() / 1000;
+        });
+
+        if (!model || model === '') {
+          showInfo(
+            t('通道 ${name} 流式测试成功，首Token延迟 ${time.toFixed(2)} 秒。')
+              .replace('${name}', record.name)
+              .replace('${time.toFixed(2)}', time.toFixed(2)),
+          );
+        } else {
+          showInfo(
+            t(
+              '通道 ${name} 流式测试成功，模型 ${model} 首Token延迟 ${time.toFixed(2)} 秒。',
+            )
+              .replace('${name}', record.name)
+              .replace('${model}', model)
+              .replace('${time.toFixed(2)}', time.toFixed(2)),
+          );
+        }
+      } else {
+        showError(`${t('流式测试')} ${model}: ${message}`);
+      }
+    } catch (error) {
+      // Handle network errors
+      const testKey = `${record.id}-${model}-stream`;
+      setModelTestResults((prev) => ({
+        ...prev,
+        [testKey]: {
+          success: false,
+          message: error.message || t('网络错误'),
+          time: 0,
+          timestamp: Date.now(),
+          isStream: true,
+        },
+      }));
+      showError(`${t('模型')} ${model}: ${error.message || t('测试失败')}`);
+    } finally {
+      // Remove from testing models set
+      setTestingModels((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(`${model}-stream`);
+        return newSet;
+      });
+    }
+  };
+
   // 批量测试单个渠道的所有模型，参考旧版实现
   const batchTestModels = async () => {
     if (!currentTestChannel || !currentTestChannel.models) {
@@ -1195,6 +1280,7 @@ export const useChannelsData = () => {
     fixChannelsAbilities,
     checkOllamaVersion,
     testChannel,
+    testChannelStream,
     batchTestModels,
     handleCloseModal,
     getFormValues,
