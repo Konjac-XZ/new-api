@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -333,4 +334,18 @@ func BuildURL(base string, endpoint string) string {
 		return base + endpoint
 	}
 	return u.ResolveReference(ref).String()
+}
+
+var lastLLMRequestTime atomic.Int64
+
+func UpdateLastLLMRequestTime() {
+	lastLLMRequestTime.Store(time.Now().Unix())
+}
+
+func HasRecentLLMRequest() bool {
+	lastRequest := lastLLMRequestTime.Load()
+	if lastRequest == 0 {
+		return true
+	}
+	return time.Now().Unix()-lastRequest < 3*60*60
 }

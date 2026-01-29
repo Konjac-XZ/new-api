@@ -332,41 +332,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		}
 	}
 	usage := usageA.(*dto.Usage)
-
-	// Validate expected answer if configured
-	if channel.ExpectedAnswer != nil && strings.TrimSpace(*channel.ExpectedAnswer) != "" {
-		expectedAnswer := strings.TrimSpace(*channel.ExpectedAnswer)
-
-		// Read response body from recorder
-		responseBody := w.Body.Bytes()
-
-		// Parse response to extract content
-		var textResponse dto.OpenAITextResponse
-		if err := json.Unmarshal(responseBody, &textResponse); err != nil {
-			return testResult{
-				context:     c,
-				localErr:    fmt.Errorf("failed to parse response for expected answer check: %v", err),
-				newAPIError: types.NewError(fmt.Errorf("failed to parse response"), types.ErrorCodeBadResponseBody),
-			}
-		}
-
-		// Extract content from response
-		responseContent := ""
-		if len(textResponse.Choices) > 0 {
-			responseContent = textResponse.Choices[0].Message.StringContent()
-		}
-
-		// Case-insensitive substring check
-		if !strings.Contains(strings.ToLower(responseContent), strings.ToLower(expectedAnswer)) {
-			errMsg := fmt.Sprintf("expected answer not found in response: expected '%s'", expectedAnswer)
-			return testResult{
-				context:     c,
-				localErr:    errors.New(errMsg),
-				newAPIError: types.NewError(errors.New(errMsg), types.ErrorCodeBadResponseBody),
-			}
-		}
-	}
-
 	result := w.Result()
 	if result.Body != nil {
 		_ = result.Body.Close()
@@ -409,14 +374,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 }
 
 func buildTestRequest(model string, endpointType string, channel *model.Channel) dto.Request {
-	// Get custom test case from channel, default to "hi" for chat and "hello world" for embeddings
-	testCase := "hi"
-	embeddingTestCase := "hello world"
-	if channel.TestCase != nil && strings.TrimSpace(*channel.TestCase) != "" {
-		testCase = strings.TrimSpace(*channel.TestCase)
-		embeddingTestCase = testCase
-	}
-
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
 		switch constant.EndpointType(endpointType) {
@@ -424,7 +381,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			// 返回 EmbeddingRequest
 			return &dto.EmbeddingRequest{
 				Model: model,
-				Input: []any{embeddingTestCase},
+				Input: []any{"hello world"},
 			}
 		case constant.EndpointTypeImageGeneration:
 			// 返回 ImageRequest
@@ -444,21 +401,26 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			}
 		case constant.EndpointTypeOpenAIResponse:
 			// 返回 OpenAIResponsesRequest
-			testCaseJSON, _ := json.Marshal(testCase)
 			return &dto.OpenAIResponsesRequest{
 				Model: model,
-				Input: json.RawMessage(testCaseJSON),
+				Input: json.RawMessage("\"hi\""),
 			}
 		case constant.EndpointTypeAnthropic, constant.EndpointTypeGemini, constant.EndpointTypeOpenAI:
+			// 返回 GeneralOpenAIRequest
+			maxTokens := uint(16)
+			if constant.EndpointType(endpointType) == constant.EndpointTypeGemini {
+				maxTokens = 3000
+			}
 			return &dto.GeneralOpenAIRequest{
 				Model:  model,
 				Stream: false,
 				Messages: []dto.Message{
 					{
 						Role:    "user",
-						Content: testCase,
+						Content: "hi",
 					},
 				},
+				MaxTokens: maxTokens,
 			}
 		}
 	}
@@ -471,16 +433,15 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 		// 返回 EmbeddingRequest
 		return &dto.EmbeddingRequest{
 			Model: model,
-			Input: []any{embeddingTestCase},
+			Input: []any{"hello world"},
 		}
 	}
 
 	// Responses-only models (e.g. codex series)
 	if strings.Contains(strings.ToLower(model), "codex") {
-		testCaseJSON, _ := json.Marshal(testCase)
 		return &dto.OpenAIResponsesRequest{
 			Model: model,
-			Input: json.RawMessage(testCaseJSON),
+			Input: json.RawMessage("\"hi\""),
 		}
 	}
 
@@ -491,9 +452,21 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 		Messages: []dto.Message{
 			{
 				Role:    "user",
-				Content: testCase,
+				Content: "hi",
 			},
 		},
+	}
+
+	if strings.HasPrefix(model, "o") {
+		testRequest.MaxCompletionTokens = 16
+	} else if strings.Contains(model, "thinking") {
+		if !strings.Contains(model, "claude") {
+			testRequest.MaxTokens = 50
+		}
+	} else if strings.Contains(model, "gemini") {
+		testRequest.MaxTokens = 3000
+	} else {
+		testRequest.MaxTokens = 16
 	}
 
 	return testRequest
@@ -534,64 +507,6 @@ func TestChannel(c *gin.Context) {
 	milliseconds := tok.Sub(tik).Milliseconds()
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
-	if result.newAPIError != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": result.newAPIError.Error(),
-			"time":    consumedTime,
-		})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"time":    consumedTime,
-	})
-}
-
-func TestChannelStream(c *gin.Context) {
-	channelId, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	channel, err := model.CacheGetChannel(channelId)
-	if err != nil {
-		channel, err = model.GetChannelById(channelId, true)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-	}
-	testModel := c.Query("model")
-	tik := time.Now()
-	result := testChannelStream(channel, testModel)
-	if result.localErr != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": result.localErr.Error(),
-			"time":    0.0,
-		})
-		return
-	}
-
-	// Extract first token latency from context
-	firstTokenLatencyMs := 0
-	if result.context != nil {
-		firstTokenLatencyMs = result.context.GetInt("first_token_latency_ms")
-	}
-
-	tok := time.Now()
-	milliseconds := tok.Sub(tik).Milliseconds()
-
-	// Use first token latency if available, otherwise use total time
-	if firstTokenLatencyMs > 0 {
-		milliseconds = int64(firstTokenLatencyMs)
-	}
-
-	go channel.UpdateResponseTime(milliseconds)
-	consumedTime := float64(milliseconds) / 1000.0
-
 	if result.newAPIError != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
@@ -1050,6 +965,12 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	request := buildTestRequest(testModel, "", channel)
 	if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
 		generalReq.Stream = true
+		if strings.HasPrefix(testModel, "o") {
+			generalReq.MaxCompletionTokens = 10
+			generalReq.MaxTokens = 0
+		} else if generalReq.MaxTokens == 0 && generalReq.MaxCompletionTokens == 0 {
+			generalReq.MaxTokens = 10
+		}
 	}
 
 	relayFormat := detectRelayFormat("", requestPath)
@@ -1162,8 +1083,6 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	scanner.Split(bufio.ScanLines)
 
 	gotFirstToken := false
-	lastFinishReason := ""
-	var contentBuilder strings.Builder // Accumulate streaming content
 	for scanner.Scan() {
 		rawLine := scanner.Text()
 		line := strings.TrimSpace(rawLine)
@@ -1197,58 +1116,28 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			break
 		}
 
-		var streamResponse map[string]interface{}
-		if err := json.Unmarshal([]byte(normalized), &streamResponse); err == nil {
-			if choices, ok := streamResponse["choices"].([]interface{}); ok && len(choices) > 0 {
-				if choice, ok := choices[0].(map[string]interface{}); ok {
-					if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-						lastFinishReason = finishReason
-					}
-
-					// Extract and accumulate delta.content (OpenAI format)
-					if delta, ok := choice["delta"].(map[string]interface{}); ok {
-						if content, ok := delta["content"].(string); ok {
-
-							contentBuilder.WriteString(content)
-						}
-					}
-				}
-			}
-
-			// Also handle Gemini format: candidates[].content.parts[].text
-			if candidates, ok := streamResponse["candidates"].([]interface{}); ok && len(candidates) > 0 {
-				if candidate, ok := candidates[0].(map[string]interface{}); ok {
-					if content, ok := candidate["content"].(map[string]interface{}); ok {
-						if parts, ok := content["parts"].([]interface{}); ok {
-							for _, part := range parts {
-								if partMap, ok := part.(map[string]interface{}); ok {
-									if text, ok := partMap["text"].(string); ok {
-										contentBuilder.WriteString(text)
-									}
-								}
-							}
-						}
-					}
-
-					// Extract finish_reason from Gemini format
-					if finishReason, ok := candidate["finishReason"].(string); ok && finishReason != "" {
-						lastFinishReason = finishReason
-					}
-				}
-			}
-		}
-
 		if !gotFirstToken && normalized != "" {
 			firstTokenTime = time.Since(startTime)
 			durationMs := int(firstTokenTime.Milliseconds())
 			c.Set("scheduled_test_duration_ms", durationMs)
+			completionTokens := 1
+			var streamResp dto.ChatCompletionsStreamResponse
+			if err := common.Unmarshal([]byte(normalized), &streamResp); err == nil {
+				if len(streamResp.Choices) > 0 && streamResp.Choices[0].Delta.GetContentString() != "" {
+					contentTokens := service.CountTextToken(streamResp.Choices[0].Delta.GetContentString(), testModel)
+					if contentTokens > 0 {
+						completionTokens = contentTokens
+					}
+				}
+			}
+			c.Set("scheduled_test_completion_tokens", completionTokens)
 			gotFirstToken = true
 			if watchdog != nil {
 				watchdog.Stop("scheduled test first token received")
 			}
+			break // 只需要测量首Token，不需要读取全部响应
 		}
 	}
-
 
 	if httpResp.Body != nil {
 		httpResp.Body.Close()
@@ -1268,35 +1157,6 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			localErr:    errors.New("no first token received"),
 			newAPIError: types.NewError(errors.New("no first token received"), types.ErrorCodeBadResponseBody),
 		}
-	}
-
-	// Check if finish_reason is "stop"
-	if lastFinishReason != "" && strings.ToLower(lastFinishReason) != "stop"  {
-		return testResult{
-			context:     c,
-			localErr:    fmt.Errorf("invalid finish_reason: expected 'stop', got '%s'", lastFinishReason),
-			newAPIError: types.NewError(fmt.Errorf("invalid finish_reason: expected 'stop', got '%s'", lastFinishReason), types.ErrorCodeBadResponseBody),
-		}
-	}
-
-	// Validate expected answer if configured
-	if channel.ExpectedAnswer != nil && strings.TrimSpace(*channel.ExpectedAnswer) != "" {
-		expectedAnswer := strings.TrimSpace(*channel.ExpectedAnswer)
-		responseContent := contentBuilder.String()
-
-
-
-		// Case-insensitive substring check
-		if !strings.Contains(strings.ToLower(responseContent), strings.ToLower(expectedAnswer)) {
-			errMsg := fmt.Sprintf("expected answer not found in response: expected '%s'", expectedAnswer)
-
-			return testResult{
-				context:     c,
-				localErr:    errors.New(errMsg),
-				newAPIError: types.NewError(errors.New(errMsg), types.ErrorCodeBadResponseBody),
-			}
-		}
-
 	}
 
 	// 将首Token延迟存储到context中（以毫秒为单位）

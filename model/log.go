@@ -280,6 +280,7 @@ type RecordConsumeLogParams struct {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	common.UpdateLastLLMRequestTime()
 	if !common.LogConsumeEnabled {
 		return
 	}
