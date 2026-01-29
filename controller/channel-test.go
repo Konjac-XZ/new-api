@@ -29,6 +29,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -228,6 +229,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		}
 	}
 
+	info.IsChannelTest = true
 	info.InitChannelMeta(c)
 
 	err = helper.ModelMappedHelper(c, info, request)
@@ -244,6 +246,15 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	request.SetModelName(testModel)
 
 	apiType, _ := common.ChannelType2APIType(channel.Type)
+	if info.RelayMode == relayconstant.RelayModeResponsesCompact &&
+		apiType != constant.APITypeOpenAI &&
+		apiType != constant.APITypeCodex {
+		return testResult{
+			context:     c,
+			localErr:    fmt.Errorf("responses compaction test only supports openai/codex channels, got api type %d", apiType),
+			newAPIError: types.NewError(fmt.Errorf("unsupported api type: %d", apiType), types.ErrorCodeInvalidApiType),
+		}
+	}
 	adaptor := relay.GetAdaptor(apiType)
 	if adaptor == nil {
 		return testResult{
@@ -284,8 +295,29 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 			newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
 		}
 	}
+
+	//jsonData, err = relaycommon.RemoveDisabledFields(jsonData, info.ChannelOtherSettings)
+	//if err != nil {
+	//	return testResult{
+	//		context:     c,
+	//		localErr:    err,
+	//		newAPIError: types.NewError(err, types.ErrorCodeConvertRequestFailed),
+	//	}
+	//}
+
+	if len(info.ParamOverride) > 0 {
+		jsonData, err = relaycommon.ApplyParamOverride(jsonData, info.ParamOverride, relaycommon.BuildParamOverrideContext(info))
+		if err != nil {
+			return testResult{
+				context:     c,
+				localErr:    err,
+				newAPIError: types.NewError(err, types.ErrorCodeChannelParamOverrideInvalid),
+			}
+		}
+	}
+
 	requestBody := bytes.NewBuffer(jsonData)
-	c.Request.Body = io.NopCloser(requestBody)
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(jsonData))
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		return testResult{
@@ -374,6 +406,8 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 }
 
 func buildTestRequest(model string, endpointType string, channel *model.Channel) dto.Request {
+	testResponsesInput := json.RawMessage(`[{"role":"user","content":"hi"}]`)
+
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
 		switch constant.EndpointType(endpointType) {
@@ -403,7 +437,13 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			// 返回 OpenAIResponsesRequest
 			return &dto.OpenAIResponsesRequest{
 				Model: model,
-				Input: json.RawMessage("\"hi\""),
+				Input: json.RawMessage(`[{"role":"user","content":"hi"}]`),
+			}
+		case constant.EndpointTypeOpenAIResponseCompact:
+			// 返回 OpenAIResponsesCompactionRequest
+			return &dto.OpenAIResponsesCompactionRequest{
+				Model: model,
+				Input: testResponsesInput,
 			}
 		case constant.EndpointTypeAnthropic, constant.EndpointTypeGemini, constant.EndpointTypeOpenAI:
 			// 返回 GeneralOpenAIRequest
@@ -426,6 +466,15 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 	}
 
 	// 自动检测逻辑（保持原有行为）
+	if strings.Contains(strings.ToLower(model), "rerank") {
+		return &dto.RerankRequest{
+			Model:     model,
+			Query:     "What is Deep Learning?",
+			Documents: []any{"Deep Learning is a subset of machine learning.", "Machine learning is a field of artificial intelligence."},
+			TopN:      2,
+		}
+	}
+
 	// 先判断是否为 Embedding 模型
 	if strings.Contains(strings.ToLower(model), "embedding") ||
 		strings.HasPrefix(model, "m3e") ||
@@ -437,11 +486,19 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 		}
 	}
 
+	// Responses compaction models (must use /v1/responses/compact)
+	if strings.HasSuffix(model, ratio_setting.CompactModelSuffix) {
+		return &dto.OpenAIResponsesCompactionRequest{
+			Model: model,
+			Input: testResponsesInput,
+		}
+	}
+
 	// Responses-only models (e.g. codex series)
 	if strings.Contains(strings.ToLower(model), "codex") {
 		return &dto.OpenAIResponsesRequest{
 			Model: model,
-			Input: json.RawMessage("\"hi\""),
+			Input: json.RawMessage(`[{"role":"user","content":"hi"}]`),
 		}
 	}
 
@@ -507,6 +564,64 @@ func TestChannel(c *gin.Context) {
 	milliseconds := tok.Sub(tik).Milliseconds()
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
+	if result.newAPIError != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": result.newAPIError.Error(),
+			"time":    consumedTime,
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"time":    consumedTime,
+	})
+}
+
+func TestChannelStream(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.CacheGetChannel(channelId)
+	if err != nil {
+		channel, err = model.GetChannelById(channelId, true)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	testModel := c.Query("model")
+	tik := time.Now()
+	result := testChannelStream(channel, testModel)
+	if result.localErr != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": result.localErr.Error(),
+			"time":    0.0,
+		})
+		return
+	}
+
+	// Extract first token latency from context
+	firstTokenLatencyMs := 0
+	if result.context != nil {
+		firstTokenLatencyMs = result.context.GetInt("first_token_latency_ms")
+	}
+
+	tok := time.Now()
+	milliseconds := tok.Sub(tik).Milliseconds()
+
+	// Use first token latency if available, otherwise use total time
+	if firstTokenLatencyMs > 0 {
+		milliseconds = int64(firstTokenLatencyMs)
+	}
+
+	go channel.UpdateResponseTime(milliseconds)
+	consumedTime := float64(milliseconds) / 1000.0
+
 	if result.newAPIError != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,

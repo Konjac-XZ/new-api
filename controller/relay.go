@@ -23,6 +23,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -46,7 +47,7 @@ func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIErro
 		err = relay.RerankHelper(c, info)
 	case relayconstant.RelayModeEmbeddings:
 		err = relay.EmbeddingHelper(c, info)
-	case relayconstant.RelayModeResponses:
+	case relayconstant.RelayModeResponses, relayconstant.RelayModeResponsesCompact:
 		err = relay.ResponsesHelper(c, info)
 	default:
 		err = relay.TextHelper(c, info)
@@ -192,8 +193,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	defer func() {
 		// Only return quota if downstream failed and quota was actually pre-consumed
-		if newAPIError != nil && relayInfo.FinalPreConsumedQuota != 0 {
-			service.ReturnPreConsumedQuota(c, relayInfo)
+		if newAPIError != nil {
+			newAPIError = service.NormalizeViolationFeeError(newAPIError)
+			if relayInfo.FinalPreConsumedQuota != 0 {
+				service.ReturnPreConsumedQuota(c, relayInfo)
+			}
+			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
 		}
 	}()
 
@@ -483,29 +488,14 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
 	}
-	if openaiErr.StatusCode == http.StatusTooManyRequests {
-		return true
-	}
-	if openaiErr.StatusCode == 307 {
-		return true
-	}
-	if openaiErr.StatusCode/100 == 5 {
-		// 超时不重试
-		// Konjac-XZ 的特别修改：5xx 全都重试！
-		return true
-	}
-	if openaiErr.StatusCode == http.StatusBadRequest {
-		// Konjac-XZ 的特别修改：上游可能抛出 400，需要重试
-		return true
-	}
-	if openaiErr.StatusCode == 408 {
-		// Konjac-XZ 的特别修改：原来说是处理 Azure 的特别问题，Why not？
-		return true
-	}
-	if openaiErr.StatusCode/100 == 2 {
+	code := openaiErr.StatusCode
+	if code >= 200 && code < 300 {
 		return false
 	}
-	return true
+	if code < 100 || code > 599 {
+		return true
+	}
+	return operation_setting.ShouldRetryByStatusCode(code)
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
@@ -514,7 +504,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(channelError.ChannelType, err) && channelError.AutoBan {
 		gopool.Go(func() {
-			service.DisableChannel(channelError, err.Error())
+			service.DisableChannel(channelError, err.ErrorWithStatusCode())
 		})
 	}
 
@@ -543,8 +533,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["is_multi_key"] = true
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
+		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
-		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveError(), tokenId, 0, false, userGroup, other)
+		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, 0, false, userGroup, other)
 	}
 
 }
