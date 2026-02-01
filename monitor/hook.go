@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -10,37 +9,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var (
-	globalStore *Store
-	globalHub   *Hub
-	enabled     = true // Enabled by default
-)
-
 // Init initializes the monitor system
 func Init() {
-	globalHub = NewHub()
-	globalStore = NewStore(globalHub)
-	go globalHub.Run()
+	GetManager().Init()
 }
 
-// IsEnabled returns whether monitoring is enabled
+// IsEnabled returns whether monitoring is GetManager().IsEnabled()
 func IsEnabled() bool {
-	return enabled
+	return GetManager().IsEnabled()
 }
 
 // SetEnabled enables or disables monitoring
 func SetEnabled(e bool) {
-	enabled = e
+	GetManager().SetEnabled(e)
 }
 
-// GetStore returns the global store (for testing)
+// GetStore returns the store (for testing)
 func GetStore() *Store {
-	return globalStore
+	return GetManager().GetStore()
 }
 
-// GetHub returns the global hub (for testing)
+// GetHub returns the hub (for testing)
 func GetHub() *Hub {
-	return globalHub
+	return GetManager().GetHub()
 }
 
 // sensitiveHeaders are headers that should be masked
@@ -97,7 +88,7 @@ func truncatedBody(body []byte) (string, bool) {
 // RecordStart records the start of a request
 // Returns the record ID for subsequent updates
 func RecordStart(c *gin.Context, requestBody []byte) string {
-	if !enabled || globalStore == nil {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil {
 		return ""
 	}
 
@@ -130,18 +121,18 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 		Model:     model,
 	}
 
-	globalStore.Add(record)
+	GetManager().GetStore().Add(record)
 	return requestId
 }
 
 // RecordUpstream records the upstream request details
 func RecordUpstream(recordID string, url string, method string, headers http.Header, body []byte) {
-	if !enabled || globalStore == nil || recordID == "" {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
 	bodyStr, truncated := truncatedBody(body)
-	globalStore.Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
 			URL:           url,
 			Method:        method,
@@ -161,7 +152,7 @@ func RecordUpstreamWithContext(c *gin.Context, url string, method string, header
 
 // RecordResponse records the response details
 func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
-	if !enabled || globalStore == nil || recordID == "" {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
@@ -180,7 +171,7 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 		response.Error = &ErrorInfo{Message: err.Error()}
 	}
 
-	globalStore.MarkComplete(recordID, response)
+	GetManager().GetStore().MarkComplete(recordID, response)
 	if err != nil {
 		MarkChannelPhase(recordID, PhaseError)
 		FinishChannelAttempt(recordID, AttemptStatusFailed, err.Error(), "", statusCode)
@@ -198,11 +189,11 @@ func RecordResponseWithContext(c *gin.Context, statusCode int, headers http.Head
 
 // RecordError records an error for a request
 func RecordError(recordID string, err error) {
-	if !enabled || globalStore == nil || recordID == "" {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
-	globalStore.Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		now := time.Now()
 		r.EndTime = &now
 		r.Duration = now.Sub(r.StartTime).Milliseconds()
@@ -225,13 +216,12 @@ func RecordErrorWithContext(c *gin.Context, err error) {
 
 // StartChannelAttempt records that we are about to try a specific channel
 func StartChannelAttempt(recordID string, channelId int, channelName string, attemptNo int) {
-	if !enabled || globalStore == nil || recordID == "" {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
-	log.Printf("[Monitor] StartChannelAttempt: id=%s channel=%d (%s) attempt=%d", recordID, channelId, channelName, attemptNo)
 	now := time.Now()
-	globalStore.Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		attempt := ChannelAttempt{
 			Attempt:     attemptNo,
 			ChannelId:   channelId,
@@ -246,7 +236,7 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 		r.CurrentPhase = PhaseWaitingUpstream
 	})
 
-	globalStore.BroadcastChannelUpdate(recordID)
+	GetManager().GetStore().BroadcastChannelUpdate(recordID)
 }
 
 // StartChannelAttemptWithContext is the gin-aware wrapper
@@ -257,11 +247,11 @@ func StartChannelAttemptWithContext(c *gin.Context, channelId int, channelName s
 
 // MarkChannelPhase updates the real-time phase (waiting_upstream/streaming/error/completed)
 func MarkChannelPhase(recordID string, phase string) {
-	if !enabled || globalStore == nil || recordID == "" || phase == "" {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" || phase == "" {
 		return
 	}
 
-	globalStore.Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		r.CurrentPhase = phase
 		if len(r.ChannelAttempts) == 0 {
 			return
@@ -289,7 +279,7 @@ func MarkChannelPhase(recordID string, phase string) {
 		}
 	})
 
-	globalStore.BroadcastChannelUpdate(recordID)
+	GetManager().GetStore().BroadcastChannelUpdate(recordID)
 }
 
 // MarkChannelPhaseWithContext wraps MarkChannelPhase using gin context
@@ -300,11 +290,11 @@ func MarkChannelPhaseWithContext(c *gin.Context, phase string) {
 
 // FinishChannelAttempt finalizes the latest attempt with a terminal status and reason
 func FinishChannelAttempt(recordID string, status string, reason string, errorCode string, httpStatus int) {
-	if !enabled || globalStore == nil || recordID == "" {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
-	globalStore.Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		if len(r.ChannelAttempts) == 0 {
 			return
 		}
@@ -320,7 +310,7 @@ func FinishChannelAttempt(recordID string, status string, reason string, errorCo
 		last.HTTPStatus = httpStatus
 	})
 
-	globalStore.BroadcastChannelUpdate(recordID)
+	GetManager().GetStore().BroadcastChannelUpdate(recordID)
 }
 
 // FinishChannelAttemptWithContext wraps FinishChannelAttempt using gin context
@@ -331,11 +321,11 @@ func FinishChannelAttemptWithContext(c *gin.Context, status string, reason strin
 
 // UpdateMetadata updates metadata for a request (channel info, stream status, etc.)
 func UpdateMetadata(recordID string, channelId int, channelName string, isStream bool) {
-	if !enabled || globalStore == nil || recordID == "" {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
-	globalStore.Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		r.ChannelId = channelId
 		r.ChannelName = channelName
 		r.IsStream = isStream

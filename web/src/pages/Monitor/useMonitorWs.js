@@ -19,6 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { API } from '../../helpers/api';
+import {
+  MAX_RECONNECT_ATTEMPTS,
+  BASE_RECONNECT_DELAY_MS,
+  STABLE_CONNECTION_TIMEOUT_MS,
+} from './constants';
 
 const WS_MESSAGE_TYPES = {
   NEW: 'new',
@@ -42,8 +47,8 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
   const stableOpenTimerRef = useRef(null);
   const statsIntervalRef = useRef(null);
   const focusedRequestIdRef = useRef(focusedRequestId ?? null);
-  const maxReconnectAttempts = 10;
-  const baseReconnectDelay = 1000;
+  const maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS;
+  const baseReconnectDelay = BASE_RECONNECT_DELAY_MS;
 
   useEffect(() => {
     focusedRequestIdRef.current = focusedRequestId ?? null;
@@ -75,7 +80,7 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
         const basePath = parsed.pathname.replace(/\/$/, '');
         return `${protocol}//${parsed.host}${basePath}/api/monitor/ws`;
       } catch (error) {
-        console.warn('Invalid VITE_REACT_APP_SERVER_URL for monitor websocket:', error);
+        // Invalid URL, fall through to default
       }
     }
 
@@ -131,11 +136,11 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
             break;
 
           default:
-            console.warn('Unknown message type:', message.type);
+            // Unknown message type, ignore
         }
       });
     } catch (error) {
-      console.error('Error parsing WebSocket message:', error);
+      // Error parsing message, ignore
     }
   }, []);
 
@@ -173,7 +178,7 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
         }
         stableOpenTimerRef.current = setTimeout(() => {
           reconnectAttempts.current = 0;
-        }, 3000);
+        }, STABLE_CONNECTION_TIMEOUT_MS);
       };
 
       ws.onmessage = handleMessage;

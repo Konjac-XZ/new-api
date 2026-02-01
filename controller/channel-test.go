@@ -44,6 +44,16 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+var unsupportedTestChannelTypes = []int{
+	constant.ChannelTypeMidjourney,
+	constant.ChannelTypeMidjourneyPlus,
+	constant.ChannelTypeSunoAPI,
+	constant.ChannelTypeKling,
+	constant.ChannelTypeJimeng,
+	constant.ChannelTypeDoubaoVideo,
+	constant.ChannelTypeVidu,
+}
+
 func resolveTestModel(channel *model.Channel, requestedModel string) string {
 	testModel := strings.TrimSpace(requestedModel)
 	if testModel != "" {
@@ -161,15 +171,6 @@ func convertRequestForAdaptor(c *gin.Context, info *relaycommon.RelayInfo, adapt
 
 func testChannel(channel *model.Channel, testModel string, endpointType string) testResult {
 	tik := time.Now()
-	var unsupportedTestChannelTypes = []int{
-		constant.ChannelTypeMidjourney,
-		constant.ChannelTypeMidjourneyPlus,
-		constant.ChannelTypeSunoAPI,
-		constant.ChannelTypeKling,
-		constant.ChannelTypeJimeng,
-		constant.ChannelTypeDoubaoVideo,
-		constant.ChannelTypeVidu,
-	}
 	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
 		channelTypeName := constant.GetChannelTypeName(channel.Type)
 		return testResult{
@@ -198,7 +199,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	}
 	cache.WriteContext(c)
 
-	//c.Request.Header.Set("Authorization", "Bearer "+channel.Key)
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("channel", channel.Type)
 	c.Set("base_url", channel.GetBaseURL())
@@ -264,10 +264,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		}
 	}
 
-	//// 创建一个用于日志的 info 副本，移除 ApiKey
-	//logInfo := info
-	//logInfo.ApiKey = ""
-
 	priceData, err := helper.ModelPriceHelper(c, info, 0, request.GetTokenCountMeta())
 	if err != nil {
 		return testResult{
@@ -295,15 +291,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 			newAPIError: types.NewError(err, types.ErrorCodeJsonMarshalFailed),
 		}
 	}
-
-	//jsonData, err = relaycommon.RemoveDisabledFields(jsonData, info.ChannelOtherSettings)
-	//if err != nil {
-	//	return testResult{
-	//		context:     c,
-	//		localErr:    err,
-	//		newAPIError: types.NewError(err, types.ErrorCodeConvertRequestFailed),
-	//	}
-	//}
 
 	if len(info.ParamOverride) > 0 {
 		jsonData, err = relaycommon.ApplyParamOverride(jsonData, info.ParamOverride, relaycommon.BuildParamOverrideContext(info))
@@ -552,11 +539,6 @@ func TestChannel(c *gin.Context) {
 			return
 		}
 	}
-	//defer func() {
-	//	if channel.ChannelInfo.IsMultiKey {
-	//		go func() { _ = channel.SaveChannelInfo() }()
-	//	}
-	//}()
 	testModel := c.Query("model")
 	endpointType := c.Query("endpoint_type")
 	tik := time.Now()
@@ -1034,15 +1016,6 @@ func testScheduledChannel(channel *model.Channel) {
 func testChannelStream(channel *model.Channel, testModel string) testResult {
 	startTime := time.Now()
 
-	var unsupportedTestChannelTypes = []int{
-		constant.ChannelTypeMidjourney,
-		constant.ChannelTypeMidjourneyPlus,
-		constant.ChannelTypeSunoAPI,
-		constant.ChannelTypeKling,
-		constant.ChannelTypeJimeng,
-		constant.ChannelTypeDoubaoVideo,
-		constant.ChannelTypeVidu,
-	}
 	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
 		channelTypeName := constant.GetChannelTypeName(channel.Type)
 		return testResult{

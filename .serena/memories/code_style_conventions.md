@@ -15,6 +15,27 @@
 - Error handling: explicit error returns, no panic in production code
 - Logging: use the project's logger package
 
+### Constants & Configuration
+- Extract magic numbers to named constants
+- Group related constants in dedicated files (e.g., `constants.go`)
+- Use descriptive names: `MaxRecords`, `WriteWait`, `PongWait`
+- Document units in comments (e.g., `10 * time.Second`)
+
+### Concurrency Patterns
+- **Manager Pattern**: Use for global state management
+  - Thread-safe singleton with `sync.Once`
+  - Atomic operations for flags (`atomic.Bool`)
+  - RWMutex for complex state
+- **Event-Driven**: Decouple components with event channels
+  - Producer emits events to channel
+  - Consumer subscribes and processes events
+  - Non-blocking sends with `select/default`
+
+### Code Quality
+- No debug statements (`log.Printf`, `console.log`) in production code
+- No commented-out code - delete or use version control
+- Extract duplicate code to shared functions/variables
+
 ### Example Pattern
 ```go
 // Exported function
@@ -41,6 +62,18 @@ func validateUserID(id string) bool {
 - Use `useState`, `useEffect`, `useContext` for state management
 - Props destructuring
 - Conditional rendering with ternary or logical operators
+- Extract large components (>300 lines) into smaller, focused components
+- Use `React.memo` for performance optimization on frequently re-rendered components
+
+### Constants & Configuration
+- Extract magic numbers to named constants (e.g., `constants.js`)
+- Group related constants: timing, thresholds, limits
+- Use descriptive names: `DURATION_UPDATE_INTERVAL_MS`, `BODY_DISPLAY_LIMIT_BYTES`
+
+### Code Quality
+- No console statements (`console.log`, `console.warn`) in production code
+- No commented-out code - delete or use version control
+- Proper error handling - avoid silent catches
 
 ### Code Formatting
 - **Prettier** enforces formatting:

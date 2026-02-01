@@ -11,6 +11,7 @@ func SetMonitorRouter(router *gin.Engine) {
 	// REST API endpoints with full AdminAuth (requires New-Api-User header)
 	monitorRouter := router.Group("/api/monitor")
 	monitorRouter.Use(middleware.AdminAuth())
+	monitorRouter.Use(monitor.RequireInitialized())
 	{
 		monitorRouter.GET("/requests", monitor.GetRequests())
 		monitorRouter.GET("/requests/active", monitor.GetActiveRequests())
@@ -23,5 +24,6 @@ func SetMonitorRouter(router *gin.Engine) {
 	// WebSocket endpoint on separate group with session-only auth
 	// (browsers cannot set custom headers for WebSocket connections)
 	wsRouter := router.Group("/api/monitor")
+	wsRouter.Use(monitor.RequireInitialized())
 	wsRouter.GET("/ws", middleware.AdminAuthForWebSocket(), monitor.WebSocketHandler())
 }

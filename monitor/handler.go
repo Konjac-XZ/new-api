@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
@@ -11,15 +10,7 @@ import (
 // GetRequests returns all stored requests
 func GetRequests() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalStore == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"success": false,
-				"message": "Monitor not initialized",
-			})
-			return
-		}
-
-		records := globalStore.GetAll()
+		records := GetManager().GetStore().GetAll()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    records,
@@ -30,16 +21,8 @@ func GetRequests() gin.HandlerFunc {
 // GetRequest returns a single request by ID
 func GetRequest() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalStore == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"success": false,
-				"message": "Monitor not initialized",
-			})
-			return
-		}
-
 		id := c.Param("id")
-		record := globalStore.Get(id)
+		record := GetManager().GetStore().Get(id)
 		if record == nil {
 			c.JSON(http.StatusNotFound, gin.H{
 				"success": false,
@@ -58,20 +41,12 @@ func GetRequest() gin.HandlerFunc {
 // GetStats returns monitoring statistics
 func GetStats() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalStore == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"success": false,
-				"message": "Monitor not initialized",
-			})
-			return
-		}
-
-		stats := globalStore.GetStats()
-		stats.TotalRequests = globalStore.count
+		stats := GetManager().GetStore().GetStats()
+		stats.TotalRequests = GetManager().GetStore().count
 
 		connections := 0
-		if globalHub != nil {
-			connections = globalHub.ClientCount()
+		if GetManager().GetHub() != nil {
+			connections = GetManager().GetHub().ClientCount()
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -85,31 +60,14 @@ func GetStats() gin.HandlerFunc {
 // WebSocketHandler handles WebSocket connections for real-time updates
 func WebSocketHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalHub == nil || globalStore == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"success": false,
-				"message": "Monitor not initialized",
-			})
-			return
-		}
-
-		globalHub.ServeWs(c, globalStore)
+		GetManager().GetHub().ServeWs(c, GetManager().GetStore())
 	}
 }
 
 // GetActiveRequests returns only currently processing requests
 func GetActiveRequests() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalStore == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{
-				"success": false,
-				"message": "Monitor not initialized",
-			})
-			return
-		}
-
-		records := globalStore.GetActive()
-		log.Printf("[Monitor Handler] GetActiveRequests returning %d records", len(records))
+		records := GetManager().GetStore().GetActive()
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    records,
@@ -120,15 +78,10 @@ func GetActiveRequests() gin.HandlerFunc {
 // GetRequestBody returns stored body content for a request (downstream, upstream, response)
 func GetRequestBody() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if globalStore == nil {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "Monitor not initialized"})
-			return
-		}
-
 		id := c.Param("id")
 		bodyType := strings.ToLower(c.Param("type"))
 
-		record := globalStore.Get(id)
+		record := GetManager().GetStore().Get(id)
 		if record == nil {
 			c.JSON(http.StatusNotFound, gin.H{"success": false, "message": "Request not found"})
 			return

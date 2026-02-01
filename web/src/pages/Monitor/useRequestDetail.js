@@ -84,7 +84,6 @@ const useRequestDetail = () => {
       } else {
         setError(err.message || 'Failed to fetch request details');
       }
-      console.error('Error fetching request detail:', err);
     } finally {
       setLoading(false);
       fetchingRef.current.delete(id);

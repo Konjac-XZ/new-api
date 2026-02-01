@@ -44,6 +44,13 @@ import { useStopwatch } from './useStopwatch';
 import { deriveDisplayStatus, isActiveStatus, isTerminalStatus } from './statusUtils';
 import { renderModelTag, stringToColor, timestamp2string, escapeHtml } from '../../helpers';
 import { API } from '../../helpers/api';
+import {
+  DURATION_UPDATE_INTERVAL_MS,
+  MS_TO_SECONDS,
+  BODY_DISPLAY_LIMIT_BYTES,
+  DURATION_WARNING_THRESHOLD_S,
+  DURATION_ERROR_THRESHOLD_S,
+} from './constants';
 
 const { Title, Text } = Typography;
 
@@ -73,12 +80,12 @@ const attemptStatusColors = {
 
 const renderDurationTag = (durationMs, t) => {
   if (!durationMs) return <Text type='tertiary'>-</Text>;
-  const seconds = Number(durationMs / 1000).toFixed(1);
+  const seconds = Number(durationMs / MS_TO_SECONDS).toFixed(1);
   const value = parseFloat(seconds);
   let color = 'green';
-  if (value >= 10) {
+  if (value >= DURATION_ERROR_THRESHOLD_S) {
     color = 'red';
-  } else if (value >= 3) {
+  } else if (value >= DURATION_WARNING_THRESHOLD_S) {
     color = 'orange';
   }
   return (
@@ -109,12 +116,12 @@ const DurationCell = ({ record, t }) => {
     const updateElapsed = () => {
       const now = Date.now();
       const startTime = new Date(record.start_time).getTime();
-      const elapsedSeconds = (now - startTime) / 1000;
+      const elapsedSeconds = (now - startTime) / MS_TO_SECONDS;
       setElapsed(elapsedSeconds);
     };
 
     updateElapsed();
-    const interval = setInterval(updateElapsed, 100);
+    const interval = setInterval(updateElapsed, DURATION_UPDATE_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [isActive, record.start_time]);
@@ -179,7 +186,7 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
   // 1. Frontend display limit: 20,000 bytes - refuse to display inline
   // 2. Backend truncation flag: indicates content was truncated at 1MB
   // Use bodySize (from backend) instead of checking actual data length
-  const isLengthExceeded = bodyTruncated || bodySize > 20000;
+  const isLengthExceeded = bodyTruncated || bodySize > BODY_DISPLAY_LIMIT_BYTES;
 
   const { formatted, highlighted } = useMemo(() => {
     if (!data || isLengthExceeded) return { formatted: '', highlighted: '' };
@@ -231,7 +238,6 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Download failed:', error);
       // TODO: Show error message to user
     }
   }, [formatted, label, isLengthExceeded, data, requestId, bodyType]);
@@ -576,7 +582,7 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
               {
                 key: t('开始时间'),
                 value: record.start_time
-                  ? timestamp2string(Math.floor(new Date(record.start_time).getTime() / 1000))
+                  ? timestamp2string(Math.floor(new Date(record.start_time).getTime() / MS_TO_SECONDS))
                   : '-',
               },
               {
@@ -824,7 +830,7 @@ const Monitor = () => {
         width: 160,
         render: (time) => {
           if (!time) return '-';
-          const seconds = Math.floor(new Date(time).getTime() / 1000);
+          const seconds = Math.floor(new Date(time).getTime() / MS_TO_SECONDS);
           return timestamp2string(seconds);
         },
       },

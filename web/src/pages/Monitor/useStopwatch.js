@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import { useState, useEffect } from 'react';
+import { DURATION_UPDATE_INTERVAL_MS, MS_TO_SECONDS } from './constants';
 
 export const useStopwatch = (requestDetail, t) => {
   const [display, setDisplay] = useState('');
@@ -48,7 +49,7 @@ export const useStopwatch = (requestDetail, t) => {
       const startedAt = new Date(currentAttempt.started_at).getTime();
 
       if (status === 'waiting_upstream') {
-        const elapsed = (now - startedAt) / 1000;
+        const elapsed = (now - startedAt) / MS_TO_SECONDS;
         setDisplay(`${t('等待')}: ${elapsed.toFixed(1)}s`);
       } else if (status === 'streaming') {
         const streamingStartedAt = currentAttempt.streaming_started_at
@@ -56,19 +57,19 @@ export const useStopwatch = (requestDetail, t) => {
           : null;
 
         if (streamingStartedAt) {
-          const waitingTime = (streamingStartedAt - startedAt) / 1000;
-          const streamingTime = (now - streamingStartedAt) / 1000;
+          const waitingTime = (streamingStartedAt - startedAt) / MS_TO_SECONDS;
+          const streamingTime = (now - streamingStartedAt) / MS_TO_SECONDS;
           setDisplay(`${t('等待')}: ${waitingTime.toFixed(1)}s | ${t('流式返回')}: ${streamingTime.toFixed(1)}s`);
         } else {
           // Fallback if streaming_started_at is missing
-          const totalTime = (now - startedAt) / 1000;
+          const totalTime = (now - startedAt) / MS_TO_SECONDS;
           setDisplay(`${t('流式返回')}: ${totalTime.toFixed(1)}s`);
         }
       }
     };
 
     updateDisplay();
-    const interval = setInterval(updateDisplay, 100);
+    const interval = setInterval(updateDisplay, DURATION_UPDATE_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [requestDetail, t]);

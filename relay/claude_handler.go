@@ -99,9 +99,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
-	// Log the resolved model names to debug model mapping vs thinking trimming.
 	passThrough := model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled
-	// common.SysLog(fmt.Sprintf("[claude relay] origin=%s upstream=%s request.model=%s thinking=%t passThrough=%t stream=%t", info.OriginModelName, info.UpstreamModelName, request.Model, request.Thinking != nil, passThrough, info.IsStream))
 
 	var requestBody io.Reader
 	if passThrough {
@@ -109,15 +107,6 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		// Inspect raw body model when pass-through is enabled to confirm upstream payload.
-		// if len(body) > 0 {
-		// 	var raw map[string]any
-		// 	if err := common.Unmarshal(body, &raw); err == nil {
-		// 		if m, ok := raw["model"].(string); ok {
-		// 			common.SysLog(fmt.Sprintf("[claude relay] passThrough raw body model=%s len=%d", m, len(body)))
-		// 		}
-		// 	}
-		// }
 		requestBody = bytes.NewBuffer(body)
 	} else {
 		convertedRequest, err := adaptor.ConvertClaudeRequest(c, info, request)

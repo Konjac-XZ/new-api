@@ -2,27 +2,12 @@ package monitor
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-)
-
-const (
-	// Time allowed to write a message to the peer
-	writeWait = 10 * time.Second
-
-	// Time allowed to read the next pong message from the peer
-	pongWait = 60 * time.Second
-
-	// Send pings to peer with this period (must be less than pongWait)
-	pingPeriod = (pongWait * 9) / 10
-
-	// Maximum message size allowed from peer
-	maxMessageSize = 512
 )
 
 var upgrader = websocket.Upgrader{
@@ -53,7 +38,7 @@ type Client struct {
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
-		broadcast:  make(chan *WSMessage, 256),
+		broadcast:  make(chan *WSMessage, BroadcastChanSize),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 	}
@@ -123,7 +108,7 @@ func (h *Hub) ServeWs(c *gin.Context, store *Store) {
 	client := &Client{
 		hub:  h,
 		conn: conn,
-		send: make(chan []byte, 256),
+		send: make(chan []byte, ClientSendChanSize),
 	}
 
 	h.register <- client
@@ -156,10 +141,10 @@ func (c *Client) readPump() {
 		c.conn.Close()
 	}()
 
-	c.conn.SetReadLimit(maxMessageSize)
-	c.conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.conn.SetReadLimit(MaxMessageSize)
+	c.conn.SetReadDeadline(time.Now().Add(PongWait))
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(pongWait))
+		c.conn.SetReadDeadline(time.Now().Add(PongWait))
 		return nil
 	})
 
@@ -173,7 +158,7 @@ func (c *Client) readPump() {
 
 // writePump pumps messages from the hub to the WebSocket connection
 func (c *Client) writePump() {
-	ticker := time.NewTicker(pingPeriod)
+	ticker := time.NewTicker(PingPeriod)
 	defer func() {
 		ticker.Stop()
 		c.conn.Close()
@@ -182,7 +167,7 @@ func (c *Client) writePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			c.conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			if !ok {
 				// Hub closed the channel
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
@@ -191,7 +176,6 @@ func (c *Client) writePump() {
 
 			w, err := c.conn.NextWriter(websocket.TextMessage)
 			if err != nil {
-				log.Printf("[Monitor WS] nextWriter failed for %s: %v", c.conn.RemoteAddr(), err)
 				return
 			}
 			if _, err := w.Write(message); err != nil {
@@ -213,7 +197,7 @@ func (c *Client) writePump() {
 				return
 			}
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			c.conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}

@@ -1,33 +1,64 @@
 package monitor
 
 import (
-	"log"
 	"sync"
 	"time"
 )
 
+// StoreEventType represents the type of store event
+type StoreEventType string
+
 const (
-	MaxRecords  = 100
-	MaxBodySize = 10 * 1024 // 10KB max body storage per request
+	EventTypeNew     StoreEventType = "new"
+	EventTypeUpdate  StoreEventType = "update"
+	EventTypeChannel StoreEventType = "channel"
 )
+
+// StoreEvent represents an event emitted by the Store
+type StoreEvent struct {
+	Type    StoreEventType
+	Payload interface{}
+}
 
 // Store is a ring buffer storage for request records
 // Not concurrency-safe for iteration; uses internal mutexes for callers.
 type Store struct {
-	records []*RequestRecord
-	index   map[string]int // ID -> position mapping
-	mu      sync.RWMutex
-	head    int
-	count   int
-	hub     *Hub
+	records   []*RequestRecord
+	index     map[string]int // ID -> position mapping
+	mu        sync.RWMutex
+	head      int
+	count     int
+	events    chan StoreEvent
+	eventsMu  sync.RWMutex
 }
 
 // NewStore creates a new Store instance
-func NewStore(hub *Hub) *Store {
+func NewStore() *Store {
 	return &Store{
 		records: make([]*RequestRecord, MaxRecords),
 		index:   make(map[string]int),
-		hub:     hub,
+		events:  make(chan StoreEvent, 100),
+	}
+}
+
+// Events returns the event channel for subscribing to store events
+func (s *Store) Events() <-chan StoreEvent {
+	s.eventsMu.RLock()
+	defer s.eventsMu.RUnlock()
+	return s.events
+}
+
+// emitEvent sends an event to subscribers
+func (s *Store) emitEvent(eventType StoreEventType, payload interface{}) {
+	s.eventsMu.RLock()
+	defer s.eventsMu.RUnlock()
+
+	if s.events != nil {
+		select {
+		case s.events <- StoreEvent{Type: eventType, Payload: payload}:
+		default:
+			// Drop event if channel is full to avoid blocking
+		}
 	}
 }
 
@@ -51,13 +82,8 @@ func (s *Store) Add(record *RequestRecord) {
 		s.count++
 	}
 
-	// Broadcast new record summary to WebSocket clients
-	if s.hub != nil {
-		s.hub.Broadcast(&WSMessage{
-			Type:    WSMessageTypeNew,
-			Payload: record.ToSummary(),
-		})
-	}
+	// Emit event for new record
+	s.emitEvent(EventTypeNew, record.ToSummary())
 }
 
 // Update updates an existing record by ID
@@ -77,13 +103,8 @@ func (s *Store) Update(id string, updater func(*RequestRecord)) {
 
 	updater(record)
 
-	// Broadcast update summary to WebSocket clients
-	if s.hub != nil {
-		s.hub.Broadcast(&WSMessage{
-			Type:    WSMessageTypeUpdate,
-			Payload: record.ToSummary(),
-		})
-	}
+	// Emit event for record update
+	s.emitEvent(EventTypeUpdate, record.ToSummary())
 }
 
 // Get retrieves a record by ID
@@ -101,10 +122,6 @@ func (s *Store) Get(id string) *RequestRecord {
 
 // BroadcastChannelUpdate sends a channel update message for the given record ID
 func (s *Store) BroadcastChannelUpdate(id string) {
-	if s.hub == nil {
-		return
-	}
-
 	record := s.Get(id)
 	if record == nil {
 		return
@@ -115,10 +132,8 @@ func (s *Store) BroadcastChannelUpdate(id string) {
 		return
 	}
 
-	s.hub.Broadcast(&WSMessage{
-		Type:    WSMessageTypeChannel,
-		Payload: update,
-	})
+	// Emit event for channel update
+	s.emitEvent(EventTypeChannel, update)
 }
 
 // GetAll returns all stored records in chronological order (oldest first)
@@ -218,7 +233,6 @@ func (s *Store) GetStats() MonitorStats {
 
 // MarkComplete marks a record as completed with response info
 func (s *Store) MarkComplete(id string, response *ResponseInfo) {
-	log.Printf("[Monitor Store] MarkComplete: id=%s, hasResponse=%t", id, response != nil)
 	s.Update(id, func(r *RequestRecord) {
 		now := time.Now()
 		r.EndTime = &now
