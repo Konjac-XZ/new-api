@@ -42,7 +42,7 @@ import useMonitorWs from './useMonitorWs';
 import useRequestDetail from './useRequestDetail';
 import { useStopwatch } from './useStopwatch';
 import { deriveDisplayStatus, isActiveStatus, isTerminalStatus } from './statusUtils';
-import { renderModelTag, stringToColor, timestamp2string } from '../../helpers';
+import { renderModelTag, stringToColor, timestamp2string, escapeHtml } from '../../helpers';
 import { API } from '../../helpers/api';
 
 const { Title, Text } = Typography;
@@ -156,7 +156,8 @@ const getAttemptStatusLabels = (t) => ({
 
 // JSON syntax highlighting function
 const highlightJson = (str) => {
-  return str.replace(
+  const escaped = escapeHtml(str);
+  return escaped.replace(
     /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,
     (match) => {
       let color = '#b5cea8'; // numbers

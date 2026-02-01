@@ -406,7 +406,16 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 }
 
 func buildTestRequest(model string, endpointType string, channel *model.Channel) dto.Request {
-	testResponsesInput := json.RawMessage(`[{"role":"user","content":"hi"}]`)
+	// Get custom test case from channel, default to "hi" for chat and "hello world" for embeddings
+	testCase := "hi"
+	embeddingTestCase := "hello world"
+	if channel.TestCase != nil && strings.TrimSpace(*channel.TestCase) != "" {
+		testCase = strings.TrimSpace(*channel.TestCase)
+		embeddingTestCase = testCase
+	}
+
+	// Build JSON input for responses endpoints using the custom test case
+	testResponsesInput := json.RawMessage(fmt.Sprintf(`[{"role":"user","content":"%s"}]`, testCase))
 
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
@@ -415,7 +424,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			// 返回 EmbeddingRequest
 			return &dto.EmbeddingRequest{
 				Model: model,
-				Input: []any{"hello world"},
+				Input: []any{embeddingTestCase},
 			}
 		case constant.EndpointTypeImageGeneration:
 			// 返回 ImageRequest
@@ -437,7 +446,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			// 返回 OpenAIResponsesRequest
 			return &dto.OpenAIResponsesRequest{
 				Model: model,
-				Input: json.RawMessage(`[{"role":"user","content":"hi"}]`),
+				Input: testResponsesInput,
 			}
 		case constant.EndpointTypeOpenAIResponseCompact:
 			// 返回 OpenAIResponsesCompactionRequest
@@ -457,7 +466,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 				Messages: []dto.Message{
 					{
 						Role:    "user",
-						Content: "hi",
+						Content: testCase,
 					},
 				},
 				MaxTokens: maxTokens,
@@ -482,7 +491,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 		// 返回 EmbeddingRequest
 		return &dto.EmbeddingRequest{
 			Model: model,
-			Input: []any{"hello world"},
+			Input: []any{embeddingTestCase},
 		}
 	}
 
@@ -498,7 +507,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 	if strings.Contains(strings.ToLower(model), "codex") {
 		return &dto.OpenAIResponsesRequest{
 			Model: model,
-			Input: json.RawMessage(`[{"role":"user","content":"hi"}]`),
+			Input: testResponsesInput,
 		}
 	}
 
@@ -509,7 +518,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 		Messages: []dto.Message{
 			{
 				Role:    "user",
-				Content: "hi",
+				Content: testCase,
 			},
 		},
 	}
