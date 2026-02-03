@@ -42,7 +42,6 @@ func GetRequest() gin.HandlerFunc {
 func GetStats() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		stats := GetManager().GetStore().GetStats()
-		stats.TotalRequests = GetManager().GetStore().count
 
 		connections := 0
 		if GetManager().GetHub() != nil {

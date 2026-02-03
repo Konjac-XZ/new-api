@@ -67,17 +67,27 @@ func (h *Hub) Run() {
 				continue
 			}
 
+			var staleClients []*Client
 			h.mu.RLock()
 			for client := range h.clients {
 				select {
 				case client.send <- data:
 				default:
-					// Client's send buffer is full, close connection
-					close(client.send)
-					delete(h.clients, client)
+					staleClients = append(staleClients, client)
 				}
 			}
 			h.mu.RUnlock()
+
+			if len(staleClients) > 0 {
+				h.mu.Lock()
+				for _, client := range staleClients {
+					if _, ok := h.clients[client]; ok {
+						delete(h.clients, client)
+						close(client.send)
+					}
+				}
+				h.mu.Unlock()
+			}
 		}
 	}
 }
