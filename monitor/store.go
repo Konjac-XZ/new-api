@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"runtime"
 	"sync"
 	"time"
 )
@@ -224,6 +225,9 @@ func (s *Store) GetStats() MonitorStats {
 	defer s.mu.RUnlock()
 
 	stats := MonitorStats{}
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	stats.MemoryBytes = int64(mem.Alloc)
 
 	for _, record := range s.records {
 		if record == nil {

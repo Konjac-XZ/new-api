@@ -13,3 +13,6 @@ export const DURATION_ERROR_THRESHOLD_S = 10;
 export const MAX_RECONNECT_ATTEMPTS = 10;
 export const BASE_RECONNECT_DELAY_MS = 1000;
 export const STABLE_CONNECTION_TIMEOUT_MS = 3000;
+
+// Frontend summaries buffer size
+export const MAX_SUMMARY_ITEMS = 100;

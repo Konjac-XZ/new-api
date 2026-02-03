@@ -792,6 +792,17 @@ const Monitor = () => {
     }
   }, [connected, clearCache]);
 
+  // If the selected request is evicted from the summaries buffer, clear selection
+  useEffect(() => {
+    if (!selectedId) return;
+    const stillExists = summaries.some((summary) => summary.id === selectedId);
+    if (!stillExists) {
+      setSelectedId(null);
+      setDetailVisible(false);
+      clearCache();
+    }
+  }, [summaries, selectedId, clearCache]);
+
   // Refresh detail after reconnect to keep the selection visible and updated
   useEffect(() => {
     if (connected && selectedId) {

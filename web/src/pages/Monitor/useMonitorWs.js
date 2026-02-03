@@ -23,6 +23,7 @@ import {
   MAX_RECONNECT_ATTEMPTS,
   BASE_RECONNECT_DELAY_MS,
   STABLE_CONNECTION_TIMEOUT_MS,
+  MAX_SUMMARY_ITEMS,
 } from './constants';
 
 const WS_MESSAGE_TYPES = {
@@ -49,6 +50,17 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
   const focusedRequestIdRef = useRef(focusedRequestId ?? null);
   const maxReconnectAttempts = MAX_RECONNECT_ATTEMPTS;
   const baseReconnectDelay = BASE_RECONNECT_DELAY_MS;
+
+  const trimSummaries = useCallback((list) => {
+    if (!Array.isArray(list)) return [];
+    if (list.length <= MAX_SUMMARY_ITEMS) return list;
+    const sortedByTime = [...list].sort((a, b) => {
+      const aTime = a?.start_time ? new Date(a.start_time).getTime() : 0;
+      const bTime = b?.start_time ? new Date(b.start_time).getTime() : 0;
+      return aTime - bTime;
+    });
+    return sortedByTime.slice(sortedByTime.length - MAX_SUMMARY_ITEMS);
+  }, [MAX_SUMMARY_ITEMS]);
 
   useEffect(() => {
     focusedRequestIdRef.current = focusedRequestId ?? null;
@@ -100,12 +112,12 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
           case WS_MESSAGE_TYPES.SNAPSHOT:
             // Initial snapshot of all summaries
             const snapshotData = Array.isArray(message.payload) ? message.payload : [];
-            setSummaries(snapshotData);
+            setSummaries(trimSummaries(snapshotData));
             break;
 
           case WS_MESSAGE_TYPES.NEW:
             // New request summary added
-            setSummaries((prev) => [...prev, message.payload]);
+            setSummaries((prev) => trimSummaries([...prev, message.payload]));
             break;
 
           case WS_MESSAGE_TYPES.UPDATE:
@@ -114,7 +126,7 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
               const updated = prev.map((r) =>
                 r.id === message.payload.id ? message.payload : r
               );
-              return updated;
+              return trimSummaries(updated);
             });
             break;
 
@@ -122,7 +134,7 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
             // Request deleted (shouldn't happen often)
             setSummaries((prev) => {
               const filtered = prev.filter((r) => r.id !== message.payload.id);
-              return filtered;
+              return trimSummaries(filtered);
             });
             break;
 
@@ -136,7 +148,7 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
             break;
 
           default:
-            // Unknown message type, ignore
+          // Unknown message type, ignore
         }
       });
     } catch (error) {
