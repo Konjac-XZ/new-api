@@ -33,17 +33,17 @@ func (r *CancellationRegistry) RegisterCancel(requestID string, cancel context.C
 // Returns true if cancel function was found and called
 func (r *CancellationRegistry) CancelRequest(requestID string) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	cancel, exists := r.cancels[requestID]
+	if exists {
+		delete(r.cancels, requestID)
+	}
+	r.mu.Unlock()
 	if !exists {
 		return false
 	}
 
-	// Call the cancel function
+	// Call the cancel function outside the lock to avoid blocking other operations.
 	cancel()
-	// Remove from registry
-	delete(r.cancels, requestID)
-
 	return true
 }
 

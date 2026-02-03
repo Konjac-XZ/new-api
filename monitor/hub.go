@@ -94,6 +94,12 @@ func (h *Hub) Run() {
 
 // Broadcast sends a message to all connected clients
 func (h *Hub) Broadcast(msg *WSMessage) {
+	h.mu.RLock()
+	hasClients := len(h.clients) > 0
+	h.mu.RUnlock()
+	if !hasClients {
+		return
+	}
 	select {
 	case h.broadcast <- msg:
 	default:

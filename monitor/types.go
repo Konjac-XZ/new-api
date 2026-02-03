@@ -206,7 +206,7 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 		Model:          r.Model,
 		IsStream:       r.IsStream,
 		CurrentPhase:   r.CurrentPhase,
-		CurrentChannel: r.CurrentChannel,
+		CurrentChannel: cloneCurrentChannel(r.CurrentChannel),
 	}
 
 	if r.Response != nil {
@@ -224,9 +224,36 @@ func (r *RequestRecord) ToChannelUpdate() *ChannelUpdate {
 	return &ChannelUpdate{
 		RequestID:       r.ID,
 		CurrentPhase:    r.CurrentPhase,
-		CurrentChannel:  r.CurrentChannel,
-		ChannelAttempts: r.ChannelAttempts,
+		CurrentChannel:  cloneCurrentChannel(r.CurrentChannel),
+		ChannelAttempts: cloneChannelAttempts(r.ChannelAttempts),
 	}
+}
+
+func cloneCurrentChannel(channel *CurrentChannel) *CurrentChannel {
+	if channel == nil {
+		return nil
+	}
+	cloned := *channel
+	return &cloned
+}
+
+func cloneChannelAttempts(attempts []ChannelAttempt) []ChannelAttempt {
+	if len(attempts) == 0 {
+		return nil
+	}
+	cloned := make([]ChannelAttempt, len(attempts))
+	for i, attempt := range attempts {
+		cloned[i] = attempt
+		if attempt.StreamingStartedAt != nil {
+			startedAt := *attempt.StreamingStartedAt
+			cloned[i].StreamingStartedAt = &startedAt
+		}
+		if attempt.EndedAt != nil {
+			endedAt := *attempt.EndedAt
+			cloned[i].EndedAt = &endedAt
+		}
+	}
+	return cloned
 }
 
 // EstimateSize returns approximate memory size in bytes for this RequestRecord

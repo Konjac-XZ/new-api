@@ -78,11 +78,10 @@ func ginHeadersToMap(c *gin.Context) map[string]string {
 
 // truncatedBody returns truncated body and whether truncation occurred
 func truncatedBody(body []byte) (string, bool) {
-	bodyStr := string(body)
-	if len(bodyStr) <= MaxBodySize {
-		return bodyStr, false
+	if len(body) <= MaxBodySize {
+		return string(body), false
 	}
-	return TruncateBody(bodyStr), true
+	return string(body[:MaxBodySize]) + "... [truncated]", true
 }
 
 // RecordStart records the start of a request

@@ -23,13 +23,13 @@ type StoreEvent struct {
 // Store is a ring buffer storage for request records
 // Not concurrency-safe for iteration; uses internal mutexes for callers.
 type Store struct {
-	records   []*RequestRecord
-	index     map[string]int // ID -> position mapping
-	mu        sync.RWMutex
-	head      int
-	count     int
-	events    chan StoreEvent
-	eventsMu  sync.RWMutex
+	records  []*RequestRecord
+	index    map[string]int // ID -> position mapping
+	mu       sync.RWMutex
+	head     int
+	count    int
+	events   chan StoreEvent
+	eventsMu sync.RWMutex
 }
 
 // NewStore creates a new Store instance
@@ -64,8 +64,8 @@ func (s *Store) emitEvent(eventType StoreEventType, payload interface{}) {
 
 // Add adds a new record to the store
 func (s *Store) Add(record *RequestRecord) {
+	var summary *RequestSummary
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// If we're overwriting an existing record, remove it from the index
 	if s.records[s.head] != nil {
@@ -82,29 +82,41 @@ func (s *Store) Add(record *RequestRecord) {
 		s.count++
 	}
 
+	summary = record.ToSummary()
+	s.mu.Unlock()
+
 	// Emit event for new record
-	s.emitEvent(EventTypeNew, record.ToSummary())
+	if summary != nil {
+		s.emitEvent(EventTypeNew, summary)
+	}
 }
 
 // Update updates an existing record by ID
 func (s *Store) Update(id string, updater func(*RequestRecord)) {
+	var summary *RequestSummary
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	pos, exists := s.index[id]
 	if !exists {
+		s.mu.Unlock()
 		return
 	}
 
 	record := s.records[pos]
 	if record == nil {
+		s.mu.Unlock()
 		return
 	}
 
 	updater(record)
 
+	summary = record.ToSummary()
+	s.mu.Unlock()
+
 	// Emit event for record update
-	s.emitEvent(EventTypeUpdate, record.ToSummary())
+	if summary != nil {
+		s.emitEvent(EventTypeUpdate, summary)
+	}
 }
 
 // Get retrieves a record by ID
@@ -117,7 +129,7 @@ func (s *Store) Get(id string) *RequestRecord {
 		return nil
 	}
 
-	return s.records[pos]
+	return cloneRecord(s.records[pos])
 }
 
 // BroadcastChannelUpdate sends a channel update message for the given record ID
@@ -147,7 +159,7 @@ func (s *Store) GetAll() []*RequestRecord {
 		// Buffer not full yet, start from 0
 		for i := 0; i < s.count; i++ {
 			if s.records[i] != nil {
-				result = append(result, s.records[i])
+				result = append(result, cloneRecord(s.records[i]))
 			}
 		}
 	} else {
@@ -155,7 +167,7 @@ func (s *Store) GetAll() []*RequestRecord {
 		for i := 0; i < MaxRecords; i++ {
 			pos := (s.head + i) % MaxRecords
 			if s.records[pos] != nil {
-				result = append(result, s.records[pos])
+				result = append(result, cloneRecord(s.records[pos]))
 			}
 		}
 	}
@@ -199,7 +211,7 @@ func (s *Store) GetActive() []*RequestRecord {
 
 	for _, record := range s.records {
 		if record != nil && record.Status == StatusProcessing {
-			result = append(result, record)
+			result = append(result, cloneRecord(record))
 		}
 	}
 
@@ -252,4 +264,46 @@ func TruncateBody(body string) string {
 		return body
 	}
 	return body[:MaxBodySize] + "... [truncated]"
+}
+
+func cloneRecord(record *RequestRecord) *RequestRecord {
+	if record == nil {
+		return nil
+	}
+
+	cloned := *record
+	cloned.Downstream = record.Downstream
+	cloned.Downstream.Headers = cloneStringMap(record.Downstream.Headers)
+
+	if record.Upstream != nil {
+		upstream := *record.Upstream
+		upstream.Headers = cloneStringMap(record.Upstream.Headers)
+		cloned.Upstream = &upstream
+	}
+
+	if record.Response != nil {
+		response := *record.Response
+		response.Headers = cloneStringMap(record.Response.Headers)
+		if record.Response.Error != nil {
+			errInfo := *record.Response.Error
+			response.Error = &errInfo
+		}
+		cloned.Response = &response
+	}
+
+	cloned.CurrentChannel = cloneCurrentChannel(record.CurrentChannel)
+	cloned.ChannelAttempts = cloneChannelAttempts(record.ChannelAttempts)
+
+	return &cloned
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
 }
