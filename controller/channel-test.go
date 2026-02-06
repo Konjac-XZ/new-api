@@ -1218,6 +1218,34 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 		}
 	}
 
+	if channel.Type == constant.ChannelTypeGemini {
+		if geminiReq, ok := convertedRequest.(*dto.GeminiChatRequest); ok {
+			modelName := strings.ToLower(info.UpstreamModelName)
+			if strings.Contains(modelName, "gemini-3-pro") ||
+				strings.Contains(modelName, "gemini-3-flash") ||
+				strings.Contains(modelName, "gemini-2.5-pro") ||
+				strings.Contains(modelName, "gemini-2.5-flash") {
+				if geminiReq.GenerationConfig.ThinkingConfig == nil {
+					geminiReq.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{}
+				}
+				if strings.Contains(modelName, "gemini-3-pro") {
+					geminiReq.GenerationConfig.ThinkingConfig.ThinkingLevel = "low"
+				}
+				if strings.Contains(modelName, "gemini-3-flash") {
+					geminiReq.GenerationConfig.ThinkingConfig.ThinkingLevel = "minimal"
+				}
+				if strings.Contains(modelName, "gemini-2.5-pro") {
+					budget := 128
+					geminiReq.GenerationConfig.ThinkingConfig.ThinkingBudget = &budget
+				}
+				if strings.Contains(modelName, "gemini-2.5-flash") {
+					budget := 0
+					geminiReq.GenerationConfig.ThinkingConfig.ThinkingBudget = &budget
+				}
+			}
+		}
+	}
+
 	jsonData, err := json.Marshal(convertedRequest)
 	if err != nil {
 		return testResult{
