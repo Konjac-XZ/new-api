@@ -169,6 +169,86 @@ func convertRequestForAdaptor(c *gin.Context, info *relaycommon.RelayInfo, adapt
 	}
 }
 
+func extractExpectedAnswerContent(responseBody []byte) (string, error) {
+	if len(responseBody) == 0 {
+		return "", errors.New("empty response body")
+	}
+
+	var responsesResp dto.OpenAIResponsesResponse
+	if err := json.Unmarshal(responseBody, &responsesResp); err == nil {
+		if len(responsesResp.Output) > 0 || responsesResp.Object == "response" {
+			text := service.ExtractOutputTextFromResponses(&responsesResp)
+			if strings.TrimSpace(text) != "" {
+				return text, nil
+			}
+		}
+	}
+
+	var textResp dto.OpenAITextResponse
+	if err := json.Unmarshal(responseBody, &textResp); err == nil {
+		if len(textResp.Choices) > 0 {
+			content := textResp.Choices[0].Message.StringContent()
+			if strings.TrimSpace(content) != "" {
+				return content, nil
+			}
+		}
+	}
+
+	var generic map[string]any
+	if err := json.Unmarshal(responseBody, &generic); err == nil {
+		if choices, ok := generic["choices"].([]any); ok && len(choices) > 0 {
+			if choice, ok := choices[0].(map[string]any); ok {
+				if msg, ok := choice["message"].(map[string]any); ok {
+					if content, ok := msg["content"].(string); ok && strings.TrimSpace(content) != "" {
+						return content, nil
+					}
+					if contentList, ok := msg["content"].([]any); ok {
+						var sb strings.Builder
+						for _, item := range contentList {
+							if itemMap, ok := item.(map[string]any); ok {
+								if itemMap["type"] == "text" {
+									if text, ok := itemMap["text"].(string); ok {
+										sb.WriteString(text)
+									}
+								}
+							}
+						}
+						if strings.TrimSpace(sb.String()) != "" {
+							return sb.String(), nil
+						}
+					}
+				}
+				if text, ok := choice["text"].(string); ok && strings.TrimSpace(text) != "" {
+					return text, nil
+				}
+			}
+		}
+	}
+
+	return "", errors.New("unable to extract response content")
+}
+
+func validateExpectedAnswer(channel *model.Channel, responseBody []byte) error {
+	if channel == nil || channel.ExpectedAnswer == nil {
+		return nil
+	}
+	expectedAnswer := strings.TrimSpace(*channel.ExpectedAnswer)
+	if expectedAnswer == "" {
+		return nil
+	}
+
+	responseContent, err := extractExpectedAnswerContent(responseBody)
+	if err != nil {
+		return fmt.Errorf("failed to parse response for expected answer check: %v", err)
+	}
+
+	if !strings.Contains(strings.ToLower(responseContent), strings.ToLower(expectedAnswer)) {
+		return fmt.Errorf("expected answer not found in response: expected '%s'", expectedAnswer)
+	}
+
+	return nil
+}
+
 func testChannel(channel *model.Channel, testModel string, endpointType string) testResult {
 	tik := time.Now()
 	if lo.Contains(unsupportedTestChannelTypes, channel.Type) {
@@ -351,6 +431,14 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 		}
 	}
 	usage := usageA.(*dto.Usage)
+
+	if err := validateExpectedAnswer(channel, w.Body.Bytes()); err != nil {
+		return testResult{
+			context:     c,
+			localErr:    err,
+			newAPIError: types.NewError(err, types.ErrorCodeBadResponseBody),
+		}
+	}
 	result := w.Result()
 	if result.Body != nil {
 		_ = result.Body.Close()
@@ -1180,6 +1268,8 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 	scanner.Split(bufio.ScanLines)
 
 	gotFirstToken := false
+	checkExpectedAnswer := channel != nil && channel.ExpectedAnswer != nil && strings.TrimSpace(*channel.ExpectedAnswer) != ""
+	var contentBuilder strings.Builder
 	for scanner.Scan() {
 		rawLine := scanner.Text()
 		line := strings.TrimSpace(rawLine)
@@ -1213,6 +1303,37 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			break
 		}
 
+		if checkExpectedAnswer {
+			var streamResponse map[string]interface{}
+			if err := json.Unmarshal([]byte(normalized), &streamResponse); err == nil {
+				if choices, ok := streamResponse["choices"].([]interface{}); ok && len(choices) > 0 {
+					if choice, ok := choices[0].(map[string]interface{}); ok {
+						if delta, ok := choice["delta"].(map[string]interface{}); ok {
+							if content, ok := delta["content"].(string); ok {
+								contentBuilder.WriteString(content)
+							}
+						}
+					}
+				}
+
+				if candidates, ok := streamResponse["candidates"].([]interface{}); ok && len(candidates) > 0 {
+					if candidate, ok := candidates[0].(map[string]interface{}); ok {
+						if content, ok := candidate["content"].(map[string]interface{}); ok {
+							if parts, ok := content["parts"].([]interface{}); ok {
+								for _, part := range parts {
+									if partMap, ok := part.(map[string]interface{}); ok {
+										if text, ok := partMap["text"].(string); ok {
+											contentBuilder.WriteString(text)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
 		if !gotFirstToken && normalized != "" {
 			firstTokenTime = time.Since(startTime)
 			durationMs := int(firstTokenTime.Milliseconds())
@@ -1232,7 +1353,9 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			if watchdog != nil {
 				watchdog.Stop("scheduled test first token received")
 			}
-			break // 只需要测量首Token，不需要读取全部响应
+			if !checkExpectedAnswer {
+				break // 只需要测量首Token，不需要读取全部响应
+			}
 		}
 	}
 
@@ -1253,6 +1376,19 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 			context:     c,
 			localErr:    errors.New("no first token received"),
 			newAPIError: types.NewError(errors.New("no first token received"), types.ErrorCodeBadResponseBody),
+		}
+	}
+
+	if checkExpectedAnswer {
+		expectedAnswer := strings.TrimSpace(*channel.ExpectedAnswer)
+		responseContent := contentBuilder.String()
+		if !strings.Contains(strings.ToLower(responseContent), strings.ToLower(expectedAnswer)) {
+			errMsg := fmt.Sprintf("expected answer not found in response: expected '%s'", expectedAnswer)
+			return testResult{
+				context:     c,
+				localErr:    errors.New(errMsg),
+				newAPIError: types.NewError(errors.New(errMsg), types.ErrorCodeBadResponseBody),
+			}
 		}
 	}
 

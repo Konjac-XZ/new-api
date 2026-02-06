@@ -262,14 +262,6 @@ func (s *Store) MarkComplete(id string, response *ResponseInfo) {
 	})
 }
 
-// TruncateBody truncates a body string to MaxBodySize
-func TruncateBody(body string) string {
-	if len(body) <= MaxBodySize {
-		return body
-	}
-	return body[:MaxBodySize] + "... [truncated]"
-}
-
 func cloneRecord(record *RequestRecord) *RequestRecord {
 	if record == nil {
 		return nil
