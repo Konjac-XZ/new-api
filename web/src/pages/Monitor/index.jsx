@@ -36,7 +36,7 @@ import {
   Modal,
 } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
-import { WrapText } from 'lucide-react';
+import { WrapText, Copy } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import useMonitorWs from './useMonitorWs';
 import useRequestDetail from './useRequestDetail';
@@ -179,7 +179,7 @@ const highlightJson = (str) => {
 };
 
 const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated = false, bodySize = 0, requestId = '', bodyType = '' }) => {
-  const [wordWrap, setWordWrap] = useState(false);
+  const [wordWrap, setWordWrap] = useState(true);
 
   // Check if content is too large BEFORE parsing
   // Two thresholds:
@@ -242,6 +242,27 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
     }
   }, [formatted, label, isLengthExceeded, data, requestId, bodyType]);
 
+  const handleCopyAll = useCallback(async () => {
+    try {
+      const content = formatted || (typeof data === 'string' ? data : JSON.stringify(data ?? {}, null, 2));
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(content);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = content;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+    } catch (error) {
+      // TODO: Show error message to user
+    }
+  }, [formatted, data]);
+
   // Check if content is too large FIRST (before checking !data)
   // This handles the case where backend intentionally excludes body due to size
   if (isLengthExceeded) {
@@ -288,8 +309,8 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
           padding: '12px',
           paddingBottom: '40px',
           borderRadius: isStream ? '0 0 6px 6px' : '6px',
-          overflow: 'auto',
-          maxHeight: '300px',
+          overflowX: 'auto',
+          overflowY: 'visible',
           fontSize: '12px',
           margin: 0,
           whiteSpace: wordWrap ? 'pre-wrap' : 'pre',
@@ -299,22 +320,41 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
         }}
         dangerouslySetInnerHTML={{ __html: highlighted }}
       />
-      <Tooltip content={wordWrap ? t('关闭自动换行') : t('自动换行')}>
-        <Button
-          icon={<WrapText size={14} />}
-          size="small"
-          theme={wordWrap ? 'solid' : 'borderless'}
-          style={{
-            position: 'absolute',
-            bottom: '8px',
-            right: '8px',
-            zIndex: 1,
-            backgroundColor: 'rgba(45, 45, 45, 0.9)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-          }}
-          onClick={() => setWordWrap(!wordWrap)}
-        />
-      </Tooltip>
+      <div
+        style={{
+          position: 'absolute',
+          right: '8px',
+          top: '8px',
+          zIndex: 1,
+          display: 'flex',
+          gap: '6px',
+        }}
+      >
+        <Tooltip content={t('复制全部')}>
+          <Button
+            icon={<Copy size={14} />}
+            size="small"
+            theme="borderless"
+            style={{
+              backgroundColor: 'rgba(45, 45, 45, 0.9)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+            onClick={handleCopyAll}
+          />
+        </Tooltip>
+        <Tooltip content={wordWrap ? t('关闭自动换行') : t('自动换行')}>
+          <Button
+            icon={<WrapText size={14} />}
+            size="small"
+            theme={wordWrap ? 'solid' : 'borderless'}
+            style={{
+              backgroundColor: 'rgba(45, 45, 45, 0.9)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+            onClick={() => setWordWrap(!wordWrap)}
+          />
+        </Tooltip>
+      </div>
     </div>
   );
 };
@@ -330,8 +370,6 @@ const HeadersViewer = ({ headers, t }) => {
         background: 'var(--semi-color-fill-0)',
         padding: '12px',
         borderRadius: '6px',
-        maxHeight: '200px',
-        overflow: 'auto',
       }}
     >
       {Object.entries(headers).map(([key, value]) => (
@@ -895,8 +933,8 @@ const Monitor = () => {
   }, [t, statusLabels]);
 
   return (
-    <div style={{ height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column', padding: '8px', marginTop: '64px' }}>
-      <Card style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className='mt-[60px] px-2'>
+      <Card className='table-scroll-card'>
         <div
           style={{
             display: 'flex',
@@ -960,7 +998,6 @@ const Monitor = () => {
             rowKey='id'
             pagination={false}
             size='small'
-            scroll={{ y: 'calc(100vh - 232px)' }}
             onRow={(record) => ({
               onClick: () => handleRowClick(record),
               style: {
@@ -989,11 +1026,17 @@ const Monitor = () => {
         visible={detailVisible}
         onCancel={() => setDetailVisible(false)}
         footer={null}
-        width={1000}
-        bodyStyle={{ padding: 0 }}
-        style={{ top: 36 }}
+        width={'92vw'}
+        bodyStyle={{ padding: 0, maxHeight: 'calc(90vh - 56px)', overflow: 'hidden' }}
+        style={{ top: '5vh', height: '90vh', maxWidth: 1600 }}
       >
-        <div style={{ maxHeight: '70vh', overflow: 'auto', padding: '12px' }}>
+        <div
+          style={{
+            height: '100%',
+            overflow: 'auto',
+            padding: '8px 12px',
+          }}
+        >
           <RequestDetail
             record={selectedDetail}
             loading={detailLoading}
