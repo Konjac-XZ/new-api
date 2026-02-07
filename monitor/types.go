@@ -187,6 +187,116 @@ type RequestSummary struct {
 	CompletionTokens int  `json:"completion_tokens,omitempty"`
 }
 
+// recordSnapshot holds only the scalar/value-type fields needed to build a
+// RequestSummary. It is captured under the write lock (flat copy, no heap
+// allocations) so that the actual RequestSummary can be constructed outside
+// the lock.
+type recordSnapshot struct {
+	ID           string
+	Status       string
+	StartTime    time.Time
+	EndTime      *time.Time
+	Duration     int64
+	Method       string
+	Path         string
+	ClientIP     string
+	UserId       int
+	TokenId      int
+	TokenName    string
+	ChannelId    int
+	ChannelName  string
+	Model        string
+	IsStream     bool
+	CurrentPhase string
+
+	// CurrentChannel is copied by value (3 small fields).
+	HasCurrentChannel bool
+	CurrentChannelID  int
+	CurrentChannelNm  string
+	CurrentChannelAtt int
+
+	// Response scalars
+	HasResponse      bool
+	StatusCode       int
+	HasError         bool
+	PromptTokens     int
+	CompletionTokens int
+}
+
+// snapshotRecord captures a flat copy of the fields needed for RequestSummary.
+// Must be called while the caller holds the store lock.
+func snapshotRecord(r *RequestRecord) recordSnapshot {
+	snap := recordSnapshot{
+		ID:           r.ID,
+		Status:       r.Status,
+		StartTime:    r.StartTime,
+		EndTime:      r.EndTime,
+		Duration:     r.Duration,
+		Method:       r.Downstream.Method,
+		Path:         r.Downstream.Path,
+		ClientIP:     r.Downstream.ClientIP,
+		UserId:       r.UserId,
+		TokenId:      r.TokenId,
+		TokenName:    r.TokenName,
+		ChannelId:    r.ChannelId,
+		ChannelName:  r.ChannelName,
+		Model:        r.Model,
+		IsStream:     r.IsStream,
+		CurrentPhase: r.CurrentPhase,
+	}
+	if r.CurrentChannel != nil {
+		snap.HasCurrentChannel = true
+		snap.CurrentChannelID = r.CurrentChannel.ID
+		snap.CurrentChannelNm = r.CurrentChannel.Name
+		snap.CurrentChannelAtt = r.CurrentChannel.Attempt
+	}
+	if r.Response != nil {
+		snap.HasResponse = true
+		snap.StatusCode = r.Response.StatusCode
+		snap.HasError = r.Response.Error != nil
+		snap.PromptTokens = r.Response.PromptTokens
+		snap.CompletionTokens = r.Response.CompletionTokens
+	}
+	return snap
+}
+
+// toSummary builds a RequestSummary from the snapshot. Safe to call without
+// any lock held.
+func (snap *recordSnapshot) toSummary() *RequestSummary {
+	s := &RequestSummary{
+		ID:           snap.ID,
+		Status:       snap.Status,
+		StartTime:    snap.StartTime,
+		EndTime:      snap.EndTime,
+		DurationMs:   snap.Duration,
+		Method:       snap.Method,
+		Path:         snap.Path,
+		ClientIP:     snap.ClientIP,
+		UserId:       snap.UserId,
+		TokenId:      snap.TokenId,
+		TokenName:    snap.TokenName,
+		ChannelId:    snap.ChannelId,
+		ChannelName:  snap.ChannelName,
+		Model:        snap.Model,
+		IsStream:     snap.IsStream,
+		CurrentPhase: snap.CurrentPhase,
+	}
+	if snap.HasCurrentChannel {
+		s.CurrentChannel = &CurrentChannel{
+			ID:      snap.CurrentChannelID,
+			Name:    snap.CurrentChannelNm,
+			Attempt: snap.CurrentChannelAtt,
+		}
+	}
+	if snap.HasResponse {
+		s.StatusCode = snap.StatusCode
+		s.HasError = snap.HasError
+		s.PromptTokens = snap.PromptTokens
+		s.CompletionTokens = snap.CompletionTokens
+	}
+	return s
+}
+
 // ToSummary converts a full RequestRecord to a lightweight RequestSummary
 func (r *RequestRecord) ToSummary() *RequestSummary {
 	summary := &RequestSummary{

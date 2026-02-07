@@ -146,7 +146,8 @@ func RecordUpstreamWithContext(c *gin.Context, url string, method string, header
 	RecordUpstream(recordID, url, method, headers, body)
 }
 
-// RecordResponse records the response details
+// RecordResponse records the response details.
+// Uses BatchUpdate to apply all mutations under a single write lock.
 func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
 	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
@@ -167,14 +168,74 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 		response.Error = &ErrorInfo{Message: err.Error()}
 	}
 
-	GetManager().GetStore().MarkComplete(recordID, response)
-	if err != nil {
-		MarkChannelPhase(recordID, PhaseError)
-		FinishChannelAttempt(recordID, AttemptStatusFailed, err.Error(), "", statusCode)
-	} else {
-		MarkChannelPhase(recordID, PhaseCompleted)
-		FinishChannelAttempt(recordID, AttemptStatusSucceeded, "", "", statusCode)
+	// Inline MarkComplete logic
+	markComplete := func(r *RequestRecord) {
+		now := time.Now()
+		r.EndTime = &now
+		r.Duration = now.Sub(r.StartTime).Milliseconds()
+		r.Response = response
+		if response.Error != nil {
+			r.Status = StatusError
+		} else {
+			r.Status = StatusCompleted
+		}
 	}
+
+	// Inline MarkChannelPhase logic
+	var phase string
+	if err != nil {
+		phase = PhaseError
+	} else {
+		phase = PhaseCompleted
+	}
+	markPhase := func(r *RequestRecord) {
+		r.CurrentPhase = phase
+		if len(r.ChannelAttempts) == 0 {
+			return
+		}
+		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		switch phase {
+		case PhaseCompleted:
+			if last.EndedAt == nil {
+				now := time.Now()
+				last.EndedAt = &now
+			}
+			last.Status = AttemptStatusSucceeded
+		case PhaseError:
+			if last.EndedAt == nil {
+				now := time.Now()
+				last.EndedAt = &now
+			}
+			if last.Status != AttemptStatusSucceeded {
+				last.Status = AttemptStatusFailed
+			}
+		}
+	}
+
+	// Inline FinishChannelAttempt logic
+	var attemptStatus, reason string
+	if err != nil {
+		attemptStatus = AttemptStatusFailed
+		reason = err.Error()
+	} else {
+		attemptStatus = AttemptStatusSucceeded
+	}
+	finishAttempt := func(r *RequestRecord) {
+		if len(r.ChannelAttempts) == 0 {
+			return
+		}
+		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		if last.EndedAt != nil {
+			return
+		}
+		now := time.Now()
+		last.EndedAt = &now
+		last.Status = attemptStatus
+		last.Reason = reason
+		last.HTTPStatus = statusCode
+	}
+
+	GetManager().GetStore().BatchUpdate(recordID, true, markComplete, markPhase, finishAttempt)
 }
 
 // RecordResponseWithContext records response using gin context
@@ -183,13 +244,17 @@ func RecordResponseWithContext(c *gin.Context, statusCode int, headers http.Head
 	RecordResponse(recordID, statusCode, headers, body, promptTokens, completionTokens, err)
 }
 
-// RecordError records an error for a request
+// RecordError records an error for a request.
+// Uses BatchUpdate to apply all mutations under a single write lock.
 func RecordError(recordID string, err error) {
 	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
-	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
+	errMsg := err.Error()
+
+	// Inline the error recording logic
+	markError := func(r *RequestRecord) {
 		now := time.Now()
 		r.EndTime = &now
 		r.Duration = now.Sub(r.StartTime).Milliseconds()
@@ -197,11 +262,41 @@ func RecordError(recordID string, err error) {
 		if r.Response == nil {
 			r.Response = &ResponseInfo{}
 		}
-		r.Response.Error = &ErrorInfo{Message: err.Error()}
-	})
+		r.Response.Error = &ErrorInfo{Message: errMsg}
+	}
 
-	FinishChannelAttempt(recordID, AttemptStatusFailed, err.Error(), "", 0)
-	MarkChannelPhase(recordID, PhaseError)
+	// Inline FinishChannelAttempt logic
+	finishAttempt := func(r *RequestRecord) {
+		if len(r.ChannelAttempts) == 0 {
+			return
+		}
+		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		if last.EndedAt != nil {
+			return
+		}
+		now := time.Now()
+		last.EndedAt = &now
+		last.Status = AttemptStatusFailed
+		last.Reason = errMsg
+	}
+
+	// Inline MarkChannelPhase(PhaseError) logic
+	markPhase := func(r *RequestRecord) {
+		r.CurrentPhase = PhaseError
+		if len(r.ChannelAttempts) == 0 {
+			return
+		}
+		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		if last.EndedAt == nil {
+			now := time.Now()
+			last.EndedAt = &now
+		}
+		if last.Status != AttemptStatusSucceeded {
+			last.Status = AttemptStatusFailed
+		}
+	}
+
+	GetManager().GetStore().BatchUpdate(recordID, true, markError, finishAttempt, markPhase)
 }
 
 // RecordErrorWithContext records an error using gin context
@@ -210,14 +305,15 @@ func RecordErrorWithContext(c *gin.Context, err error) {
 	RecordError(recordID, err)
 }
 
-// StartChannelAttempt records that we are about to try a specific channel
+// StartChannelAttempt records that we are about to try a specific channel.
+// Uses UpdateAndBroadcastChannel for a single lock acquisition.
 func StartChannelAttempt(recordID string, channelId int, channelName string, attemptNo int) {
 	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
 	now := time.Now()
-	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().UpdateAndBroadcastChannel(recordID, func(r *RequestRecord) {
 		attempt := ChannelAttempt{
 			Attempt:     attemptNo,
 			ChannelId:   channelId,
@@ -231,8 +327,6 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 		r.CurrentChannel = &CurrentChannel{ID: channelId, Name: channelName, Attempt: attemptNo}
 		r.CurrentPhase = PhaseWaitingUpstream
 	})
-
-	GetManager().GetStore().BroadcastChannelUpdate(recordID)
 }
 
 // StartChannelAttemptWithContext is the gin-aware wrapper
@@ -241,13 +335,14 @@ func StartChannelAttemptWithContext(c *gin.Context, channelId int, channelName s
 	StartChannelAttempt(recordID, channelId, channelName, attemptNo)
 }
 
-// MarkChannelPhase updates the real-time phase (waiting_upstream/streaming/error/completed)
+// MarkChannelPhase updates the real-time phase (waiting_upstream/streaming/error/completed).
+// Uses UpdateAndBroadcastChannel for a single lock acquisition.
 func MarkChannelPhase(recordID string, phase string) {
 	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" || phase == "" {
 		return
 	}
 
-	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().UpdateAndBroadcastChannel(recordID, func(r *RequestRecord) {
 		r.CurrentPhase = phase
 		if len(r.ChannelAttempts) == 0 {
 			return
@@ -274,8 +369,6 @@ func MarkChannelPhase(recordID string, phase string) {
 			}
 		}
 	})
-
-	GetManager().GetStore().BroadcastChannelUpdate(recordID)
 }
 
 // MarkChannelPhaseWithContext wraps MarkChannelPhase using gin context
@@ -284,13 +377,14 @@ func MarkChannelPhaseWithContext(c *gin.Context, phase string) {
 	MarkChannelPhase(recordID, phase)
 }
 
-// FinishChannelAttempt finalizes the latest attempt with a terminal status and reason
+// FinishChannelAttempt finalizes the latest attempt with a terminal status and reason.
+// Uses UpdateAndBroadcastChannel for a single lock acquisition.
 func FinishChannelAttempt(recordID string, status string, reason string, errorCode string, httpStatus int) {
 	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
-	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().UpdateAndBroadcastChannel(recordID, func(r *RequestRecord) {
 		if len(r.ChannelAttempts) == 0 {
 			return
 		}
@@ -305,8 +399,6 @@ func FinishChannelAttempt(recordID string, status string, reason string, errorCo
 		last.ErrorCode = errorCode
 		last.HTTPStatus = httpStatus
 	})
-
-	GetManager().GetStore().BroadcastChannelUpdate(recordID)
 }
 
 // FinishChannelAttemptWithContext wraps FinishChannelAttempt using gin context

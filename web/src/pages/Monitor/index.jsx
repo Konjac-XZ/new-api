@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from 'react';
 import {
   Card,
   Table,
@@ -102,29 +102,76 @@ const formatMemory = (bytes) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 };
 
+const createDurationTicker = (intervalMs) => {
+  let now = Date.now();
+  let timerId = null;
+  const listeners = new Set();
+
+  const tick = () => {
+    now = Date.now();
+    listeners.forEach((listener) => listener());
+  };
+
+  const ensureRunning = () => {
+    if (timerId) return;
+    timerId = setInterval(tick, intervalMs);
+  };
+
+  const stopIfIdle = () => {
+    if (listeners.size > 0) return;
+    if (timerId) {
+      clearInterval(timerId);
+      timerId = null;
+    }
+  };
+
+  return {
+    getSnapshot: () => now,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      if (listeners.size === 1) {
+        ensureRunning();
+      }
+      return () => {
+        listeners.delete(listener);
+        stopIfIdle();
+      };
+    },
+  };
+};
+
+const durationTicker = createDurationTicker(DURATION_UPDATE_INTERVAL_MS);
+
+const useDurationNow = (enabled) => {
+  const subscribe = useCallback(
+    (listener) => {
+      if (!enabled) return () => {};
+      return durationTicker.subscribe(listener);
+    },
+    [enabled],
+  );
+
+  const getSnapshot = useCallback(
+    () => (enabled ? durationTicker.getSnapshot() : 0),
+    [enabled],
+  );
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+};
+
 // Component to display duration with real-time stopwatch for ongoing requests
 const DurationCell = ({ record, t }) => {
-  const [elapsed, setElapsed] = useState(0);
   const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
   const isActive = useMemo(() => isActiveStatus(displayStatus), [displayStatus]);
+  const hasStartTime = Boolean(record.start_time);
+  const now = useDurationNow(isActive && hasStartTime);
 
-  useEffect(() => {
-    if (!isActive || !record.start_time) {
-      return;
-    }
-
-    const updateElapsed = () => {
-      const now = Date.now();
-      const startTime = new Date(record.start_time).getTime();
-      const elapsedSeconds = (now - startTime) / MS_TO_SECONDS;
-      setElapsed(elapsedSeconds);
-    };
-
-    updateElapsed();
-    const interval = setInterval(updateElapsed, DURATION_UPDATE_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, [isActive, record.start_time]);
+  const elapsed = useMemo(() => {
+    if (!isActive || !record.start_time) return 0;
+    const startTime = new Date(record.start_time).getTime();
+    const elapsedSeconds = (now - startTime) / MS_TO_SECONDS;
+    return elapsedSeconds > 0 ? elapsedSeconds : 0;
+  }, [isActive, record.start_time, now]);
 
   if (isActive) {
     return (
@@ -775,6 +822,18 @@ const Monitor = () => {
 
   const statusLabels = useMemo(() => getStatusLabels(t), [t]);
 
+  const summariesWithStatus = useMemo(() => {
+    return summaries.map((summary) => {
+      const startTimeMs = summary.start_time ? new Date(summary.start_time).getTime() : 0;
+      const displayStatus = deriveDisplayStatus(summary);
+      return {
+        ...summary,
+        startTimeMs,
+        displayStatus,
+      };
+    });
+  }, [summaries]);
+
   // Fetch detail when selection changes
   useEffect(() => {
     if (selectedId) {
@@ -796,10 +855,10 @@ const Monitor = () => {
   // This ensures we fetch fresh data with response details
   useEffect(() => {
     const visibleIds = new Set();
-    summaries.forEach((summary) => {
+    summariesWithStatus.forEach((summary) => {
       visibleIds.add(summary.id);
-      const displayStatus = deriveDisplayStatus(summary);
       const prevStatus = prevStatusRef.current.get(summary.id);
+      const displayStatus = summary.displayStatus || deriveDisplayStatus(summary);
       const statusChanged = prevStatus && prevStatus !== displayStatus;
 
       if (statusChanged && isTerminalStatus(displayStatus)) {
@@ -833,13 +892,13 @@ const Monitor = () => {
   // If the selected request is evicted from the summaries buffer, clear selection
   useEffect(() => {
     if (!selectedId) return;
-    const stillExists = summaries.some((summary) => summary.id === selectedId);
+    const stillExists = summariesWithStatus.some((summary) => summary.id === selectedId);
     if (!stillExists) {
       setSelectedId(null);
       setDetailVisible(false);
       clearCache();
     }
-  }, [summaries, selectedId, clearCache]);
+  }, [summariesWithStatus, selectedId, clearCache]);
 
   // Refresh detail after reconnect to keep the selection visible and updated
   useEffect(() => {
@@ -854,20 +913,18 @@ const Monitor = () => {
   }, []);
 
   const filteredSummaries = useMemo(() => {
-    return summaries.filter((r) => {
-      const displayStatus = deriveDisplayStatus(r);
+    return summariesWithStatus.filter((r) => {
+      const displayStatus = r.displayStatus || deriveDisplayStatus(r);
       if (filter === 'all') return true;
       if (filter === 'processing') return isActiveStatus(displayStatus);
       return displayStatus === filter;
     });
-  }, [summaries, filter]);
+  }, [summariesWithStatus, filter]);
 
   // Sort by start_time descending (newest first)
   const sortedSummaries = useMemo(() => {
     return [...filteredSummaries].sort((a, b) => {
-      const bTime = b.start_time ? new Date(b.start_time).getTime() : 0;
-      const aTime = a.start_time ? new Date(a.start_time).getTime() : 0;
-      return bTime - aTime;
+      return (b.startTimeMs || 0) - (a.startTimeMs || 0);
     });
   }, [filteredSummaries]);
 
@@ -877,9 +934,9 @@ const Monitor = () => {
         title: t('时间'),
         dataIndex: 'start_time',
         width: 160,
-        render: (time) => {
+        render: (time, record) => {
           if (!time) return '-';
-          const seconds = Math.floor(new Date(time).getTime() / MS_TO_SECONDS);
+          const seconds = Math.floor((record?.startTimeMs || 0) / MS_TO_SECONDS);
           return timestamp2string(seconds);
         },
       },

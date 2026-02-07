@@ -65,7 +65,6 @@ func (s *Store) emitEvent(eventType StoreEventType, payload interface{}) {
 
 // Add adds a new record to the store
 func (s *Store) Add(record *RequestRecord) {
-	var summary *RequestSummary
 	s.mu.Lock()
 
 	// If we're overwriting an existing record, remove it from the index
@@ -83,18 +82,16 @@ func (s *Store) Add(record *RequestRecord) {
 		s.count++
 	}
 
-	summary = record.ToSummary()
+	// Snapshot under lock (flat copy, no heap allocs)
+	snap := snapshotRecord(record)
 	s.mu.Unlock()
 
-	// Emit event for new record
-	if summary != nil {
-		s.emitEvent(EventTypeNew, summary)
-	}
+	// Build summary outside lock
+	s.emitEvent(EventTypeNew, snap.toSummary())
 }
 
 // Update updates an existing record by ID
 func (s *Store) Update(id string, updater func(*RequestRecord)) {
-	var summary *RequestSummary
 	s.mu.Lock()
 
 	pos, exists := s.index[id]
@@ -111,12 +108,86 @@ func (s *Store) Update(id string, updater func(*RequestRecord)) {
 
 	updater(record)
 
-	summary = record.ToSummary()
+	// Snapshot under lock (flat copy, no heap allocs)
+	snap := snapshotRecord(record)
 	s.mu.Unlock()
 
-	// Emit event for record update
-	if summary != nil {
-		s.emitEvent(EventTypeUpdate, summary)
+	// Build summary outside lock
+	s.emitEvent(EventTypeUpdate, snap.toSummary())
+}
+
+// UpdateAndBroadcastChannel combines Update + BroadcastChannelUpdate into a
+// single write lock acquisition. Under one lock: run updater, capture snapshot,
+// capture channel update fields. After unlock: emit both events.
+func (s *Store) UpdateAndBroadcastChannel(id string, updater func(*RequestRecord)) {
+	s.mu.Lock()
+
+	pos, exists := s.index[id]
+	if !exists {
+		s.mu.Unlock()
+		return
+	}
+
+	record := s.records[pos]
+	if record == nil {
+		s.mu.Unlock()
+		return
+	}
+
+	updater(record)
+
+	// Capture snapshot and channel update under the same lock
+	snap := snapshotRecord(record)
+	chUpdate := &ChannelUpdate{
+		RequestID:       record.ID,
+		CurrentPhase:    record.CurrentPhase,
+		CurrentChannel:  cloneCurrentChannel(record.CurrentChannel),
+		ChannelAttempts: cloneChannelAttempts(record.ChannelAttempts),
+	}
+	s.mu.Unlock()
+
+	// Emit both events outside the lock
+	s.emitEvent(EventTypeUpdate, snap.toSummary())
+	s.emitEvent(EventTypeChannel, chUpdate)
+}
+
+// BatchUpdate applies multiple updaters under a single write lock, captures
+// snapshot and optional channel update, then emits events after unlock.
+func (s *Store) BatchUpdate(id string, broadcastChannel bool, updaters ...func(*RequestRecord)) {
+	s.mu.Lock()
+
+	pos, exists := s.index[id]
+	if !exists {
+		s.mu.Unlock()
+		return
+	}
+
+	record := s.records[pos]
+	if record == nil {
+		s.mu.Unlock()
+		return
+	}
+
+	for _, updater := range updaters {
+		updater(record)
+	}
+
+	snap := snapshotRecord(record)
+
+	var chUpdate *ChannelUpdate
+	if broadcastChannel {
+		chUpdate = &ChannelUpdate{
+			RequestID:       record.ID,
+			CurrentPhase:    record.CurrentPhase,
+			CurrentChannel:  cloneCurrentChannel(record.CurrentChannel),
+			ChannelAttempts: cloneChannelAttempts(record.ChannelAttempts),
+		}
+	}
+	s.mu.Unlock()
+
+	s.emitEvent(EventTypeUpdate, snap.toSummary())
+	if chUpdate != nil {
+		s.emitEvent(EventTypeChannel, chUpdate)
 	}
 }
 
@@ -133,19 +204,36 @@ func (s *Store) Get(id string) *RequestRecord {
 	return cloneRecord(s.records[pos])
 }
 
-// BroadcastChannelUpdate sends a channel update message for the given record ID
-func (s *Store) BroadcastChannelUpdate(id string) {
-	record := s.Get(id)
-	if record == nil {
-		return
+// GetChannelUpdate returns a lightweight ChannelUpdate for the given record,
+// cloning only CurrentChannel and ChannelAttempts (no bodies/headers).
+func (s *Store) GetChannelUpdate(id string) *ChannelUpdate {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	pos, exists := s.index[id]
+	if !exists {
+		return nil
+	}
+	r := s.records[pos]
+	if r == nil {
+		return nil
 	}
 
-	update := record.ToChannelUpdate()
+	return &ChannelUpdate{
+		RequestID:       r.ID,
+		CurrentPhase:    r.CurrentPhase,
+		CurrentChannel:  cloneCurrentChannel(r.CurrentChannel),
+		ChannelAttempts: cloneChannelAttempts(r.ChannelAttempts),
+	}
+}
+
+// BroadcastChannelUpdate sends a channel update message for the given record ID.
+// Uses GetChannelUpdate to avoid a full deep clone.
+func (s *Store) BroadcastChannelUpdate(id string) {
+	update := s.GetChannelUpdate(id)
 	if update == nil {
 		return
 	}
-
-	// Emit event for channel update
 	s.emitEvent(EventTypeChannel, update)
 }
 
@@ -219,16 +307,14 @@ func (s *Store) GetActive() []*RequestRecord {
 	return result
 }
 
-// GetStats returns monitoring statistics
+// GetStats returns monitoring statistics.
+// ReadMemStats is called outside the lock to avoid holding the read lock
+// during a stop-the-world pause.
 func (s *Store) GetStats() MonitorStats {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	stats := MonitorStats{}
-	var mem runtime.MemStats
-	runtime.ReadMemStats(&mem)
-	stats.MemoryBytes = int64(mem.Alloc)
 
+	// Count record statuses under RLock (fast iteration of status strings).
+	s.mu.RLock()
 	for _, record := range s.records {
 		if record == nil {
 			continue
@@ -243,6 +329,12 @@ func (s *Store) GetStats() MonitorStats {
 			stats.Errors++
 		}
 	}
+	s.mu.RUnlock()
+
+	// ReadMemStats triggers a STW pause — do it with no lock held.
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	stats.MemoryBytes = int64(mem.Alloc)
 
 	return stats
 }
