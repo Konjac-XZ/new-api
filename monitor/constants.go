@@ -14,6 +14,8 @@ const (
 	// Channel buffer sizes
 	BroadcastChanSize  = 256
 	ClientSendChanSize = 256
+	RegisterChanSize   = 64
+	UnregisterChanSize = 64
 
 	// Store limits
 	MaxRecords  = 100

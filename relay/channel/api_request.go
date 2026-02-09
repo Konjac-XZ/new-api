@@ -203,7 +203,6 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
-	monitor.MarkChannelPhaseWithContext(c, monitor.PhaseStreaming)
 	return resp, nil
 }
 
@@ -436,6 +435,5 @@ func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, req
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
-	monitor.MarkChannelPhaseWithContext(c, monitor.PhaseStreaming)
 	return resp, nil
 }

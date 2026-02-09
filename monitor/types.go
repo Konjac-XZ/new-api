@@ -366,6 +366,26 @@ func cloneChannelAttempts(attempts []ChannelAttempt) []ChannelAttempt {
 	return cloned
 }
 
+// cloneChannelAttemptsForUpdate clones all attempts, but deep-copies time pointers
+// only for the last attempt (the only one that can still change).
+func cloneChannelAttemptsForUpdate(attempts []ChannelAttempt) []ChannelAttempt {
+	if len(attempts) == 0 {
+		return nil
+	}
+	cloned := make([]ChannelAttempt, len(attempts))
+	copy(cloned, attempts)
+	last := len(attempts) - 1
+	if attempts[last].StreamingStartedAt != nil {
+		startedAt := *attempts[last].StreamingStartedAt
+		cloned[last].StreamingStartedAt = &startedAt
+	}
+	if attempts[last].EndedAt != nil {
+		endedAt := *attempts[last].EndedAt
+		cloned[last].EndedAt = &endedAt
+	}
+	return cloned
+}
+
 // EstimateSize returns approximate memory size in bytes for this RequestRecord
 func (r *RequestRecord) EstimateSize() int64 {
 	var size int64

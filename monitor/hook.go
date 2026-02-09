@@ -143,6 +143,9 @@ func RecordUpstream(recordID string, url string, method string, headers http.Hea
 // RecordUpstreamWithContext records upstream request using gin context
 func RecordUpstreamWithContext(c *gin.Context, url string, method string, headers http.Header, body []byte) {
 	recordID := c.GetString("monitor_id")
+	if recordID == "" {
+		return
+	}
 	RecordUpstream(recordID, url, method, headers, body)
 }
 
@@ -241,6 +244,9 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 // RecordResponseWithContext records response using gin context
 func RecordResponseWithContext(c *gin.Context, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {
 	recordID := c.GetString("monitor_id")
+	if recordID == "" {
+		return
+	}
 	RecordResponse(recordID, statusCode, headers, body, promptTokens, completionTokens, err)
 }
 
@@ -302,6 +308,9 @@ func RecordError(recordID string, err error) {
 // RecordErrorWithContext records an error using gin context
 func RecordErrorWithContext(c *gin.Context, err error) {
 	recordID := c.GetString("monitor_id")
+	if recordID == "" {
+		return
+	}
 	RecordError(recordID, err)
 }
 
@@ -332,6 +341,9 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 // StartChannelAttemptWithContext is the gin-aware wrapper
 func StartChannelAttemptWithContext(c *gin.Context, channelId int, channelName string, attemptNo int) {
 	recordID := c.GetString("monitor_id")
+	if recordID == "" {
+		return
+	}
 	StartChannelAttempt(recordID, channelId, channelName, attemptNo)
 }
 
@@ -342,38 +354,58 @@ func MarkChannelPhase(recordID string, phase string) {
 		return
 	}
 
-	GetManager().GetStore().UpdateAndBroadcastChannel(recordID, func(r *RequestRecord) {
-		r.CurrentPhase = phase
+	GetManager().GetStore().UpdateAndBroadcastChannelIfChanged(recordID, func(r *RequestRecord) bool {
+		changed := false
+		if r.CurrentPhase != phase {
+			r.CurrentPhase = phase
+			changed = true
+		}
 		if len(r.ChannelAttempts) == 0 {
-			return
+			return changed
 		}
 		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
 		switch phase {
 		case PhaseWaitingUpstream:
-			last.Status = AttemptStatusWaiting
+			if last.Status != AttemptStatusWaiting {
+				last.Status = AttemptStatusWaiting
+				changed = true
+			}
 		case PhaseStreaming:
-			last.Status = AttemptStatusStreaming
+			if last.Status != AttemptStatusStreaming {
+				last.Status = AttemptStatusStreaming
+				changed = true
+			}
 		case PhaseCompleted:
 			if last.EndedAt == nil {
 				now := time.Now()
 				last.EndedAt = &now
+				changed = true
 			}
-			last.Status = AttemptStatusSucceeded
+			if last.Status != AttemptStatusSucceeded {
+				last.Status = AttemptStatusSucceeded
+				changed = true
+			}
 		case PhaseError:
 			if last.EndedAt == nil {
 				now := time.Now()
 				last.EndedAt = &now
+				changed = true
 			}
-			if last.Status != AttemptStatusSucceeded {
+			if last.Status != AttemptStatusSucceeded && last.Status != AttemptStatusFailed {
 				last.Status = AttemptStatusFailed
+				changed = true
 			}
 		}
+		return changed
 	})
 }
 
 // MarkChannelPhaseWithContext wraps MarkChannelPhase using gin context
 func MarkChannelPhaseWithContext(c *gin.Context, phase string) {
 	recordID := c.GetString("monitor_id")
+	if recordID == "" {
+		return
+	}
 	MarkChannelPhase(recordID, phase)
 }
 
@@ -404,6 +436,9 @@ func FinishChannelAttempt(recordID string, status string, reason string, errorCo
 // FinishChannelAttemptWithContext wraps FinishChannelAttempt using gin context
 func FinishChannelAttemptWithContext(c *gin.Context, status string, reason string, errorCode string, httpStatus int) {
 	recordID := c.GetString("monitor_id")
+	if recordID == "" {
+		return
+	}
 	FinishChannelAttempt(recordID, status, reason, errorCode, httpStatus)
 }
 
@@ -413,10 +448,14 @@ func UpdateMetadata(recordID string, channelId int, channelName string, isStream
 		return
 	}
 
-	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().UpdateIfChanged(recordID, func(r *RequestRecord) bool {
+		if r.ChannelId == channelId && r.ChannelName == channelName && r.IsStream == isStream {
+			return false
+		}
 		r.ChannelId = channelId
 		r.ChannelName = channelName
 		r.IsStream = isStream
+		return true
 	})
 }
 

@@ -35,6 +35,8 @@ func (m *Manager) Init() {
 	if m.hub == nil {
 		m.hub = NewHub()
 		m.store = NewStore()
+		m.hub.SetStore(m.store)
+		m.store.SetRealtimeEnabled(false)
 		go m.hub.Run()
 		go m.wireStoreEvents()
 	}
