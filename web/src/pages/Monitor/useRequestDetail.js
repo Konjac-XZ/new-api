@@ -32,13 +32,18 @@ const useRequestDetail = () => {
 
   // Track which IDs are currently being fetched to prevent duplicate requests
   const fetchingRef = useRef(new Set());
+  const latestRequestIdRef = useRef(null);
 
   const fetchDetail = useCallback(async (id) => {
     if (!id) {
+      latestRequestIdRef.current = null;
+      setLoading(false);
       setSelectedDetail(null);
       setError(null);
       return;
     }
+
+    latestRequestIdRef.current = id;
 
     // Check cache first
     if (cacheRef.current.has(id)) {
@@ -46,8 +51,10 @@ const useRequestDetail = () => {
       // Refresh entry to the end to behave more like an LRU cache.
       cacheRef.current.delete(id);
       cacheRef.current.set(id, cached);
-      setSelectedDetail(cached);
-      setError(null);
+      if (latestRequestIdRef.current === id) {
+        setSelectedDetail(cached);
+        setError(null);
+      }
       return;
     }
 
@@ -74,18 +81,26 @@ const useRequestDetail = () => {
             cacheRef.current.delete(oldestKey);
           }
         }
-        setSelectedDetail(detail);
+        if (latestRequestIdRef.current === id) {
+          setSelectedDetail(detail);
+        }
       } else {
-        setError(response.data.message || 'Failed to fetch request details');
+        if (latestRequestIdRef.current === id) {
+          setError(response.data.message || 'Failed to fetch request details');
+        }
       }
     } catch (err) {
-      if (err.response?.status === 404) {
-        setError('Request not found (may have been evicted from buffer)');
-      } else {
-        setError(err.message || 'Failed to fetch request details');
+      if (latestRequestIdRef.current === id) {
+        if (err.response?.status === 404) {
+          setError('Request not found (may have been evicted from buffer)');
+        } else {
+          setError(err.message || 'Failed to fetch request details');
+        }
       }
     } finally {
-      setLoading(false);
+      if (latestRequestIdRef.current === id) {
+        setLoading(false);
+      }
       fetchingRef.current.delete(id);
     }
   }, []);

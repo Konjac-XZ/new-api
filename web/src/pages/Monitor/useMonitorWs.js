@@ -41,6 +41,9 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
   // Only keep the most recent channel update for the currently focused request
   // to avoid unbounded memory growth when the page is open for long periods.
   const [channelUpdate, setChannelUpdate] = useState(null);
+  const summariesRef = useRef([]);
+  const pendingMessagesRef = useRef([]);
+  const flushTimerRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttempts = useRef(0);
@@ -61,6 +64,90 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
     });
     return sortedByTime.slice(sortedByTime.length - MAX_SUMMARY_ITEMS);
   }, [MAX_SUMMARY_ITEMS]);
+
+  const applyBatch = useCallback((batch) => {
+    if (!batch.length) return;
+
+    let nextSummaries = summariesRef.current;
+    let changed = false;
+    let latestChannelUpdate = null;
+
+    const ensureMutable = () => {
+      if (nextSummaries === summariesRef.current) {
+        nextSummaries = [...nextSummaries];
+      }
+    };
+
+    batch.forEach((message) => {
+      switch (message.type) {
+        case WS_MESSAGE_TYPES.SNAPSHOT: {
+          const snapshotData = Array.isArray(message.payload) ? message.payload : [];
+          nextSummaries = snapshotData;
+          changed = true;
+          break;
+        }
+        case WS_MESSAGE_TYPES.NEW: {
+          if (!message.payload) break;
+          const existingIndex = nextSummaries.findIndex((item) => item.id === message.payload.id);
+          if (existingIndex === -1) {
+            ensureMutable();
+            nextSummaries.push(message.payload);
+            changed = true;
+          } else if (nextSummaries[existingIndex] !== message.payload) {
+            ensureMutable();
+            nextSummaries[existingIndex] = message.payload;
+            changed = true;
+          }
+          break;
+        }
+        case WS_MESSAGE_TYPES.UPDATE: {
+          if (!message.payload) break;
+          const existingIndex = nextSummaries.findIndex((item) => item.id === message.payload.id);
+          if (existingIndex !== -1) {
+            ensureMutable();
+            nextSummaries[existingIndex] = message.payload;
+            changed = true;
+          } else {
+            ensureMutable();
+            nextSummaries.push(message.payload);
+            changed = true;
+          }
+          break;
+        }
+        case WS_MESSAGE_TYPES.DELETE: {
+          if (!message.payload) break;
+          const existingIndex = nextSummaries.findIndex((item) => item.id === message.payload.id);
+          if (existingIndex !== -1) {
+            ensureMutable();
+            nextSummaries = nextSummaries.filter((item) => item.id !== message.payload.id);
+            changed = true;
+          }
+          break;
+        }
+        case WS_MESSAGE_TYPES.CHANNEL: {
+          if (message.payload && message.payload.request_id) {
+            const focusedId = focusedRequestIdRef.current;
+            if (focusedId && message.payload.request_id === focusedId) {
+              latestChannelUpdate = message.payload;
+            }
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    });
+
+    if (changed) {
+      const trimmed = trimSummaries(nextSummaries);
+      summariesRef.current = trimmed;
+      setSummaries(trimmed);
+    }
+
+    if (latestChannelUpdate) {
+      setChannelUpdate(latestChannelUpdate);
+    }
+  }, [trimSummaries]);
 
   useEffect(() => {
     focusedRequestIdRef.current = focusedRequestId ?? null;
@@ -100,61 +187,33 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
     return `${protocol}//${window.location.host}/api/monitor/ws`;
   }, []);
 
+  const scheduleFlush = useCallback(() => {
+    if (flushTimerRef.current) return;
+    flushTimerRef.current = setTimeout(() => {
+      flushTimerRef.current = null;
+      const batch = pendingMessagesRef.current;
+      if (batch.length === 0) return;
+      pendingMessagesRef.current = [];
+      applyBatch(batch);
+    }, 50);
+  }, [applyBatch]);
+
   const handleMessage = useCallback((event) => {
     try {
-      // Handle multiple messages separated by newlines
+      if (typeof event.data !== 'string') return;
       const messages = event.data.split('\n').filter((m) => m.trim());
+      if (messages.length === 0) return;
 
       messages.forEach((msgStr) => {
         const message = JSON.parse(msgStr);
-
-        switch (message.type) {
-          case WS_MESSAGE_TYPES.SNAPSHOT:
-            // Initial snapshot of all summaries
-            const snapshotData = Array.isArray(message.payload) ? message.payload : [];
-            setSummaries(trimSummaries(snapshotData));
-            break;
-
-          case WS_MESSAGE_TYPES.NEW:
-            // New request summary added
-            setSummaries((prev) => trimSummaries([...prev, message.payload]));
-            break;
-
-          case WS_MESSAGE_TYPES.UPDATE:
-            // Existing request summary updated
-            setSummaries((prev) => {
-              const updated = prev.map((r) =>
-                r.id === message.payload.id ? message.payload : r
-              );
-              return trimSummaries(updated);
-            });
-            break;
-
-          case WS_MESSAGE_TYPES.DELETE:
-            // Request deleted (shouldn't happen often)
-            setSummaries((prev) => {
-              const filtered = prev.filter((r) => r.id !== message.payload.id);
-              return trimSummaries(filtered);
-            });
-            break;
-
-          case WS_MESSAGE_TYPES.CHANNEL:
-            if (message.payload && message.payload.request_id) {
-              const focusedId = focusedRequestIdRef.current;
-              if (focusedId && message.payload.request_id === focusedId) {
-                setChannelUpdate(message.payload);
-              }
-            }
-            break;
-
-          default:
-          // Unknown message type, ignore
-        }
+        pendingMessagesRef.current.push(message);
       });
+
+      scheduleFlush();
     } catch (error) {
       // Error parsing message, ignore
     }
-  }, []);
+  }, [scheduleFlush]);
 
   const connect = useCallback(() => {
     // Clear any existing reconnect timeout
@@ -170,6 +229,11 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
 
     // Drop any stale in-memory live update when reconnecting.
     setChannelUpdate(null);
+    pendingMessagesRef.current = [];
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
 
     // Determine WebSocket URL
     const wsUrl = buildWsUrl();
@@ -246,6 +310,9 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
       }
       if (stableOpenTimerRef.current) {
         clearTimeout(stableOpenTimerRef.current);
+      }
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
       }
       if (wsRef.current) {
         wsRef.current.close();

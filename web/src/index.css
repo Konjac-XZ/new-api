@@ -15,6 +15,7 @@
 
 /* ==================== 全局基础样式 ==================== */
 :root {
+  --app-header-height: 64px;
   --sidebar-width: 180px;
   --sidebar-width-collapsed: 60px;
   --sidebar-current-width: var(--sidebar-width);

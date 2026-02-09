@@ -17,7 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo, useSyncExternalStore } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
 import {
   Card,
   Table,
@@ -25,7 +32,6 @@ import {
   Typography,
   Space,
   Button,
-  Descriptions,
   Empty,
   Spin,
   Badge,
@@ -36,13 +42,37 @@ import {
   Modal,
 } from '@douyinfe/semi-ui';
 import { IconRefresh } from '@douyinfe/semi-icons';
-import { WrapText, Copy } from 'lucide-react';
+import {
+  Activity,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Clock3,
+  Copy,
+  Globe2,
+  Hash,
+  History,
+  KeyRound,
+  Network,
+  Radio,
+  Route,
+  User,
+  WrapText,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import useMonitorWs from './useMonitorWs';
 import useRequestDetail from './useRequestDetail';
 import { useStopwatch } from './useStopwatch';
-import { deriveDisplayStatus, isActiveStatus, isTerminalStatus } from './statusUtils';
-import { renderModelTag, stringToColor, timestamp2string, escapeHtml } from '../../helpers';
+import {
+  deriveDisplayStatus,
+  isActiveStatus,
+  isTerminalStatus,
+} from './statusUtils';
+import {
+  renderModelTag,
+  stringToColor,
+  timestamp2string,
+  escapeHtml,
+} from '../../helpers';
 import { API } from '../../helpers/api';
 import {
   DURATION_UPDATE_INTERVAL_MS,
@@ -102,6 +132,7 @@ const formatMemory = (bytes) => {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 };
 
+// Shared ticker avoids per-row intervals for active durations.
 const createDurationTicker = (intervalMs) => {
   let now = Date.now();
   let timerId = null;
@@ -162,7 +193,10 @@ const useDurationNow = (enabled) => {
 // Component to display duration with real-time stopwatch for ongoing requests
 const DurationCell = ({ record, t }) => {
   const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
-  const isActive = useMemo(() => isActiveStatus(displayStatus), [displayStatus]);
+  const isActive = useMemo(
+    () => isActiveStatus(displayStatus),
+    [displayStatus],
+  );
   const hasStartTime = Boolean(record.start_time);
   const now = useDurationNow(isActive && hasStartTime);
 
@@ -225,7 +259,16 @@ const highlightJson = (str) => {
   );
 };
 
-const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated = false, bodySize = 0, requestId = '', bodyType = '' }) => {
+const JsonViewer = ({
+  data,
+  t,
+  isStream = false,
+  label = 'data',
+  bodyTruncated = false,
+  bodySize = 0,
+  requestId = '',
+  bodyType = '',
+}) => {
   const [wordWrap, setWordWrap] = useState(true);
 
   // Check if content is too large BEFORE parsing
@@ -261,18 +304,26 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
 
       // If content is too large and body is not included, fetch it from API
       if (isLengthExceeded && (!data || data === '') && requestId && bodyType) {
-        const response = await API.get(`/api/monitor/requests/${requestId}/body/${bodyType}`, {
-          skipErrorHandler: true,
-        });
+        const response = await API.get(
+          `/api/monitor/requests/${requestId}/body/${bodyType}`,
+          {
+            skipErrorHandler: true,
+          },
+        );
 
-        if (response.data.success && response.data.data && response.data.data.body) {
+        if (
+          response.data.success &&
+          response.data.data &&
+          response.data.data.body
+        ) {
           downloadContent = response.data.data.body;
         } else {
           throw new Error('Invalid response from server');
         }
       } else if (isLengthExceeded && data) {
         // Body is included but too large to display
-        downloadContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        downloadContent =
+          typeof data === 'string' ? data : JSON.stringify(data, null, 2);
       }
 
       const blob = new Blob([downloadContent], { type: 'application/json' });
@@ -291,7 +342,9 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
 
   const handleCopyAll = useCallback(async () => {
     try {
-      const content = formatted || (typeof data === 'string' ? data : JSON.stringify(data ?? {}, null, 2));
+      const content =
+        formatted ||
+        (typeof data === 'string' ? data : JSON.stringify(data ?? {}, null, 2));
       if (navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(content);
       } else {
@@ -322,17 +375,20 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
           textAlign: 'center',
         }}
       >
-        <Text type="tertiary" style={{ display: 'block', marginBottom: '12px' }}>
+        <Text
+          type='tertiary'
+          style={{ display: 'block', marginBottom: '12px' }}
+        >
           {t('内容长度超出限制')}
         </Text>
-        <Button type="primary" size="small" onClick={handleDownload}>
+        <Button type='primary' size='small' onClick={handleDownload}>
           {t('下载为 JSON 文件')}
         </Button>
       </div>
     );
   }
 
-  if (!data) return <Text type="tertiary">{t('暂无数据')}</Text>;
+  if (!data) return <Text type='tertiary'>{t('暂无数据')}</Text>;
 
   return (
     <div style={{ position: 'relative' }}>
@@ -345,7 +401,7 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
             marginBottom: '0',
           }}
         >
-          <Text size="small" type="tertiary">
+          <Text size='small' type='tertiary'>
             {t('以下内容为流式响应的拼接汇总，原始内容不可用')}
           </Text>
         </div>
@@ -380,8 +436,8 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
         <Tooltip content={t('复制全部')}>
           <Button
             icon={<Copy size={14} />}
-            size="small"
-            theme="borderless"
+            size='small'
+            theme='borderless'
             style={{
               backgroundColor: 'rgba(45, 45, 45, 0.9)',
               border: '1px solid rgba(255, 255, 255, 0.1)',
@@ -392,7 +448,7 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
         <Tooltip content={wordWrap ? t('关闭自动换行') : t('自动换行')}>
           <Button
             icon={<WrapText size={14} />}
-            size="small"
+            size='small'
             theme={wordWrap ? 'solid' : 'borderless'}
             style={{
               backgroundColor: 'rgba(45, 45, 45, 0.9)',
@@ -408,7 +464,7 @@ const JsonViewer = ({ data, t, isStream = false, label = 'data', bodyTruncated =
 
 const HeadersViewer = ({ headers, t }) => {
   if (!headers || Object.keys(headers).length === 0) {
-    return <Text type="tertiary">{t('无请求头')}</Text>;
+    return <Text type='tertiary'>{t('无请求头')}</Text>;
   }
 
   return (
@@ -431,19 +487,272 @@ const HeadersViewer = ({ headers, t }) => {
   );
 };
 
-const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, interrupting }) => {
+const DetailCardTitle = ({ icon, text }) => (
+  <Space spacing='tight'>
+    <span
+      style={{ display: 'inline-flex', color: 'var(--semi-color-primary)' }}
+    >
+      {icon}
+    </span>
+    <span>{text}</span>
+  </Space>
+);
+
+const MetaPill = ({ icon, label, children, style }) => (
+  <div
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '6px',
+      minWidth: 0,
+      maxWidth: '100%',
+      flex: '1 1 280px',
+      padding: '4px 10px',
+      borderRadius: '999px',
+      background: 'var(--semi-color-fill-0)',
+      ...style,
+    }}
+  >
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        color: 'var(--semi-color-text-2)',
+        flexShrink: 0,
+      }}
+    >
+      {icon}
+    </span>
+    <Text type='tertiary' size='small' style={{ flexShrink: 0 }}>
+      {label}
+    </Text>
+    <span style={{ display: 'inline-flex', alignItems: 'center', minWidth: 0 }}>
+      {children}
+    </span>
+  </div>
+);
+
+const DetailPanelHeader = ({ label, onToggle, headerRef }) => (
+  <div
+    ref={headerRef}
+    role='button'
+    tabIndex={0}
+    onMouseDown={(event) => event.preventDefault()}
+    onClick={(event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onToggle();
+    }}
+    onKeyDown={(event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggle();
+      }
+    }}
+    style={{
+      userSelect: 'none',
+      display: 'inline-flex',
+      alignItems: 'center',
+      minHeight: '22px',
+    }}
+  >
+    {label}
+  </div>
+);
+
+const RequestDetail = ({
+  record,
+  loading,
+  error,
+  t,
+  statusLabels,
+  onInterrupt,
+  interrupting,
+  scrollContainerRef,
+  visible,
+}) => {
   const phaseLabels = useMemo(() => getPhaseLabels(t), [t]);
   const attemptLabels = useMemo(() => getAttemptStatusLabels(t), [t]);
   const displayStatus = useMemo(() => deriveDisplayStatus(record), [record]);
   const [interruptError, setInterruptError] = useState(null);
+  const [activeDetailPanelKey, setActiveDetailPanelKey] = useState('');
   const interruptErrorTimeoutRef = useRef(null);
+  const scrollAnimationFrameRef = useRef(null);
+  const shouldAutoExpandResponseBodyRef = useRef(false);
+  const skipNextEnsureVisibleRef = useRef(false);
+  const detailPanelHeaderRefs = useRef({});
   const stopwatch = useStopwatch(record, t);
+
+  useEffect(() => {
+    setActiveDetailPanelKey('');
+    shouldAutoExpandResponseBodyRef.current = visible;
+  }, [record?.id]);
+
+  useEffect(() => {
+    if (visible) {
+      shouldAutoExpandResponseBodyRef.current = true;
+      return;
+    }
+    shouldAutoExpandResponseBodyRef.current = false;
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !record?.id || !record?.response) return;
+    if (!shouldAutoExpandResponseBodyRef.current) return;
+
+    setActiveDetailPanelKey((previousKey) => {
+      if (previousKey === 'response-body') return previousKey;
+      skipNextEnsureVisibleRef.current = true;
+      return 'response-body';
+    });
+    shouldAutoExpandResponseBodyRef.current = false;
+  }, [visible, record?.id, record?.response]);
+
+  const handleDetailPanelToggle = useCallback((targetKey) => {
+    setActiveDetailPanelKey((previousKey) =>
+      previousKey === targetKey ? '' : targetKey,
+    );
+  }, []);
+
+  const registerDetailPanelHeaderRef = useCallback((panelKey, node) => {
+    if (node) {
+      detailPanelHeaderRefs.current[panelKey] = node;
+      return;
+    }
+    delete detailPanelHeaderRefs.current[panelKey];
+  }, []);
+
+  const handleDetailPanelChange = useCallback((nextKey) => {
+    const normalizedKeys = (
+      Array.isArray(nextKey) ? nextKey : [nextKey]
+    ).filter((key) => typeof key === 'string' && key.length > 0);
+
+    if (normalizedKeys.length === 0) {
+      setActiveDetailPanelKey('');
+      return;
+    }
+
+    setActiveDetailPanelKey(
+      (previousKey) =>
+        normalizedKeys.find((key) => key !== previousKey) ||
+        normalizedKeys[normalizedKeys.length - 1],
+    );
+  }, []);
+
+  const downstreamDetailActiveKey = activeDetailPanelKey?.startsWith(
+    'downstream-',
+  )
+    ? [activeDetailPanelKey]
+    : [];
+  const responseDetailActiveKey = activeDetailPanelKey?.startsWith('response-')
+    ? [activeDetailPanelKey]
+    : [];
+
+  const smoothScrollTo = useCallback((container, targetTop) => {
+    const maxScrollTop = Math.max(
+      0,
+      container.scrollHeight - container.clientHeight,
+    );
+    const clampedTargetTop = Math.max(0, Math.min(targetTop, maxScrollTop));
+    const startTop = container.scrollTop;
+    const delta = clampedTargetTop - startTop;
+
+    if (Math.abs(delta) < 1) return;
+
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (prefersReducedMotion) {
+      container.scrollTop = clampedTargetTop;
+      return;
+    }
+
+    if (scrollAnimationFrameRef.current) {
+      cancelAnimationFrame(scrollAnimationFrameRef.current);
+      scrollAnimationFrameRef.current = null;
+    }
+
+    const durationMs = 280;
+    const startTime = performance.now();
+    const easeInOutCubic = (progress) =>
+      progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+    const animate = (now) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      container.scrollTop = startTop + delta * easeInOutCubic(progress);
+
+      if (progress < 1) {
+        scrollAnimationFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        scrollAnimationFrameRef.current = null;
+      }
+    };
+
+    scrollAnimationFrameRef.current = requestAnimationFrame(animate);
+  }, []);
+
+  const ensureExpandedPanelVisible = useCallback(
+    (panelKey) => {
+      if (!panelKey) return;
+
+      const scrollContainer = scrollContainerRef?.current;
+      const headerElement = detailPanelHeaderRefs.current[panelKey];
+      if (!scrollContainer || !headerElement) return;
+
+      const collapseItem = headerElement.closest('.semi-collapse-item');
+      if (!collapseItem) return;
+
+      const padding = 8;
+      const containerRect = scrollContainer.getBoundingClientRect();
+      const panelRect = collapseItem.getBoundingClientRect();
+      const isPanelTooTall =
+        panelRect.height > containerRect.height - padding * 2;
+      const isPanelBottomClipped =
+        panelRect.bottom > containerRect.bottom - padding;
+
+      if (!isPanelTooTall && !isPanelBottomClipped) return;
+
+      const headerRect = headerElement.getBoundingClientRect();
+      const targetScrollTop =
+        scrollContainer.scrollTop +
+        (headerRect.top - containerRect.top) -
+        padding;
+
+      smoothScrollTo(scrollContainer, targetScrollTop);
+    },
+    [scrollContainerRef, smoothScrollTo],
+  );
+
+  useEffect(() => {
+    if (!activeDetailPanelKey) return;
+    if (skipNextEnsureVisibleRef.current) {
+      skipNextEnsureVisibleRef.current = false;
+      return;
+    }
+
+    const timerId = setTimeout(() => {
+      ensureExpandedPanelVisible(activeDetailPanelKey);
+    }, 180);
+
+    return () => clearTimeout(timerId);
+  }, [activeDetailPanelKey, ensureExpandedPanelVisible]);
 
   useEffect(() => {
     return () => {
       if (interruptErrorTimeoutRef.current) {
         clearTimeout(interruptErrorTimeoutRef.current);
         interruptErrorTimeoutRef.current = null;
+      }
+
+      if (scrollAnimationFrameRef.current) {
+        cancelAnimationFrame(scrollAnimationFrameRef.current);
+        scrollAnimationFrameRef.current = null;
       }
     };
   }, []);
@@ -456,12 +765,16 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
 
   // Find the currently active attempt (last attempt with active status)
   const activeAttemptIndex = useMemo(() => {
-    if (!record?.channel_attempts || record.channel_attempts.length === 0) return -1;
+    if (!record?.channel_attempts || record.channel_attempts.length === 0)
+      return -1;
 
     // Find the last attempt that is in an active state
     for (let i = record.channel_attempts.length - 1; i >= 0; i--) {
       const attempt = record.channel_attempts[i];
-      if (attempt.status === 'waiting_upstream' || attempt.status === 'streaming') {
+      if (
+        attempt.status === 'waiting_upstream' ||
+        attempt.status === 'streaming'
+      ) {
         return i;
       }
     }
@@ -539,253 +852,531 @@ const RequestDetail = ({ record, loading, error, t, statusLabels, onInterrupt, i
   }
 
   return (
-    <div style={{ padding: '8px 12px' }}>
+    <div style={{ padding: '4px 6px' }}>
       <Space vertical align='start' style={{ width: '100%' }} spacing='medium'>
-        {/* Channel & Retry Status */}
-        <Card title={t('当前渠道 / 重试状态')} style={{ width: '100%' }}>
-          <Space vertical align='start' style={{ width: '100%' }}>
-            <Space align='center'>
-              <Text strong>{t('当前渠道')}:</Text>
-              {record.current_channel ? (
-                <Tag color='blue'>
-                  {record.current_channel.name || '-'} (ID: {record.current_channel.id || '-'}, {t('第{{num}}次', { num: record.current_channel.attempt || 1 })})
+        <Card
+          title={
+            <DetailCardTitle
+              icon={<Network size={15} />}
+              text={t('当前渠道 / 重试状态')}
+            />
+          }
+          style={{ width: '100%' }}
+          bodyStyle={{ padding: '10px 12px' }}
+        >
+          <Space
+            vertical
+            align='start'
+            style={{ width: '100%' }}
+            spacing='small'
+          >
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                width: '100%',
+              }}
+            >
+              <MetaPill icon={<Route size={14} />} label={t('当前渠道')}>
+                {record.current_channel ? (
+                  <Tag color='blue' size='small'>
+                    {record.current_channel.name || '-'}
+                    {' / '}
+                    ID {record.current_channel.id || '-'}
+                    {' / '}
+                    {t('第 {{num}} 次', {
+                      num: record.current_channel.attempt || 1,
+                    })}
+                  </Tag>
+                ) : (
+                  <Text type='tertiary' size='small'>
+                    {t('暂未选择渠道')}
+                  </Text>
+                )}
+              </MetaPill>
+
+              <MetaPill icon={<Activity size={14} />} label={t('当前响应状态')}>
+                <Tag
+                  color={channelPhaseColors[record.current_phase] || 'grey'}
+                  size='small'
+                >
+                  {phaseLabels[record.current_phase] || t('未知状态')}
                 </Tag>
-              ) : (
-                <Text type='tertiary'>{t('暂未选择渠道')}</Text>
-              )}
-            </Space>
+              </MetaPill>
 
-            <Space align='center'>
-              <Text strong>{t('当前响应状态')}:</Text>
-              <Tag color={channelPhaseColors[record.current_phase] || 'grey'}>
-                {phaseLabels[record.current_phase] || t('未知状态')}
-              </Tag>
               {stopwatch.isActive && (
-                <Text style={{
-                  marginLeft: 12,
-                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "PingFang SC", "Microsoft YaHei"',
-                  color: '#666',
-                  fontSize: '13px'
-                }}>
-                  {stopwatch.display}
-                </Text>
+                <MetaPill icon={<Clock3 size={14} />} label={t('计时')}>
+                  <Text
+                    size='small'
+                    style={{
+                      fontFamily:
+                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "PingFang SC", "Microsoft YaHei"',
+                      color: 'var(--semi-color-text-1)',
+                    }}
+                  >
+                    {stopwatch.display}
+                  </Text>
+                </MetaPill>
               )}
-            </Space>
+            </div>
 
-            <div style={{ marginTop: '12px', width: '100%' }}>
-              <Text strong style={{ display: 'block', marginBottom: '8px' }}>
-                {t('渠道重试历史')}
-              </Text>
+            <div
+              style={{
+                width: '100%',
+                marginTop: '4px',
+                paddingTop: '10px',
+                borderTop: '1px solid var(--semi-color-border)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                  marginBottom: '10px',
+                }}
+              >
+                <Space spacing='tight'>
+                  <History
+                    size={14}
+                    style={{ color: 'var(--semi-color-text-2)' }}
+                  />
+                  <Text strong>{t('渠道重试历史')}</Text>
+                </Space>
+                {(record.channel_attempts || []).length > 0 && (
+                  <Tag size='small' color='grey'>
+                    {(record.channel_attempts || []).length}
+                  </Tag>
+                )}
+              </div>
+
               {(record.channel_attempts || []).length === 0 ? (
                 <Text type='tertiary'>{t('暂无渠道重试记录')}</Text>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    width: '100%',
+                  }}
+                >
                   {(record.channel_attempts || []).map((attempt, index) => {
                     const isActiveAttempt = index === activeAttemptIndex;
                     return (
-                      <Card key={`${attempt.attempt}-${attempt.channel_id}-${attempt.started_at}`} size='small' bordered style={{ background: 'var(--semi-color-fill-0)' }}>
-                        <Space vertical align='start' style={{ width: '100%' }}>
-                          <Space align='center' style={{ justifyContent: 'space-between', width: '100%' }}>
-                            <Space>
-                              <Tag>{t('第{{num}}次', { num: attempt.attempt })}</Tag>
-                              <Text>{attempt.channel_name || t('未知渠道')} (ID: {attempt.channel_id || '-'})</Text>
-                            </Space>
-                            <Space>
-                              <Tag color={attemptStatusColors[attempt.status] || 'grey'}>
-                                {attemptLabels[attempt.status] || attempt.status || t('未知状态')}
-                              </Tag>
-                              {isActive && isActiveAttempt && (
-                                <Tooltip content={t('中断当前请求并尝试下一个渠道')}>
-                                  <Button
-                                    type='danger'
-                                    size='small'
-                                    loading={interrupting}
-                                    disabled={interrupting}
-                                    onClick={handleInterrupt}
-                                  >
-                                    {t('中断')}
-                                  </Button>
-                                </Tooltip>
-                              )}
-                            </Space>
-                          </Space>
-                          <Text type='tertiary' size='small'>
-                            {t('开始')}: {attempt.started_at ? new Date(attempt.started_at).toLocaleTimeString() : '-'}
-                            {attempt.ended_at ? ` | ${t('结束')}: ${new Date(attempt.ended_at).toLocaleTimeString()}` : ''}
+                      <div
+                        key={`${attempt.attempt}-${attempt.channel_id}-${attempt.started_at}`}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          borderRadius: '8px',
+                          background: 'var(--semi-color-fill-0)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '6px 10px',
+                          }}
+                        >
+                          <Tag size='small'>
+                            {t('第 {{num}} 次', { num: attempt.attempt })}
+                          </Tag>
+                          <Text size='small'>
+                            {attempt.channel_name || t('未知渠道')} (ID:{' '}
+                            {attempt.channel_id || '-'})
                           </Text>
-                          {(attempt.reason || attempt.error_code || attempt.http_status) && (
-                            <Text size='small' style={{ color: 'var(--semi-color-text-2)' }}>
+                          <Tag
+                            color={
+                              attemptStatusColors[attempt.status] || 'grey'
+                            }
+                            size='small'
+                          >
+                            {attemptLabels[attempt.status] ||
+                              attempt.status ||
+                              t('未知状态')}
+                          </Tag>
+                          {isActive && isActiveAttempt && (
+                            <Tooltip
+                              content={t('中断当前请求并尝试下一个渠道')}
+                            >
+                              <Button
+                                type='danger'
+                                size='small'
+                                loading={interrupting}
+                                disabled={interrupting}
+                                onClick={handleInterrupt}
+                              >
+                                {t('中断')}
+                              </Button>
+                            </Tooltip>
+                          )}
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: '6px 12px',
+                            marginTop: '4px',
+                          }}
+                        >
+                          <Text type='tertiary' size='small'>
+                            {t('开始')}:{' '}
+                            {attempt.started_at
+                              ? new Date(
+                                  attempt.started_at,
+                                ).toLocaleTimeString()
+                              : '-'}
+                            {attempt.ended_at
+                              ? ` | ${t('结束')}: ${new Date(attempt.ended_at).toLocaleTimeString()}`
+                              : ''}
+                          </Text>
+                          {(attempt.reason ||
+                            attempt.error_code ||
+                            attempt.http_status) && (
+                            <Text type='tertiary' size='small'>
                               {t('原因')}: {attempt.reason || '-'}
-                              {attempt.error_code ? ` | ${t('错误码')}: ${attempt.error_code}` : ''}
-                              {attempt.http_status ? ` | HTTP ${attempt.http_status}` : ''}
+                              {attempt.error_code
+                                ? ` | ${t('错误码')}: ${attempt.error_code}`
+                                : ''}
+                              {attempt.http_status
+                                ? ` | HTTP ${attempt.http_status}`
+                                : ''}
                             </Text>
                           )}
-                        </Space>
-                      </Card>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
               )}
-              {interruptError && (
-                <div style={{ marginTop: '8px', padding: '8px', background: 'var(--semi-color-danger-light-default)', borderRadius: '4px' }}>
-                  <Text type='danger' size='small'>{t('中断失败')}: {interruptError}</Text>
-                </div>
-              )}
             </div>
+            {interruptError && (
+              <div
+                style={{
+                  marginTop: '6px',
+                  padding: '8px 10px',
+                  background: 'var(--semi-color-danger-light-default)',
+                  borderRadius: '6px',
+                }}
+              >
+                <Text type='danger' size='small'>
+                  {t('中断失败')}: {interruptError}
+                </Text>
+              </div>
+            )}
           </Space>
         </Card>
 
-        {/* Basic Info */}
-        <Card title={t('请求信息')} style={{ width: '100%' }}>
-          <Descriptions
-            data={[
-              { key: t('请求ID'), value: record.id },
-              {
-                key: t('状态'),
-                value: (
-                  <Tag color={statusColors[displayStatus] || statusColors[record.status] || 'grey'}>
-                    {statusLabels[displayStatus] || statusLabels[record.status] || displayStatus || record.status || t('未知状态')}
-                  </Tag>
-                ),
-              },
-              {
-                key: t('模型'),
-                value: record.model ? (
-                  renderModelTag(record.model, { shape: 'circle', size: 'small' })
-                ) : (
-                  <Text type='tertiary'>-</Text>
-                ),
-              },
-              {
-                key: t('是否流式'),
-                value: record.is_stream ? (
-                  <Tag color='blue'>{t('是')}</Tag>
-                ) : (
-                  <Tag>{t('否')}</Tag>
-                ),
-              },
-              {
-                key: t('开始时间'),
-                value: record.start_time
-                  ? timestamp2string(Math.floor(new Date(record.start_time).getTime() / MS_TO_SECONDS))
-                  : '-',
-              },
-              {
-                key: t('耗时'),
-                value: renderDurationTag(record.duration_ms, t),
-              },
-              { key: t('用户ID'), value: record.user_id || '-' },
-              { key: t('令牌'), value: record.token_name || '-' },
-              {
-                key: t('渠道'),
-                value: record.channel_name ? (
-                  <Tag
-                    color={stringToColor(record.channel_name || String(record.channel_id || ''))}
-                    shape='circle'
-                    size='small'
-                  >
-                    {record.channel_name}
-                  </Tag>
-                ) : (
-                  <Text type='tertiary'>-</Text>
-                ),
-              },
-            ]}
-          />
+        <Card
+          title={
+            <DetailCardTitle icon={<Hash size={15} />} text={t('请求信息')} />
+          }
+          style={{ width: '100%' }}
+          bodyStyle={{ padding: '10px 12px' }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              width: '100%',
+              marginBottom: '8px',
+            }}
+          >
+            <MetaPill
+              icon={<Hash size={14} />}
+              label={t('请求 ID')}
+              style={{ flex: '2 1 460px' }}
+            >
+              <Text size='small' style={{ wordBreak: 'break-all' }}>
+                {record.id}
+              </Text>
+            </MetaPill>
+            <MetaPill icon={<Route size={14} />} label={t('渠道')}>
+              {record.channel_name ? (
+                <Tag
+                  color={stringToColor(
+                    record.channel_name || String(record.channel_id || ''),
+                  )}
+                  shape='circle'
+                  size='small'
+                >
+                  {record.channel_name}
+                </Tag>
+              ) : (
+                <Text type='tertiary' size='small'>
+                  -
+                </Text>
+              )}
+            </MetaPill>
+            <MetaPill icon={<Network size={14} />} label={t('模型')}>
+              {record.model ? (
+                renderModelTag(record.model, { shape: 'circle', size: 'small' })
+              ) : (
+                <Text type='tertiary' size='small'>
+                  -
+                </Text>
+              )}
+            </MetaPill>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              width: '100%',
+            }}
+          >
+            <MetaPill icon={<Activity size={14} />} label={t('状态')}>
+              <Tag
+                color={
+                  statusColors[displayStatus] ||
+                  statusColors[record.status] ||
+                  'grey'
+                }
+                size='small'
+              >
+                {statusLabels[displayStatus] ||
+                  statusLabels[record.status] ||
+                  displayStatus ||
+                  record.status ||
+                  t('未知状态')}
+              </Tag>
+            </MetaPill>
+            <MetaPill icon={<Radio size={14} />} label={t('是否流式')}>
+              {record.is_stream ? (
+                <Tag color='blue' size='small'>
+                  {t('是')}
+                </Tag>
+              ) : (
+                <Tag size='small'>{t('否')}</Tag>
+              )}
+            </MetaPill>
+            <MetaPill icon={<Clock3 size={14} />} label={t('开始时间')}>
+              <Text size='small'>
+                {record.start_time
+                  ? timestamp2string(
+                      Math.floor(
+                        new Date(record.start_time).getTime() / MS_TO_SECONDS,
+                      ),
+                    )
+                  : '-'}
+              </Text>
+            </MetaPill>
+            <MetaPill icon={<Clock3 size={14} />} label={t('耗时')}>
+              {renderDurationTag(record.duration_ms, t)}
+            </MetaPill>
+            <MetaPill icon={<User size={14} />} label={t('用户 ID')}>
+              <Text size='small'>{record.user_id || '-'}</Text>
+            </MetaPill>
+            <MetaPill icon={<KeyRound size={14} />} label={t('令牌')}>
+              <Text
+                size='small'
+                style={{ maxWidth: 220 }}
+                ellipsis={{ showTooltip: true }}
+              >
+                {record.token_name || '-'}
+              </Text>
+            </MetaPill>
+          </div>
         </Card>
 
-        {/* Downstream Request */}
-        <Card title={t('下游请求（客户端）')} style={{ width: '100%' }}>
-          <Collapse>
-            <Collapse.Panel header={t('请求头')} itemKey='downstream-headers'>
+        <Card
+          title={
+            <DetailCardTitle
+              icon={<ArrowDownToLine size={15} />}
+              text={t('下游请求（客户端）')}
+            />
+          }
+          style={{ width: '100%' }}
+          bodyStyle={{ padding: '10px 12px' }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '8px',
+              width: '100%',
+              marginBottom: '8px',
+            }}
+          >
+            <MetaPill icon={<Route size={14} />} label={t('请求路径')}>
+              <Text
+                size='small'
+                style={{ maxWidth: 460 }}
+                ellipsis={{ showTooltip: true }}
+              >
+                {record.downstream?.method || '-'}{' '}
+                {record.downstream?.path || '-'}
+              </Text>
+            </MetaPill>
+            <MetaPill icon={<Globe2 size={14} />} label={t('客户端 IP')}>
+              <Text size='small'>{record.downstream?.client_ip || '-'}</Text>
+            </MetaPill>
+            {record.downstream?.body_size > 0 && (
+              <MetaPill icon={<Hash size={14} />} label={t('请求体大小')}>
+                <Text size='small'>
+                  {t('{{size}} 字节', { size: record.downstream.body_size })}
+                </Text>
+              </MetaPill>
+            )}
+          </div>
+
+          <Collapse
+            accordion={false}
+            activeKey={downstreamDetailActiveKey}
+            onChange={handleDetailPanelChange}
+          >
+            <Collapse.Panel
+              header={
+                <DetailPanelHeader
+                  label={t('请求头')}
+                  onToggle={() => handleDetailPanelToggle('downstream-headers')}
+                  headerRef={(node) =>
+                    registerDetailPanelHeaderRef('downstream-headers', node)
+                  }
+                />
+              }
+              itemKey='downstream-headers'
+            >
               <HeadersViewer headers={record.downstream?.headers} t={t} />
             </Collapse.Panel>
-            <Collapse.Panel header={t('请求体')} itemKey='downstream-body'>
+            <Collapse.Panel
+              header={
+                <DetailPanelHeader
+                  label={t('请求体')}
+                  onToggle={() => handleDetailPanelToggle('downstream-body')}
+                  headerRef={(node) =>
+                    registerDetailPanelHeaderRef('downstream-body', node)
+                  }
+                />
+              }
+              itemKey='downstream-body'
+            >
               <JsonViewer
                 data={record.downstream?.body}
                 t={t}
                 isStream={false}
-                label="downstream-request-body"
+                label='downstream-request-body'
                 bodyTruncated={record.downstream?.body_truncated}
                 bodySize={record.downstream?.body_size || 0}
                 requestId={record.id}
-                bodyType="downstream"
+                bodyType='downstream'
               />
-              {record.downstream?.body_size > 0 && (
-                <Text
-                  type='tertiary'
-                  size='small'
-                  style={{ marginTop: '8px', display: 'block' }}
-                >
-                  {t('大小: {{size}} 字节', { size: record.downstream.body_size })}
-                </Text>
-              )}
             </Collapse.Panel>
           </Collapse>
-          <div style={{ marginTop: '12px' }}>
-            <Text type='tertiary'>
-              {record.downstream?.method} {record.downstream?.path}
-            </Text>
-            <br />
-            <Text type='tertiary'>{t('客户端IP: {{ip}}', { ip: record.downstream?.client_ip })}</Text>
-          </div>
         </Card>
 
-        {/* Response */}
         {record.response && (
-          <Card title={t('响应')} style={{ width: '100%' }}>
-            <Descriptions
-              data={[
-                {
-                  key: t('状态码'),
-                  value: (
-                    <Tag
-                      color={
-                        record.response.status_code >= 400 ? 'red' : 'green'
-                      }
-                    >
-                      {record.response.status_code}
-                    </Tag>
-                  ),
-                },
-                {
-                  key: t('提示词Tokens'),
-                  value: record.response.prompt_tokens || 0,
-                },
-                {
-                  key: t('补全Tokens'),
-                  value: record.response.completion_tokens || 0,
-                },
-              ]}
-            />
+          <Card
+            title={
+              <DetailCardTitle
+                icon={<ArrowUpFromLine size={15} />}
+                text={t('响应')}
+              />
+            }
+            style={{ width: '100%' }}
+            bodyStyle={{ padding: '10px 12px' }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '8px',
+                width: '100%',
+              }}
+            >
+              <MetaPill icon={<Hash size={14} />} label={t('状态码')}>
+                <Tag
+                  color={record.response.status_code >= 400 ? 'red' : 'green'}
+                  size='small'
+                >
+                  {record.response.status_code}
+                </Tag>
+              </MetaPill>
+              <MetaPill
+                icon={<ArrowDownToLine size={14} />}
+                label={t('提示词 Tokens')}
+              >
+                <Text size='small'>{record.response.prompt_tokens || 0}</Text>
+              </MetaPill>
+              <MetaPill
+                icon={<ArrowUpFromLine size={14} />}
+                label={t('补全 Tokens')}
+              >
+                <Text size='small'>
+                  {record.response.completion_tokens || 0}
+                </Text>
+              </MetaPill>
+            </div>
+
             {record.response.error && (
               <div
                 style={{
-                  marginTop: '12px',
-                  padding: '12px',
+                  marginTop: '10px',
+                  padding: '10px',
                   background: 'var(--semi-color-danger-light-default)',
                   borderRadius: '6px',
                 }}
               >
                 <Text type='danger' strong>
-                  {t('错误: {{message}}', { message: record.response.error.message })}
+                  {t('错误: {{message}}', {
+                    message: record.response.error.message,
+                  })}
                 </Text>
               </div>
             )}
-            <Collapse style={{ marginTop: '12px' }}>
-              <Collapse.Panel header={t('响应头')} itemKey='response-headers'>
+
+            <Collapse
+              accordion={false}
+              activeKey={responseDetailActiveKey}
+              onChange={handleDetailPanelChange}
+              style={{ marginTop: '10px' }}
+            >
+              <Collapse.Panel
+                header={
+                  <DetailPanelHeader
+                    label={t('响应头')}
+                    onToggle={() => handleDetailPanelToggle('response-headers')}
+                    headerRef={(node) =>
+                      registerDetailPanelHeaderRef('response-headers', node)
+                    }
+                  />
+                }
+                itemKey='response-headers'
+              >
                 <HeadersViewer headers={record.response?.headers} t={t} />
               </Collapse.Panel>
-              <Collapse.Panel header={t('响应体')} itemKey='response-body'>
+              <Collapse.Panel
+                header={
+                  <DetailPanelHeader
+                    label={t('响应体')}
+                    onToggle={() => handleDetailPanelToggle('response-body')}
+                    headerRef={(node) =>
+                      registerDetailPanelHeaderRef('response-body', node)
+                    }
+                  />
+                }
+                itemKey='response-body'
+              >
                 <JsonViewer
                   data={record.response?.body}
                   t={t}
                   isStream={record.is_stream}
-                  label="upstream-response-body"
+                  label='upstream-response-body'
                   bodyTruncated={record.response?.body_truncated}
                   bodySize={record.response?.body_size || 0}
                   requestId={record.id}
-                  bodyType="response"
+                  bodyType='response'
                 />
               </Collapse.Panel>
             </Collapse>
@@ -802,12 +1393,14 @@ const Monitor = () => {
   const [detailVisible, setDetailVisible] = useState(false);
   const [filter, setFilter] = useState('all');
   const tableRef = useRef(null);
+  const detailScrollContainerRef = useRef(null);
   // Track previous status to detect status changes
   const prevStatusRef = useRef(new Map());
 
-  const { summaries, stats, connected, reconnect, channelUpdate } = useMonitorWs({
-    focusedRequestId: selectedId,
-  });
+  const { summaries, stats, connected, reconnect, channelUpdate } =
+    useMonitorWs({
+      focusedRequestId: selectedId,
+    });
   const {
     selectedDetail,
     loading: detailLoading,
@@ -824,7 +1417,9 @@ const Monitor = () => {
 
   const summariesWithStatus = useMemo(() => {
     return summaries.map((summary) => {
-      const startTimeMs = summary.start_time ? new Date(summary.start_time).getTime() : 0;
+      const startTimeMs = summary.start_time
+        ? new Date(summary.start_time).getTime()
+        : 0;
       const displayStatus = deriveDisplayStatus(summary);
       return {
         ...summary,
@@ -858,7 +1453,8 @@ const Monitor = () => {
     summariesWithStatus.forEach((summary) => {
       visibleIds.add(summary.id);
       const prevStatus = prevStatusRef.current.get(summary.id);
-      const displayStatus = summary.displayStatus || deriveDisplayStatus(summary);
+      const displayStatus =
+        summary.displayStatus || deriveDisplayStatus(summary);
       const statusChanged = prevStatus && prevStatus !== displayStatus;
 
       if (statusChanged && isTerminalStatus(displayStatus)) {
@@ -892,7 +1488,9 @@ const Monitor = () => {
   // If the selected request is evicted from the summaries buffer, clear selection
   useEffect(() => {
     if (!selectedId) return;
-    const stillExists = summariesWithStatus.some((summary) => summary.id === selectedId);
+    const stillExists = summariesWithStatus.some(
+      (summary) => summary.id === selectedId,
+    );
     if (!stillExists) {
       setSelectedId(null);
       setDetailVisible(false);
@@ -936,7 +1534,9 @@ const Monitor = () => {
         width: 160,
         render: (time, record) => {
           if (!time) return '-';
-          const seconds = Math.floor((record?.startTimeMs || 0) / MS_TO_SECONDS);
+          const seconds = Math.floor(
+            (record?.startTimeMs || 0) / MS_TO_SECONDS,
+          );
           return timestamp2string(seconds);
         },
       },
@@ -945,9 +1545,16 @@ const Monitor = () => {
         dataIndex: 'status',
         width: 110,
         render: (_, record) => {
-          const displayStatus = deriveDisplayStatus(record);
+          const displayStatus =
+            record.displayStatus || deriveDisplayStatus(record);
           return (
-            <Tag color={statusColors[displayStatus] || statusColors[record.status] || 'grey'}>
+            <Tag
+              color={
+                statusColors[displayStatus] ||
+                statusColors[record.status] ||
+                'grey'
+              }
+            >
               {statusLabels[displayStatus] ||
                 statusLabels[record.status] ||
                 displayStatus ||
@@ -973,7 +1580,9 @@ const Monitor = () => {
         ellipsis: true,
         render: (_, record) => (
           <Tag
-            color={stringToColor(record.channel_name || String(record.channel_id || ''))}
+            color={stringToColor(
+              record.channel_name || String(record.channel_id || ''),
+            )}
             shape='circle'
           >
             {record.channel_name || t('未知渠道')}
@@ -1015,7 +1624,7 @@ const Monitor = () => {
               {t('活跃: {{active}} | 总计: {{total}} | 内存: {{memory}}', {
                 active: stats.active || 0,
                 total: stats.total || 0,
-                memory: formatMemory(stats.memory || 0)
+                memory: formatMemory(stats.memory || 0),
               })}
             </Text>
             {!connected && (
@@ -1067,11 +1676,7 @@ const Monitor = () => {
             })}
             empty={
               <Empty
-                description={
-                  connected
-                    ? t('暂无请求')
-                    : t('正在连接服务器...')
-                }
+                description={connected ? t('暂无请求') : t('正在连接服务器...')}
               />
             }
           />
@@ -1084,14 +1689,15 @@ const Monitor = () => {
         onCancel={() => setDetailVisible(false)}
         footer={null}
         width={'92vw'}
-        bodyStyle={{ padding: 0, maxHeight: 'calc(90vh - 56px)', overflow: 'hidden' }}
-        style={{ top: '5vh', height: '90vh', maxWidth: 1600 }}
+        centered
+        bodyStyle={{ height: '92vh', padding: 0, overflow: 'hidden' }}
       >
         <div
+          ref={detailScrollContainerRef}
           style={{
             height: '100%',
             overflow: 'auto',
-            padding: '8px 12px',
+            padding: '6px 8px',
           }}
         >
           <RequestDetail
@@ -1102,6 +1708,8 @@ const Monitor = () => {
             statusLabels={statusLabels}
             onInterrupt={interruptRequest}
             interrupting={interrupting}
+            scrollContainerRef={detailScrollContainerRef}
+            visible={detailVisible}
           />
         </div>
       </Modal>
