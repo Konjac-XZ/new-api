@@ -1,8 +1,21 @@
 package monitor
 
 import (
+	"encoding/json"
 	"time"
 )
+
+// MonitorBody stores body content as raw bytes in memory.
+// It is serialized as a UTF-8 JSON string only when APIs render records.
+type MonitorBody []byte
+
+func (body MonitorBody) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(body))
+}
+
+func (body MonitorBody) String() string {
+	return string(body)
+}
 
 // Status constants for request records
 const (
@@ -89,7 +102,7 @@ type DownstreamInfo struct {
 	Method        string            `json:"method"`
 	Path          string            `json:"path"`
 	Headers       map[string]string `json:"headers"`
-	Body          string            `json:"body"`
+	Body          MonitorBody       `json:"body"`
 	BodySize      int               `json:"body_size"`
 	BodyTruncated bool              `json:"body_truncated"`
 	ClientIP      string            `json:"client_ip"`
@@ -100,7 +113,7 @@ type UpstreamInfo struct {
 	URL           string            `json:"url"`
 	Method        string            `json:"method"`
 	Headers       map[string]string `json:"headers"`
-	Body          string            `json:"body"`
+	Body          MonitorBody       `json:"body"`
 	BodySize      int               `json:"body_size"`
 	BodyTruncated bool              `json:"body_truncated"`
 }
@@ -109,7 +122,7 @@ type UpstreamInfo struct {
 type ResponseInfo struct {
 	StatusCode       int               `json:"status_code"`
 	Headers          map[string]string `json:"headers"`
-	Body             string            `json:"body"`
+	Body             MonitorBody       `json:"body"`
 	BodySize         int               `json:"body_size"`
 	BodyTruncated    bool              `json:"body_truncated"`
 	Error            *ErrorInfo        `json:"error,omitempty"`

@@ -18,6 +18,5 @@ const (
 	UnregisterChanSize = 64
 
 	// Store limits
-	MaxRecords  = 100
-	MaxBodySize = 10 * 1024
+	MaxRecords = 100
 )

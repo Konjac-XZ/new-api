@@ -78,8 +78,10 @@ import {
   DURATION_UPDATE_INTERVAL_MS,
   MS_TO_SECONDS,
   BODY_DISPLAY_LIMIT_BYTES,
-  DURATION_WARNING_THRESHOLD_S,
-  DURATION_ERROR_THRESHOLD_S,
+  DURATION_INSTANT_THRESHOLD_S,
+  DURATION_FAST_THRESHOLD_S,
+  DURATION_MEDIUM_THRESHOLD_S,
+  DURATION_SLOW_THRESHOLD_S
 } from './constants';
 
 const { Title, Text } = Typography;
@@ -112,12 +114,19 @@ const renderDurationTag = (durationMs, t) => {
   if (!durationMs) return <Text type='tertiary'>-</Text>;
   const seconds = Number(durationMs / MS_TO_SECONDS).toFixed(1);
   const value = parseFloat(seconds);
-  let color = 'green';
-  if (value >= DURATION_ERROR_THRESHOLD_S) {
+  let color = 'grey';
+
+  if (value >= DURATION_SLOW_THRESHOLD_S) {
     color = 'red';
-  } else if (value >= DURATION_WARNING_THRESHOLD_S) {
+  } else if (value >= DURATION_MEDIUM_THRESHOLD_S) {
     color = 'orange';
+  } else if (value >= DURATION_FAST_THRESHOLD_S) {
+    color = 'blue';
+  } else if (value >= DURATION_INSTANT_THRESHOLD_S) {
+    color = 'green';
   }
+
+
   return (
     <Tag color={color} shape='circle'>
       {seconds}s
@@ -176,7 +185,7 @@ const durationTicker = createDurationTicker(DURATION_UPDATE_INTERVAL_MS);
 const useDurationNow = (enabled) => {
   const subscribe = useCallback(
     (listener) => {
-      if (!enabled) return () => {};
+      if (!enabled) return () => { };
       return durationTicker.subscribe(listener);
     },
     [enabled],
@@ -561,6 +570,15 @@ const DetailPanelHeader = ({ label, onToggle, headerRef }) => (
   </div>
 );
 
+const detailStateContainerStyle = {
+  display: 'grid',
+  placeItems: 'center',
+  width: '100%',
+  height: '100%',
+  minHeight: '400px',
+  textAlign: 'center',
+};
+
 const RequestDetail = ({
   record,
   loading,
@@ -803,16 +821,20 @@ const RequestDetail = ({
   // Loading state
   if (loading) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          minHeight: '400px',
-        }}
-      >
-        <Spin size='large' tip={t('正在加载请求详情...')} />
+      <div style={detailStateContainerStyle}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Spin size='large' />
+          <Text type='tertiary' style={{ whiteSpace: 'nowrap' }}>
+            {t('正在加载请求详情...')}
+          </Text>
+        </div>
       </div>
     );
   }
@@ -820,15 +842,7 @@ const RequestDetail = ({
   // Error state
   if (error) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          minHeight: '400px',
-        }}
-      >
+      <div style={detailStateContainerStyle}>
         <Empty description={t('错误: {{message}}', { message: error })} />
       </div>
     );
@@ -837,15 +851,7 @@ const RequestDetail = ({
   // No selection state
   if (!record) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          minHeight: '400px',
-        }}
-      >
+      <div style={detailStateContainerStyle}>
         <Empty description={t('选择一个请求查看详情')} />
       </div>
     );
@@ -980,27 +986,37 @@ const RequestDetail = ({
                           style={{
                             display: 'flex',
                             alignItems: 'center',
+                            justifyContent: 'space-between',
                             flexWrap: 'wrap',
                             gap: '6px 10px',
                           }}
                         >
-                          <Tag size='small'>
-                            {t('第 {{num}} 次', { num: attempt.attempt })}
-                          </Tag>
-                          <Text size='small'>
-                            {attempt.channel_name || t('未知渠道')} (ID:{' '}
-                            {attempt.channel_id || '-'})
-                          </Text>
-                          <Tag
-                            color={
-                              attemptStatusColors[attempt.status] || 'grey'
-                            }
-                            size='small'
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              flexWrap: 'wrap',
+                              gap: '6px 10px',
+                            }}
                           >
-                            {attemptLabels[attempt.status] ||
-                              attempt.status ||
-                              t('未知状态')}
-                          </Tag>
+                            <Tag size='small'>
+                              {t('第 {{num}} 次', { num: attempt.attempt })}
+                            </Tag>
+                            <Text size='small'>
+                              {attempt.channel_name || t('未知渠道')} (ID:{' '}
+                              {attempt.channel_id || '-'})
+                            </Text>
+                            <Tag
+                              color={
+                                attemptStatusColors[attempt.status] || 'grey'
+                              }
+                              size='small'
+                            >
+                              {attemptLabels[attempt.status] ||
+                                attempt.status ||
+                                t('未知状态')}
+                            </Tag>
+                          </div>
                           {isActive && isActiveAttempt && (
                             <Tooltip
                               content={t('中断当前请求并尝试下一个渠道')}
@@ -1031,8 +1047,8 @@ const RequestDetail = ({
                             {t('开始')}:{' '}
                             {attempt.started_at
                               ? new Date(
-                                  attempt.started_at,
-                                ).toLocaleTimeString()
+                                attempt.started_at,
+                              ).toLocaleTimeString()
                               : '-'}
                             {attempt.ended_at
                               ? ` | ${t('结束')}: ${new Date(attempt.ended_at).toLocaleTimeString()}`
@@ -1041,16 +1057,16 @@ const RequestDetail = ({
                           {(attempt.reason ||
                             attempt.error_code ||
                             attempt.http_status) && (
-                            <Text type='tertiary' size='small'>
-                              {t('原因')}: {attempt.reason || '-'}
-                              {attempt.error_code
-                                ? ` | ${t('错误码')}: ${attempt.error_code}`
-                                : ''}
-                              {attempt.http_status
-                                ? ` | HTTP ${attempt.http_status}`
-                                : ''}
-                            </Text>
-                          )}
+                              <Text type='tertiary' size='small'>
+                                {t('原因')}: {attempt.reason || '-'}
+                                {attempt.error_code
+                                  ? ` | ${t('错误码')}: ${attempt.error_code}`
+                                  : ''}
+                                {attempt.http_status
+                                  ? ` | HTTP ${attempt.http_status}`
+                                  : ''}
+                              </Text>
+                            )}
                         </div>
                       </div>
                     );
@@ -1165,10 +1181,10 @@ const RequestDetail = ({
               <Text size='small'>
                 {record.start_time
                   ? timestamp2string(
-                      Math.floor(
-                        new Date(record.start_time).getTime() / MS_TO_SECONDS,
-                      ),
-                    )
+                    Math.floor(
+                      new Date(record.start_time).getTime() / MS_TO_SECONDS,
+                    ),
+                  )
                   : '-'}
               </Text>
             </MetaPill>

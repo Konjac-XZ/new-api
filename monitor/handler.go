@@ -91,7 +91,7 @@ func GetRequestBody() gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{
 				"success":   true,
 				"type":      bodyType,
-				"body":      record.Downstream.Body,
+				"body":      record.Downstream.Body.String(),
 				"size":      record.Downstream.BodySize,
 				"truncated": record.Downstream.BodyTruncated,
 			})
@@ -103,7 +103,7 @@ func GetRequestBody() gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{
 				"success":   true,
 				"type":      bodyType,
-				"body":      record.Upstream.Body,
+				"body":      record.Upstream.Body.String(),
 				"size":      record.Upstream.BodySize,
 				"truncated": record.Upstream.BodyTruncated,
 			})
@@ -115,7 +115,7 @@ func GetRequestBody() gin.HandlerFunc {
 			c.JSON(http.StatusOK, gin.H{
 				"success":   true,
 				"type":      bodyType,
-				"body":      record.Response.Body,
+				"body":      record.Response.Body.String(),
 				"size":      record.Response.BodySize,
 				"truncated": record.Response.BodyTruncated,
 			})

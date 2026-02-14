@@ -6,8 +6,11 @@ export const MS_TO_SECONDS = 1000;
 export const BODY_DISPLAY_LIMIT_BYTES = 20000;
 
 // Duration thresholds for color coding
-export const DURATION_WARNING_THRESHOLD_S = 3;
-export const DURATION_ERROR_THRESHOLD_S = 10;
+
+export const DURATION_INSTANT_THRESHOLD_S = 10;
+export const DURATION_FAST_THRESHOLD_S = 30;
+export const DURATION_MEDIUM_THRESHOLD_S = 60;
+export const DURATION_SLOW_THRESHOLD_S = 120;
 
 // WebSocket connection constants
 export const MAX_RECONNECT_ATTEMPTS = 10;

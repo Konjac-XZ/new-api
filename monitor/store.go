@@ -537,16 +537,19 @@ func cloneRecord(record *RequestRecord) *RequestRecord {
 	cloned := *record
 	cloned.Downstream = record.Downstream
 	cloned.Downstream.Headers = cloneStringMap(record.Downstream.Headers)
+	cloned.Downstream.Body = cloneMonitorBody(record.Downstream.Body)
 
 	if record.Upstream != nil {
 		upstream := *record.Upstream
 		upstream.Headers = cloneStringMap(record.Upstream.Headers)
+		upstream.Body = cloneMonitorBody(record.Upstream.Body)
 		cloned.Upstream = &upstream
 	}
 
 	if record.Response != nil {
 		response := *record.Response
 		response.Headers = cloneStringMap(record.Response.Headers)
+		response.Body = cloneMonitorBody(record.Response.Body)
 		if record.Response.Error != nil {
 			errInfo := *record.Response.Error
 			response.Error = &errInfo
@@ -568,5 +571,14 @@ func cloneStringMap(input map[string]string) map[string]string {
 	for key, value := range input {
 		cloned[key] = value
 	}
+	return cloned
+}
+
+func cloneMonitorBody(input MonitorBody) MonitorBody {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make([]byte, len(input))
+	copy(cloned, input)
 	return cloned
 }

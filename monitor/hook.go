@@ -76,9 +76,10 @@ func ginHeadersToMap(c *gin.Context) map[string]string {
 	return result
 }
 
-// truncatedBody returns full body and indicates no truncation
-func truncatedBody(body []byte) (string, bool) {
-	return string(body), false
+// monitorBody returns full body and indicates no truncation.
+// Body is kept as raw bytes and rendered as string only in API handlers.
+func monitorBody(body []byte) (MonitorBody, bool) {
+	return body, false
 }
 
 // RecordStart records the start of a request
@@ -96,7 +97,7 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 	tokenName := c.GetString("token_name")
 	model := c.GetString("original_model")
 
-	bodyStr, truncated := truncatedBody(requestBody)
+	bodyBytes, truncated := monitorBody(requestBody)
 
 	record := &RequestRecord{
 		ID:        requestId,
@@ -106,7 +107,7 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 			Method:        c.Request.Method,
 			Path:          c.Request.URL.Path,
 			Headers:       ginHeadersToMap(c),
-			Body:          bodyStr,
+			Body:          bodyBytes,
 			BodySize:      len(requestBody),
 			BodyTruncated: truncated,
 			ClientIP:      c.ClientIP(),
@@ -127,13 +128,13 @@ func RecordUpstream(recordID string, url string, method string, headers http.Hea
 		return
 	}
 
-	bodyStr, truncated := truncatedBody(body)
+	bodyBytes, truncated := monitorBody(body)
 	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		r.Upstream = &UpstreamInfo{
 			URL:           url,
 			Method:        method,
 			Headers:       headersToMap(headers),
-			Body:          bodyStr,
+			Body:          bodyBytes,
 			BodySize:      len(body),
 			BodyTruncated: truncated,
 		}
@@ -156,11 +157,11 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 		return
 	}
 
-	bodyStr, truncated := truncatedBody(body)
+	bodyBytes, truncated := monitorBody(body)
 	response := &ResponseInfo{
 		StatusCode:       statusCode,
 		Headers:          headersToMap(headers),
-		Body:             bodyStr,
+		Body:             bodyBytes,
 		BodySize:         len(body),
 		BodyTruncated:    truncated,
 		PromptTokens:     promptTokens,
@@ -184,61 +185,7 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 		}
 	}
 
-	// Inline MarkChannelPhase logic
-	var phase string
-	if err != nil {
-		phase = PhaseError
-	} else {
-		phase = PhaseCompleted
-	}
-	markPhase := func(r *RequestRecord) {
-		r.CurrentPhase = phase
-		if len(r.ChannelAttempts) == 0 {
-			return
-		}
-		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
-		switch phase {
-		case PhaseCompleted:
-			if last.EndedAt == nil {
-				now := time.Now()
-				last.EndedAt = &now
-			}
-			last.Status = AttemptStatusSucceeded
-		case PhaseError:
-			if last.EndedAt == nil {
-				now := time.Now()
-				last.EndedAt = &now
-			}
-			if last.Status != AttemptStatusSucceeded {
-				last.Status = AttemptStatusFailed
-			}
-		}
-	}
-
-	// Inline FinishChannelAttempt logic
-	var attemptStatus, reason string
-	if err != nil {
-		attemptStatus = AttemptStatusFailed
-		reason = err.Error()
-	} else {
-		attemptStatus = AttemptStatusSucceeded
-	}
-	finishAttempt := func(r *RequestRecord) {
-		if len(r.ChannelAttempts) == 0 {
-			return
-		}
-		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
-		if last.EndedAt != nil {
-			return
-		}
-		now := time.Now()
-		last.EndedAt = &now
-		last.Status = attemptStatus
-		last.Reason = reason
-		last.HTTPStatus = statusCode
-	}
-
-	GetManager().GetStore().BatchUpdate(recordID, true, markComplete, markPhase, finishAttempt)
+	GetManager().GetStore().BatchUpdate(recordID, false, markComplete)
 }
 
 // RecordResponseWithContext records response using gin context
@@ -412,24 +359,53 @@ func MarkChannelPhaseWithContext(c *gin.Context, phase string) {
 // FinishChannelAttempt finalizes the latest attempt with a terminal status and reason.
 // Uses UpdateAndBroadcastChannel for a single lock acquisition.
 func FinishChannelAttempt(recordID string, status string, reason string, errorCode string, httpStatus int) {
+	FinishChannelAttemptAndMarkPhase(recordID, status, "", reason, errorCode, httpStatus)
+}
+
+// FinishChannelAttemptAndMarkPhase finalizes the latest attempt and updates
+// the request phase in a single store update.
+func FinishChannelAttemptAndMarkPhase(recordID string, status string, phase string, reason string, errorCode string, httpStatus int) {
 	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
 		return
 	}
 
-	GetManager().GetStore().UpdateAndBroadcastChannel(recordID, func(r *RequestRecord) {
+	GetManager().GetStore().UpdateAndBroadcastChannelIfChanged(recordID, func(r *RequestRecord) bool {
+		changed := false
+
+		if phase != "" && r.CurrentPhase != phase {
+			r.CurrentPhase = phase
+			changed = true
+		}
+
 		if len(r.ChannelAttempts) == 0 {
-			return
+			return changed
 		}
 		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
 		if last.EndedAt != nil {
-			return
+			return changed
 		}
 		now := time.Now()
 		last.EndedAt = &now
-		last.Status = status
-		last.Reason = reason
-		last.ErrorCode = errorCode
-		last.HTTPStatus = httpStatus
+		changed = true
+
+		if last.Status != status {
+			last.Status = status
+			changed = true
+		}
+		if last.Reason != reason {
+			last.Reason = reason
+			changed = true
+		}
+		if last.ErrorCode != errorCode {
+			last.ErrorCode = errorCode
+			changed = true
+		}
+		if last.HTTPStatus != httpStatus {
+			last.HTTPStatus = httpStatus
+			changed = true
+		}
+
+		return changed
 	})
 }
 
@@ -440,6 +416,16 @@ func FinishChannelAttemptWithContext(c *gin.Context, status string, reason strin
 		return
 	}
 	FinishChannelAttempt(recordID, status, reason, errorCode, httpStatus)
+}
+
+// FinishChannelAttemptAndMarkPhaseWithContext wraps
+// FinishChannelAttemptAndMarkPhase using gin context.
+func FinishChannelAttemptAndMarkPhaseWithContext(c *gin.Context, status string, phase string, reason string, errorCode string, httpStatus int) {
+	recordID := c.GetString("monitor_id")
+	if recordID == "" {
+		return
+	}
+	FinishChannelAttemptAndMarkPhase(recordID, status, phase, reason, errorCode, httpStatus)
 }
 
 // UpdateMetadata updates metadata for a request (channel info, stream status, etc.)

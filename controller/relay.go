@@ -280,7 +280,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			attemptCounter++
 			if monitorID != "" {
 				monitor.StartChannelAttempt(monitorID, channel.Id, channel.Name, attemptCounter)
-				monitor.MarkChannelPhase(monitorID, monitor.PhaseWaitingUpstream)
 			}
 
 			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
@@ -298,8 +297,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 			if newAPIError == nil {
 				if monitorID != "" {
-					monitor.FinishChannelAttempt(monitorID, monitor.AttemptStatusSucceeded, "", "", c.Writer.Status())
-					monitor.MarkChannelPhase(monitorID, monitor.PhaseCompleted)
+					monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusSucceeded, monitor.PhaseCompleted, "", "", c.Writer.Status())
 				}
 				return
 			}
@@ -322,8 +320,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				)
 				if monitorID != "" {
 					reason, errCode := monitorReasonFromError(newAPIError)
-					monitor.FinishChannelAttempt(monitorID, monitor.AttemptStatusAbandoned, reason, errCode, newAPIError.StatusCode)
-					monitor.MarkChannelPhase(monitorID, monitor.PhaseError)
+					monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusAbandoned, monitor.PhaseError, reason, errCode, newAPIError.StatusCode)
 				}
 				return
 			}
@@ -335,8 +332,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if errors.Is(newAPIError.Err, context.Canceled) {
 				if monitorID != "" {
 					reason, errCode := monitorReasonFromError(newAPIError)
-					monitor.FinishChannelAttempt(monitorID, monitor.AttemptStatusAbandoned, reason, errCode, newAPIError.StatusCode)
-					monitor.MarkChannelPhase(monitorID, monitor.PhaseError)
+					monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusAbandoned, monitor.PhaseError, reason, errCode, newAPIError.StatusCode)
 				}
 				logger.LogInfo(c, "Channel attempt canceled (internal), retrying next attempt")
 				continue
@@ -344,8 +340,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 			if monitorID != "" {
 				reason, errCode := monitorReasonFromError(newAPIError)
-				monitor.FinishChannelAttempt(monitorID, monitor.AttemptStatusFailed, reason, errCode, newAPIError.StatusCode)
-				monitor.MarkChannelPhase(monitorID, monitor.PhaseError)
+				monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusFailed, monitor.PhaseError, reason, errCode, newAPIError.StatusCode)
 			}
 
 			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
