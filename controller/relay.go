@@ -1,13 +1,13 @@
 package controller
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -182,7 +182,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if priceData.FreeModel {
 		// Free model, skip pre-consumption
 	} else {
-		newAPIError = service.PreConsumeQuota(c, priceData.QuotaToPreConsume, relayInfo)
+		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
 		if newAPIError != nil {
 			return
 		}
@@ -192,14 +192,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		// Only return quota if downstream failed and quota was actually pre-consumed
 		if newAPIError != nil {
 			newAPIError = service.NormalizeViolationFeeError(newAPIError)
-			if relayInfo.FinalPreConsumedQuota != 0 {
-				service.ReturnPreConsumedQuota(c, relayInfo)
+			if relayInfo.Billing != nil {
+				relayInfo.Billing.Refund(c)
 			}
 			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
 		}
 	}()
 
-	requestBody, bodyErr := common.GetRequestBody(c)
+	requestBodyStorage, bodyErr := common.GetBodyStorage(c)
 	if bodyErr != nil {
 		// Ensure consistent 413 for oversized bodies even when error occurs later (e.g., retry path)
 		if common.IsRequestBodyTooLargeError(bodyErr) || errors.Is(bodyErr, common.ErrRequestBodyTooLarge) {
@@ -213,7 +213,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	monitorID := ""
 	// Record request start for monitoring
 	if monitor.IsEnabled() && shouldMonitorRequest(relayInfo, relayFormat) {
-		monitorID = monitor.RecordStart(c, requestBody)
+		bodyBytes, _ := requestBodyStorage.Bytes()
+		monitorID = monitor.RecordStart(c, bodyBytes)
 		if monitorID != "" {
 			c.Set("monitor_id", monitorID)
 		}
@@ -282,7 +283,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				monitor.StartChannelAttempt(monitorID, channel.Id, channel.Name, attemptCounter)
 			}
 
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+			if _, err := requestBodyStorage.Seek(0, io.SeekStart); err == nil {
+				c.Request.Body = io.NopCloser(requestBodyStorage)
+			}
 
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
@@ -480,6 +483,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if openaiErr == nil {
 		return false
 	}
+	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+		return false
+	}
 	if types.IsChannelError(openaiErr) {
 		return true
 	}
@@ -539,7 +545,12 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
-		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, 0, false, userGroup, other)
+		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+		if startTime.IsZero() {
+			startTime = time.Now()
+		}
+		useTimeSeconds := int(time.Since(startTime).Seconds())
+		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, false, userGroup, other)
 	}
 
 }
@@ -642,7 +653,7 @@ func RelayTask(c *gin.Context) {
 		logger.LogInfo(c, fmt.Sprintf("using channel #%d to retry (remain times %d)", channel.Id, retryParam.GetRetry()))
 		//middleware.SetupContextForSelectedChannel(c, channel, originalModel)
 
-		requestBody, err := common.GetRequestBody(c)
+		bodyStorage, err := common.GetBodyStorage(c)
 		if err != nil {
 			if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
 				taskErr = service.TaskErrorWrapperLocal(err, "read_request_body_failed", http.StatusRequestEntityTooLarge)
@@ -651,7 +662,7 @@ func RelayTask(c *gin.Context) {
 			}
 			break
 		}
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+		c.Request.Body = io.NopCloser(bodyStorage)
 		taskErr = taskRelayHandler(c, relayInfo)
 	}
 	useChannel := c.GetStringSlice("use_channel")
@@ -679,5 +690,43 @@ func taskRelayHandler(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dto.Tas
 }
 
 func shouldRetryTaskRelay(c *gin.Context, channelId int, taskErr *dto.TaskError, retryTimes int) bool {
+	if taskErr == nil {
+		return false
+	}
+	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+		return false
+	}
+	if retryTimes <= 0 {
+		return false
+	}
+	if _, ok := c.Get("specific_channel_id"); ok {
+		return false
+	}
+	if taskErr.StatusCode == http.StatusTooManyRequests {
+		return true
+	}
+	if taskErr.StatusCode == 307 {
+		return true
+	}
+	if taskErr.StatusCode/100 == 5 {
+		// 超时不重试
+		if taskErr.StatusCode == 504 || taskErr.StatusCode == 524 {
+			return false
+		}
+		return true
+	}
+	if taskErr.StatusCode == http.StatusBadRequest {
+		return false
+	}
+	if taskErr.StatusCode == 408 {
+		// azure处理超时不重试
+		return false
+	}
+	if taskErr.LocalError {
+		return false
+	}
+	if taskErr.StatusCode/100 == 2 {
+		return false
+	}
 	return true
 }

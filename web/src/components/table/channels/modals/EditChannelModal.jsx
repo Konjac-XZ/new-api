@@ -175,6 +175,7 @@ const EditChannelModal = (props) => {
     allow_service_tier: false,
     disable_store: false, // false = 允许透传（默认开启）
     allow_safety_identifier: false,
+    claude_beta_query: false,
   };
   const [batch, setBatch] = useState(false);
   const [multiToSingle, setMultiToSingle] = useState(false);
@@ -642,6 +643,7 @@ const EditChannelModal = (props) => {
           data.disable_store = parsedSettings.disable_store || false;
           data.allow_safety_identifier =
             parsedSettings.allow_safety_identifier || false;
+          data.claude_beta_query = parsedSettings.claude_beta_query || false;
         } catch (error) {
           console.error('解析其他设置失败:', error);
           data.azure_responses_version = '';
@@ -652,6 +654,7 @@ const EditChannelModal = (props) => {
           data.allow_service_tier = false;
           data.disable_store = false;
           data.allow_safety_identifier = false;
+          data.claude_beta_query = false;
         }
       } else {
         // 兼容历史数据：老渠道没有 settings 时，默认按 json 展示
@@ -661,6 +664,7 @@ const EditChannelModal = (props) => {
         data.allow_service_tier = false;
         data.disable_store = false;
         data.allow_safety_identifier = false;
+        data.claude_beta_query = false;
       }
 
       if (
@@ -1412,6 +1416,9 @@ const EditChannelModal = (props) => {
         settings.allow_safety_identifier =
           localInputs.allow_safety_identifier === true;
       }
+      if (localInputs.type === 14) {
+        settings.claude_beta_query = localInputs.claude_beta_query === true;
+      }
     }
 
     localInputs.settings = JSON.stringify(settings);
@@ -1446,6 +1453,7 @@ const EditChannelModal = (props) => {
     delete localInputs.allow_service_tier;
     delete localInputs.disable_store;
     delete localInputs.allow_safety_identifier;
+    delete localInputs.claude_beta_query;
 
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
@@ -1889,6 +1897,17 @@ const EditChannelModal = (props) => {
                       disabled={isIonetLocked}
                     />
 
+                    {inputs.type === 57 && (
+                      <Banner
+                        type='warning'
+                        closeIcon={null}
+                        className='mb-4 rounded-xl'
+                        description={t(
+                          '免责声明：仅限个人使用，请勿分发或共享任何凭证。该渠道存在前置条件与使用门槛，请在充分了解流程与风险后使用，并遵守 OpenAI 的相关条款与政策。相关凭证与配置仅限接入 Codex CLI 使用，不适用于其他客户端、平台或渠道。',
+                        )}
+                      />
+                    )}
+
                     {inputs.type === 20 && (
                       <Form.Switch
                         field='is_enterprise_account'
@@ -2076,10 +2095,17 @@ const EditChannelModal = (props) => {
                               rules={
                                 isEdit
                                   ? []
-                                  : [{ required: true, message: t('请输入密钥') }]
+                                  : [
+                                      {
+                                        required: true,
+                                        message: t('请输入密钥'),
+                                      },
+                                    ]
                               }
                               autoComplete='new-password'
-                              onChange={(value) => handleInputChange('key', value)}
+                              onChange={(value) =>
+                                handleInputChange('key', value)
+                              }
                               disabled={isIonetLocked}
                               extraText={
                                 <div className='flex flex-col gap-2'>
@@ -2174,7 +2200,9 @@ const EditChannelModal = (props) => {
                                   </Button>
                                   <Button
                                     size='small'
-                                    type={useManualInput ? 'primary' : 'tertiary'}
+                                    type={
+                                      useManualInput ? 'primary' : 'tertiary'
+                                    }
                                     onClick={() => {
                                       setUseManualInput(true);
                                       // 切换到手动输入模式时清空文件上传相关状态
@@ -3206,9 +3234,12 @@ const EditChannelModal = (props) => {
                                   'header_override',
                                   JSON.stringify(
                                     {
+                                      '*': true,
+                                      're:^X-Trace-.*$': true,
+                                      'X-Foo': '{client_header:X-Foo}',
+                                      Authorization: 'Bearer {api_key}',
                                       'User-Agent':
                                         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36 Edg/139.0.0.0',
-                                      Authorization: 'Bearer{api_key}',
                                     },
                                     null,
                                     2,
@@ -3217,6 +3248,23 @@ const EditChannelModal = (props) => {
                               }
                             >
                               {t('填入模板')}
+                            </Text>
+                            <Text
+                              className='!text-semi-color-primary cursor-pointer'
+                              onClick={() =>
+                                handleInputChange(
+                                  'header_override',
+                                  JSON.stringify(
+                                    {
+                                      '*': true,
+                                    },
+                                    null,
+                                    2,
+                                  ),
+                                )
+                              }
+                            >
+                              {t('填入透传模版')}
                             </Text>
                             <Text
                               className='!text-semi-color-primary cursor-pointer'
@@ -3370,6 +3418,24 @@ const EditChannelModal = (props) => {
                         </Text>
                       </div>
                     </div>
+
+                    {inputs.type === 14 && (
+                      <Form.Switch
+                        field='claude_beta_query'
+                        label={t('Claude 强制 beta=true')}
+                        checkedText={t('开')}
+                        uncheckedText={t('关')}
+                        onChange={(value) =>
+                          handleChannelOtherSettingsChange(
+                            'claude_beta_query',
+                            value,
+                          )
+                        }
+                        extraText={t(
+                          '开启后，该渠道请求 Claude 时将强制追加 ?beta=true（无需客户端手动传参）',
+                        )}
+                      />
+                    )}
 
                     {inputs.type === 1 && (
                       <Form.Switch

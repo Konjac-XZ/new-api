@@ -122,8 +122,8 @@ const PageLayout = () => {
 
   return (
     <Layout
+      className='app-layout'
       style={{
-        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         overflow: isMobile ? 'visible' : 'hidden',
@@ -154,6 +154,7 @@ const PageLayout = () => {
       >
         {showSider && (
           <Sider
+            className='app-sider'
             style={{
               position: 'fixed',
               left: 0,
@@ -161,7 +162,6 @@ const PageLayout = () => {
               zIndex: 99,
               border: 'none',
               paddingRight: '0',
-              height: 'calc(100vh - 64px)',
               width: 'var(--sidebar-current-width)',
             }}
           >
