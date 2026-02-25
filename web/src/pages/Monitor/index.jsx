@@ -1526,6 +1526,12 @@ const Monitor = () => {
     setDetailVisible(true);
   }, []);
 
+  const localActiveCount = useMemo(() => {
+    return summariesWithStatus.filter((r) =>
+      isActiveStatus(r.displayStatus || deriveDisplayStatus(r)),
+    ).length;
+  }, [summariesWithStatus]);
+
   const filteredSummaries = useMemo(() => {
     return summariesWithStatus.filter((r) => {
       const displayStatus = r.displayStatus || deriveDisplayStatus(r);
@@ -1663,7 +1669,7 @@ const Monitor = () => {
             tab={
               <Space>
                 {t('处理中')}
-                <Badge count={stats.active || 0} type='primary' />
+                <Badge count={localActiveCount} type='primary' />
               </Space>
             }
             itemKey='processing'
