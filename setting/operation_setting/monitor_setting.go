@@ -8,8 +8,8 @@ import (
 )
 
 type MonitorSetting struct {
-	AutoTestChannelEnabled      bool    `json:"auto_test_channel_enabled"`
-	AutoTestChannelMinutes      float64 `json:"auto_test_channel_minutes"`
+	AutoTestChannelEnabled bool    `json:"auto_test_channel_enabled"`
+	AutoTestChannelMinutes float64 `json:"auto_test_channel_minutes"`
 	ScheduledTestChannelEnabled bool    `json:"scheduled_test_channel_enabled"`
 }
 

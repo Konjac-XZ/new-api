@@ -837,25 +837,21 @@ func GetUserGroup(id int, fromDB bool) (group string, err error) {
 
 // GetUserSetting gets setting from Redis first, falls back to DB if needed
 func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error) {
-	var setting sql.NullString
+	var setting string
 	defer func() {
 		// Update Redis cache asynchronously on successful DB read
 		if shouldUpdateRedis(fromDB, err) {
 			gopool.Go(func() {
-				settingStr := ""
-				if setting.Valid {
-					settingStr = setting.String
-				}
-				if err := updateUserSettingCache(id, settingStr); err != nil {
+				if err := updateUserSettingCache(id, setting); err != nil {
 					common.SysLog("failed to update user setting cache: " + err.Error())
 				}
 			})
 		}
 	}()
 	if !fromDB && common.RedisEnabled {
-		settingStr, err := getUserSettingCache(id)
+		setting, err := getUserSettingCache(id)
 		if err == nil {
-			return settingStr, nil
+			return setting, nil
 		}
 		// Don't return error - fall through to DB
 	}
@@ -872,7 +868,7 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 		setting = ""
 	}
 	userBase := &UserBase{
-		Setting: settingStr,
+		Setting: setting,
 	}
 	return userBase.GetSetting(), nil
 }

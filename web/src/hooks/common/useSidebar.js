@@ -51,6 +51,7 @@ export const DEFAULT_ADMIN_CONFIG = {
     deployment: true,
     redemption: true,
     user: true,
+    subscription: true,
     monitor: true,
     setting: true,
   },
@@ -87,6 +88,7 @@ export const useSidebar = () => {
     const randomPart = Math.random().toString(16).slice(2);
     instanceIdRef.current = `sidebar-${Date.now()}-${randomPart}`;
   }
+
   // 获取管理员配置
   const adminConfig = useMemo(() => {
     if (statusState?.status?.SidebarModulesAdmin) {

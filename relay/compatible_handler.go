@@ -224,7 +224,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		c.Set("monitor_response_recorded", true)
 	}
 
-	containAudioTokens := usageData.CompletionTokenDetails.AudioTokens > 0 || usageData.PromptTokensDetails.AudioTokens > 0 || strings.HasPrefix(info.OriginModelName, "gpt-4o-audio")
+	containAudioTokens := usageData.CompletionTokenDetails.AudioTokens > 0 || usageData.PromptTokensDetails.AudioTokens > 0
 	containsAudioRatios := ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
 
 	if containAudioTokens && containsAudioRatios {

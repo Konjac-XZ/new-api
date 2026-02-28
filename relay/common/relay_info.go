@@ -58,23 +58,23 @@ type ResponsesUsageInfo struct {
 }
 
 type ChannelMeta struct {
-	ChannelType                 int
-	ChannelId                   int
-	ChannelIsMultiKey           bool
-	ChannelMultiKeyIndex        int
-	ChannelBaseUrl              string
-	ApiType                     int
-	ApiVersion                  string
-	ApiKey                      string
-	Organization                string
-	ChannelCreateTime           int64
-	ParamOverride               map[string]interface{}
-	HeadersOverride             map[string]interface{}
-	ChannelSetting              dto.ChannelSettings
-	ChannelOtherSettings        dto.ChannelOtherSettings
-	UpstreamModelName           string
-	IsModelMapped               bool
-	SupportStreamOptions        bool // 是否支持流式选项
+	ChannelType          int
+	ChannelId            int
+	ChannelIsMultiKey    bool
+	ChannelMultiKeyIndex int
+	ChannelBaseUrl       string
+	ApiType              int
+	ApiVersion           string
+	ApiKey               string
+	Organization         string
+	ChannelCreateTime    int64
+	ParamOverride        map[string]interface{}
+	HeadersOverride      map[string]interface{}
+	ChannelSetting       dto.ChannelSettings
+	ChannelOtherSettings dto.ChannelOtherSettings
+	UpstreamModelName    string
+	IsModelMapped        bool
+	SupportStreamOptions bool // 是否支持流式选项
 	MaxFirstTokenLatencySeconds int
 }
 

@@ -52,13 +52,13 @@ const (
 	ErrorCodeGenRelayInfoFailed ErrorCode = "gen_relay_info_failed"
 
 	// channel error
-	ErrorCodeChannelNoAvailableKey            ErrorCode = "channel:no_available_key"
-	ErrorCodeChannelParamOverrideInvalid      ErrorCode = "channel:param_override_invalid"
-	ErrorCodeChannelHeaderOverrideInvalid     ErrorCode = "channel:header_override_invalid"
-	ErrorCodeChannelModelMappedError          ErrorCode = "channel:model_mapped_error"
-	ErrorCodeChannelAwsClientError            ErrorCode = "channel:aws_client_error"
-	ErrorCodeChannelInvalidKey                ErrorCode = "channel:invalid_key"
-	ErrorCodeChannelResponseTimeExceeded      ErrorCode = "channel:response_time_exceeded"
+	ErrorCodeChannelNoAvailableKey        ErrorCode = "channel:no_available_key"
+	ErrorCodeChannelParamOverrideInvalid  ErrorCode = "channel:param_override_invalid"
+	ErrorCodeChannelHeaderOverrideInvalid ErrorCode = "channel:header_override_invalid"
+	ErrorCodeChannelModelMappedError      ErrorCode = "channel:model_mapped_error"
+	ErrorCodeChannelAwsClientError        ErrorCode = "channel:aws_client_error"
+	ErrorCodeChannelInvalidKey            ErrorCode = "channel:invalid_key"
+	ErrorCodeChannelResponseTimeExceeded  ErrorCode = "channel:response_time_exceeded"
 	ErrorCodeChannelFirstTokenLatencyExceeded ErrorCode = "channel:first_token_latency_exceeded"
 
 	// client request error
@@ -67,7 +67,7 @@ const (
 	ErrorCodeAccessDenied          ErrorCode = "access_denied"
 
 	// request error
-	ErrorCodeBadRequestBody     ErrorCode = "bad_request_body"
+	ErrorCodeBadRequestBody ErrorCode = "bad_request_body"
 	ErrorCodeDownstreamCanceled ErrorCode = "downstream_canceled"
 
 	// response error

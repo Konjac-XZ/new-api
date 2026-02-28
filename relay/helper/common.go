@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/gin-gonic/gin"
@@ -122,7 +123,7 @@ func Done(c *gin.Context) {
 
 func WssString(c *gin.Context, ws *websocket.Conn, str string) error {
 	if ws == nil {
-		// logger.LogError(c, "websocket connection is nil")
+		logger.LogError(c, "websocket connection is nil")
 		return errors.New("websocket connection is nil")
 	}
 	//common.LogInfo(c, fmt.Sprintf("sending message: %s", str))
@@ -135,7 +136,7 @@ func WssObject(c *gin.Context, ws *websocket.Conn, object interface{}) error {
 		return fmt.Errorf("error marshalling object: %w", err)
 	}
 	if ws == nil {
-		// logger.LogError(c, "websocket connection is nil")
+		logger.LogError(c, "websocket connection is nil")
 		return errors.New("websocket connection is nil")
 	}
 	//common.LogInfo(c, fmt.Sprintf("sending message: %s", jsonData))

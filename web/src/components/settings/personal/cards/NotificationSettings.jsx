@@ -55,7 +55,14 @@ const NotificationSettings = ({
   handleNotificationSettingChange,
   saveNotificationSettings,
 }) => {
-  const getDefaultSidebarModules = () => ({
+  const formApiRef = useRef(null);
+  const [statusState] = useContext(StatusContext);
+  const [userState] = useContext(UserContext);
+
+  // 左侧边栏设置相关状态
+  const [sidebarLoading, setSidebarLoading] = useState(false);
+  const [activeTabKey, setActiveTabKey] = useState('notification');
+  const [sidebarModulesUser, setSidebarModulesUser] = useState({
     chat: {
       enabled: true,
       playground: true,
@@ -86,38 +93,6 @@ const NotificationSettings = ({
       setting: true,
     },
   });
-
-  const mergeSidebarConfig = (defaults, overrides) => {
-    const result = { ...defaults };
-
-    Object.keys(overrides || {}).forEach((sectionKey) => {
-      const overrideSection = overrides[sectionKey];
-
-      if (
-        overrideSection &&
-        typeof overrideSection === 'object' &&
-        !Array.isArray(overrideSection)
-      ) {
-        const defaultSection = defaults[sectionKey] || {};
-        result[sectionKey] = { ...defaultSection, ...overrideSection };
-      } else {
-        result[sectionKey] = overrideSection;
-      }
-    });
-
-    return result;
-  };
-
-  const formApiRef = useRef(null);
-  const [statusState] = useContext(StatusContext);
-  const [userState] = useContext(UserContext);
-
-  // 左侧边栏设置相关状态
-  const [sidebarLoading, setSidebarLoading] = useState(false);
-  const [activeTabKey, setActiveTabKey] = useState('notification');
-  const [sidebarModulesUser, setSidebarModulesUser] = useState(
-    getDefaultSidebarModules(),
-  );
   const [adminConfig, setAdminConfig] = useState(null);
 
   // 使用后端权限验证替代前端角色判断
@@ -211,36 +186,31 @@ const NotificationSettings = ({
       try {
         // 获取管理员全局配置
         if (statusState?.status?.SidebarModulesAdmin) {
-    try {
-      const adminConf = JSON.parse(
-        statusState.status.SidebarModulesAdmin,
-      );
-      setAdminConfig(mergeAdminConfig(adminConf));
-    } catch (error) {
-      setAdminConfig(mergeAdminConfig(null));
-    }
-  } else {
-    setAdminConfig(mergeAdminConfig(null));
+          try {
+            const adminConf = JSON.parse(
+              statusState.status.SidebarModulesAdmin,
+            );
+            setAdminConfig(mergeAdminConfig(adminConf));
+          } catch (error) {
+            setAdminConfig(mergeAdminConfig(null));
+          }
+        } else {
+          setAdminConfig(mergeAdminConfig(null));
         }
 
         // 获取用户个人配置
         const userRes = await API.get('/api/user/self');
         if (userRes.data.success && userRes.data.data.sidebar_modules) {
-    let userConf;
-    if (typeof userRes.data.data.sidebar_modules === 'string') {
-      userConf = JSON.parse(userRes.data.data.sidebar_modules);
-    } else {
-      userConf = userRes.data.data.sidebar_modules;
-    }
-    setSidebarModulesUser(
-      mergeSidebarConfig(getDefaultSidebarModules(), userConf),
-    );
-  } else {
-    setSidebarModulesUser(getDefaultSidebarModules());
+          let userConf;
+          if (typeof userRes.data.data.sidebar_modules === 'string') {
+            userConf = JSON.parse(userRes.data.data.sidebar_modules);
+          } else {
+            userConf = userRes.data.data.sidebar_modules;
+          }
+          setSidebarModulesUser(userConf);
         }
       } catch (error) {
         console.error('加载边栏配置失败:', error);
-        setSidebarModulesUser(getDefaultSidebarModules());
       }
     };
 

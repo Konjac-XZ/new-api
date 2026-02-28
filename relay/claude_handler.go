@@ -79,8 +79,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			request.TopP = 0
 			request.Temperature = common.GetPointer[float64](1.0)
 		}
-		// Preserve explicit mapping to a thinking model; only trim suffix when the origin is explicitly blacklisted.
-		if !info.IsModelMapped && !model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) {
+		if !model_setting.ShouldPreserveThinkingSuffix(info.OriginModelName) {
 			request.Model = strings.TrimSuffix(request.Model, "-thinking")
 		}
 		info.UpstreamModelName = request.Model
@@ -111,10 +110,25 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
-	passThrough := model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled
+	if !model_setting.GetGlobalSettings().PassThroughRequestEnabled &&
+		!info.ChannelSetting.PassThroughBodyEnabled &&
+		service.ShouldChatCompletionsUseResponsesGlobal(info.ChannelId, info.ChannelType, info.OriginModelName) {
+		openAIRequest, convErr := service.ClaudeToOpenAIRequest(*request, info)
+		if convErr != nil {
+			return types.NewError(convErr, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+
+		usage, newApiErr := chatCompletionsViaResponses(c, info, adaptor, openAIRequest)
+		if newApiErr != nil {
+			return newApiErr
+		}
+
+		service.PostClaudeConsumeQuota(c, info, usage)
+		return nil
+	}
 
 	var requestBody io.Reader
-	if passThrough {
+	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
