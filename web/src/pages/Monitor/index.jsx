@@ -1642,13 +1642,6 @@ const Monitor = () => {
             />
           </Space>
           <Space>
-            <Text type='tertiary'>
-              {t('活跃: {{active}} | 总计: {{total}} | 内存: {{memory}}', {
-                active: stats.active || 0,
-                total: stats.total || 0,
-                memory: formatMemory(stats.memory || 0),
-              })}
-            </Text>
             {!connected && (
               <Button icon={<IconRefresh />} onClick={reconnect}>
                 {t('重新连接')}
