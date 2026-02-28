@@ -55,6 +55,9 @@ func ShouldDisableChannel(channelType int, err *types.NewAPIError) bool {
 	if types.IsSkipRetryError(err) {
 		return false
 	}
+	if shouldDisableByAbnormalStatusCode(err.StatusCode) {
+		return true
+	}
 	if operation_setting.ShouldDisableByStatusCode(err.StatusCode) {
 		return true
 	}
@@ -97,6 +100,16 @@ func ShouldDisableChannel(channelType int, err *types.NewAPIError) bool {
 	lowerMessage := strings.ToLower(err.Error())
 	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
 	return search
+}
+
+func shouldDisableByAbnormalStatusCode(statusCode int) bool {
+	if statusCode >= 200 && statusCode < 300 {
+		return false
+	}
+	if statusCode < 100 || statusCode > 599 {
+		return true
+	}
+	return operation_setting.ShouldRetryByStatusCode(statusCode)
 }
 
 func ShouldEnableChannel(newAPIError *types.NewAPIError, status int) bool {
