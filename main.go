@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/monitor"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
 	_ "github.com/QuantumNous/new-api/setting/performance_setting"
@@ -112,6 +113,15 @@ func main() {
 
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
+
+	// Wire task polling adaptor factory (breaks service -> relay import cycle)
+	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
+		a := relay.GetTaskAdaptor(platform)
+		if a == nil {
+			return nil
+		}
+		return a
+	}
 
 	if common.IsMasterNode && constant.UpdateTask {
 		gopool.Go(func() {

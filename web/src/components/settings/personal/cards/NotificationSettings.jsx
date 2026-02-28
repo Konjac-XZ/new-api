@@ -79,6 +79,7 @@ const NotificationSettings = ({
       channel: true,
       models: true,
       deployment: true,
+      subscription: true,
       redemption: true,
       user: true,
       monitor: true,
@@ -179,7 +180,29 @@ const NotificationSettings = ({
   };
 
   const resetSidebarModules = () => {
-  setSidebarModulesUser(getDefaultSidebarModules());
+    const defaultConfig = {
+      chat: { enabled: true, playground: true, chat: true },
+      console: {
+        enabled: true,
+        detail: true,
+        token: true,
+        log: true,
+        midjourney: true,
+        task: true,
+      },
+      personal: { enabled: true, topup: true, personal: true },
+      admin: {
+        enabled: true,
+        channel: true,
+        models: true,
+        deployment: true,
+        subscription: true,
+        redemption: true,
+        user: true,
+        setting: true,
+      },
+    };
+    setSidebarModulesUser(defaultConfig);
   };
 
   // 加载左侧边栏配置
@@ -305,6 +328,11 @@ const NotificationSettings = ({
           key: 'deployment',
           title: t('模型部署'),
           description: t('模型部署管理'),
+        },
+        {
+          key: 'subscription',
+          title: t('订阅管理'),
+          description: t('订阅套餐管理'),
         },
         {
           key: 'redemption',
