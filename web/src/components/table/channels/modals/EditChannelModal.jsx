@@ -27,7 +27,7 @@ import {
   verifyJSON,
 } from '../../../../helpers';
 import { useIsMobile } from '../../../../hooks/common/useIsMobile';
-import { CHANNEL_OPTIONS } from '../../../../constants';
+import { CHANNEL_OPTIONS, MODEL_FETCHABLE_CHANNEL_TYPES } from '../../../../constants';
 import {
   SideSheet,
   Space,
@@ -59,6 +59,7 @@ import ModelSelectModal from './ModelSelectModal';
 import SingleModelSelectModal from './SingleModelSelectModal';
 import OllamaModelModal from './OllamaModelModal';
 import CodexOAuthModal from './CodexOAuthModal';
+import ParamOverrideEditorModal from './ParamOverrideEditorModal';
 import JSONEditor from '../../../common/ui/JSONEditor';
 import SecureVerificationModal from '../../../common/modals/SecureVerificationModal';
 import StatusCodeRiskGuardModal from './StatusCodeRiskGuardModal';
@@ -75,6 +76,7 @@ import {
   IconServer,
   IconSetting,
   IconCode,
+  IconCopy,
   IconGlobe,
   IconBolt,
   IconSearch,
@@ -97,6 +99,29 @@ const REGION_EXAMPLE = {
   'gemini-1.5-pro-002': 'europe-west2',
   'gemini-1.5-flash-002': 'europe-west2',
   'claude-3-5-sonnet-20240620': 'europe-west1',
+};
+const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8;
+
+const PARAM_OVERRIDE_LEGACY_TEMPLATE = {
+  temperature: 0,
+};
+
+const PARAM_OVERRIDE_OPERATIONS_TEMPLATE = {
+  operations: [
+    {
+      path: 'temperature',
+      mode: 'set',
+      value: 0.7,
+      conditions: [
+        {
+          path: 'model',
+          mode: 'prefix',
+          value: 'openai/',
+        },
+      ],
+      logic: 'AND',
+    },
+  ],
 };
 
 // 支持并且已适配通过接口获取模型列表的渠道类型
@@ -151,6 +176,7 @@ const EditChannelModal = (props) => {
     base_url: '',
     other: '',
     model_mapping: '',
+    param_override: '',
     status_code_mapping: '',
     models: [],
     auto_ban: 1,
@@ -183,6 +209,11 @@ const EditChannelModal = (props) => {
     allow_include_obfuscation: false,
     allow_inference_geo: false,
     claude_beta_query: false,
+    upstream_model_update_check_enabled: false,
+    upstream_model_update_auto_sync_enabled: false,
+    upstream_model_update_last_check_time: 0,
+    upstream_model_update_last_detected_models: [],
+    upstream_model_update_ignored_models: '',
   };
   const [batch, setBatch] = useState(false);
   const [multiToSingle, setMultiToSingle] = useState(false);
@@ -237,6 +268,23 @@ const EditChannelModal = (props) => {
       return [];
     }
   }, [inputs.model_mapping]);
+  const upstreamDetectedModels = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (inputs.upstream_model_update_last_detected_models || [])
+            .map((model) => String(model || '').trim())
+            .filter(Boolean),
+        ),
+      ),
+    [inputs.upstream_model_update_last_detected_models],
+  );
+  const upstreamDetectedModelsPreview = useMemo(
+    () => upstreamDetectedModels.slice(0, UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT),
+    [upstreamDetectedModels],
+  );
+  const upstreamDetectedModelsOmittedCount =
+    upstreamDetectedModels.length - upstreamDetectedModelsPreview.length;
   const modelSearchMatchedCount = useMemo(() => {
     const keyword = modelSearchValue.trim();
     if (!keyword) {
@@ -256,10 +304,68 @@ const EditChannelModal = (props) => {
       name: keyword,
     });
   }, [modelSearchMatchedCount, modelSearchValue, t]);
+  const paramOverrideMeta = useMemo(() => {
+    const raw =
+      typeof inputs.param_override === 'string'
+        ? inputs.param_override.trim()
+        : '';
+    if (!raw) {
+      return {
+        tagLabel: t('不更改'),
+        tagColor: 'grey',
+        preview: t(
+          '此项可选，用于覆盖请求参数。不支持覆盖 stream 参数',
+        ),
+      };
+    }
+    if (!verifyJSON(raw)) {
+      return {
+        tagLabel: t('JSON格式错误'),
+        tagColor: 'red',
+        preview: raw,
+      };
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      const pretty = JSON.stringify(parsed, null, 2);
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        Array.isArray(parsed.operations)
+      ) {
+        return {
+          tagLabel: `${t('新格式模板')} (${parsed.operations.length})`,
+          tagColor: 'cyan',
+          preview: pretty,
+        };
+      }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return {
+          tagLabel: `${t('旧格式模板')} (${Object.keys(parsed).length})`,
+          tagColor: 'blue',
+          preview: pretty,
+        };
+      }
+      return {
+        tagLabel: t('自定义 JSON'),
+        tagColor: 'orange',
+        preview: pretty,
+      };
+    } catch (error) {
+      return {
+        tagLabel: t('JSON格式错误'),
+        tagColor: 'red',
+        preview: raw,
+      };
+    }
+  }, [inputs.param_override, t]);
   const [isIonetChannel, setIsIonetChannel] = useState(false);
   const [ionetMetadata, setIonetMetadata] = useState(null);
   const [codexOAuthModalVisible, setCodexOAuthModalVisible] = useState(false);
   const [codexCredentialRefreshing, setCodexCredentialRefreshing] =
+    useState(false);
+  const [paramOverrideEditorVisible, setParamOverrideEditorVisible] =
     useState(false);
 
   // 密钥显示状态
@@ -588,6 +694,112 @@ const EditChannelModal = (props) => {
     }
   };
 
+  const formatUnixTime = (timestamp) => {
+    const value = Number(timestamp || 0);
+    if (!value) {
+      return t('暂无');
+    }
+    return new Date(value * 1000).toLocaleString();
+  };
+
+  const copyParamOverrideJson = async () => {
+    const raw =
+      typeof inputs.param_override === 'string'
+        ? inputs.param_override.trim()
+        : '';
+    if (!raw) {
+      showInfo(t('暂无可复制 JSON'));
+      return;
+    }
+
+    let content = raw;
+    if (verifyJSON(raw)) {
+      try {
+        content = JSON.stringify(JSON.parse(raw), null, 2);
+      } catch (error) {
+        content = raw;
+      }
+    }
+
+    const ok = await copy(content);
+    if (ok) {
+      showSuccess(t('参数覆盖 JSON 已复制'));
+    } else {
+      showError(t('复制失败'));
+    }
+  };
+
+  const parseParamOverrideInput = () => {
+    const raw =
+      typeof inputs.param_override === 'string'
+        ? inputs.param_override.trim()
+        : '';
+    if (!raw) return null;
+    if (!verifyJSON(raw)) {
+      throw new Error(t('当前参数覆盖不是合法的 JSON'));
+    }
+    return JSON.parse(raw);
+  };
+
+  const applyParamOverrideTemplate = (
+    templateType = 'operations',
+    applyMode = 'fill',
+  ) => {
+    try {
+      const parsedCurrent = parseParamOverrideInput();
+      if (templateType === 'legacy') {
+        if (applyMode === 'fill') {
+          handleInputChange(
+            'param_override',
+            JSON.stringify(PARAM_OVERRIDE_LEGACY_TEMPLATE, null, 2),
+          );
+          return;
+        }
+        const currentLegacy =
+          parsedCurrent &&
+            typeof parsedCurrent === 'object' &&
+            !Array.isArray(parsedCurrent) &&
+            !Array.isArray(parsedCurrent.operations)
+            ? parsedCurrent
+            : {};
+        const merged = {
+          ...PARAM_OVERRIDE_LEGACY_TEMPLATE,
+          ...currentLegacy,
+        };
+        handleInputChange('param_override', JSON.stringify(merged, null, 2));
+        return;
+      }
+
+      if (applyMode === 'fill') {
+        handleInputChange(
+          'param_override',
+          JSON.stringify(PARAM_OVERRIDE_OPERATIONS_TEMPLATE, null, 2),
+        );
+        return;
+      }
+      const currentOperations =
+        parsedCurrent &&
+          typeof parsedCurrent === 'object' &&
+          !Array.isArray(parsedCurrent) &&
+          Array.isArray(parsedCurrent.operations)
+          ? parsedCurrent.operations
+          : [];
+      const merged = {
+        operations: [
+          ...currentOperations,
+          ...PARAM_OVERRIDE_OPERATIONS_TEMPLATE.operations,
+        ],
+      };
+      handleInputChange('param_override', JSON.stringify(merged, null, 2));
+    } catch (error) {
+      showError(error.message || t('模板应用失败'));
+    }
+  };
+
+  const clearParamOverride = () => {
+    handleInputChange('param_override', '');
+  };
+
   const loadChannel = async () => {
     setLoading(true);
     let res = await API.get(`/api/channel/${channelId}`);
@@ -682,6 +894,22 @@ const EditChannelModal = (props) => {
           data.allow_inference_geo =
             parsedSettings.allow_inference_geo || false;
           data.claude_beta_query = parsedSettings.claude_beta_query || false;
+          data.upstream_model_update_check_enabled =
+            parsedSettings.upstream_model_update_check_enabled === true;
+          data.upstream_model_update_auto_sync_enabled =
+            parsedSettings.upstream_model_update_auto_sync_enabled === true;
+          data.upstream_model_update_last_check_time =
+            Number(parsedSettings.upstream_model_update_last_check_time) || 0;
+          data.upstream_model_update_last_detected_models = Array.isArray(
+            parsedSettings.upstream_model_update_last_detected_models,
+          )
+            ? parsedSettings.upstream_model_update_last_detected_models
+            : [];
+          data.upstream_model_update_ignored_models = Array.isArray(
+            parsedSettings.upstream_model_update_ignored_models,
+          )
+            ? parsedSettings.upstream_model_update_ignored_models.join(',')
+            : '';
         } catch (error) {
           console.error('解析其他设置失败:', error);
           data.azure_responses_version = '';
@@ -695,6 +923,11 @@ const EditChannelModal = (props) => {
           data.allow_include_obfuscation = false;
           data.allow_inference_geo = false;
           data.claude_beta_query = false;
+          data.upstream_model_update_check_enabled = false;
+          data.upstream_model_update_auto_sync_enabled = false;
+          data.upstream_model_update_last_check_time = 0;
+          data.upstream_model_update_last_detected_models = [];
+          data.upstream_model_update_ignored_models = '';
         }
       } else {
         // 兼容历史数据：老渠道没有 settings 时，默认按 json 展示
@@ -707,6 +940,11 @@ const EditChannelModal = (props) => {
         data.allow_include_obfuscation = false;
         data.allow_inference_geo = false;
         data.claude_beta_query = false;
+        data.upstream_model_update_check_enabled = false;
+        data.upstream_model_update_auto_sync_enabled = false;
+        data.upstream_model_update_last_check_time = 0;
+        data.upstream_model_update_last_detected_models = [];
+        data.upstream_model_update_ignored_models = '';
       }
 
       if (
@@ -838,7 +1076,7 @@ const EditChannelModal = (props) => {
     const mappingKey = String(pairKey ?? '').trim();
     if (!mappingKey) return;
 
-    if (!MODEL_FETCHABLE_TYPES.has(inputs.type)) {
+    if (!MODEL_FETCHABLE_CHANNEL_TYPES.has(inputs.type)) {
       return;
     }
 
@@ -1252,6 +1490,7 @@ const EditChannelModal = (props) => {
   const submit = async () => {
     const formValues = formApiRef.current ? formApiRef.current.getValues() : {};
     let localInputs = { ...formValues };
+    localInputs.param_override = inputs.param_override;
 
     if (localInputs.type === 57) {
       if (batch) {
@@ -1517,6 +1756,29 @@ const EditChannelModal = (props) => {
       }
     }
 
+    settings.upstream_model_update_check_enabled =
+      localInputs.upstream_model_update_check_enabled === true;
+    settings.upstream_model_update_auto_sync_enabled =
+      settings.upstream_model_update_check_enabled &&
+      localInputs.upstream_model_update_auto_sync_enabled === true;
+    settings.upstream_model_update_ignored_models = Array.from(
+      new Set(
+        String(localInputs.upstream_model_update_ignored_models || '')
+          .split(',')
+          .map((model) => model.trim())
+          .filter(Boolean),
+      ),
+    );
+    if (
+      !Array.isArray(settings.upstream_model_update_last_detected_models) ||
+      !settings.upstream_model_update_check_enabled
+    ) {
+      settings.upstream_model_update_last_detected_models = [];
+    }
+    if (typeof settings.upstream_model_update_last_check_time !== 'number') {
+      settings.upstream_model_update_last_check_time = 0;
+    }
+
     localInputs.settings = JSON.stringify(settings);
 
     const latencyValue = Number(localInputs.max_first_token_latency);
@@ -1552,6 +1814,11 @@ const EditChannelModal = (props) => {
     delete localInputs.allow_include_obfuscation;
     delete localInputs.allow_inference_geo;
     delete localInputs.claude_beta_query;
+    delete localInputs.upstream_model_update_check_enabled;
+    delete localInputs.upstream_model_update_auto_sync_enabled;
+    delete localInputs.upstream_model_update_last_check_time;
+    delete localInputs.upstream_model_update_last_detected_models;
+    delete localInputs.upstream_model_update_ignored_models;
 
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
@@ -2194,11 +2461,11 @@ const EditChannelModal = (props) => {
                                 isEdit
                                   ? []
                                   : [
-                                      {
-                                        required: true,
-                                        message: t('请输入密钥'),
-                                      },
-                                    ]
+                                    {
+                                      required: true,
+                                      message: t('请输入密钥'),
+                                    },
+                                  ]
                               }
                               autoComplete='new-password'
                               onChange={(value) =>
@@ -2930,7 +3197,7 @@ const EditChannelModal = (props) => {
                           >
                             {t('填入所有模型')}
                           </Button>
-                          {MODEL_FETCHABLE_TYPES.has(inputs.type) && (
+                          {MODEL_FETCHABLE_CHANNEL_TYPES.has(inputs.type) && (
                             <Button
                               size='small'
                               type='tertiary'
@@ -3033,6 +3300,44 @@ const EditChannelModal = (props) => {
                       }
                     />
 
+                    {MODEL_FETCHABLE_CHANNEL_TYPES.has(inputs.type) && (
+                      <>
+                        <Form.Switch
+                          field='upstream_model_update_check_enabled'
+                          label={t('是否检测上游模型更新')}
+                          checkedText={t('开')}
+                          uncheckedText={t('关')}
+                          onChange={(value) =>
+                            handleChannelOtherSettingsChange(
+                              'upstream_model_update_check_enabled',
+                              value,
+                            )
+                          }
+                          extraText={t(
+                            '开启后由后端定时任务检测该渠道上游模型变化',
+                          )}
+                        />
+                        <div className='text-xs text-gray-500 mb-2'>
+                          {t('上次检测时间')}:&nbsp;
+                          {formatUnixTime(
+                            inputs.upstream_model_update_last_check_time,
+                          )}
+                        </div>
+                        <Form.Input
+                          field='upstream_model_update_ignored_models'
+                          label={t('已忽略模型')}
+                          placeholder={t('例如：gpt-4.1-nano,gpt-4o-mini')}
+                          onChange={(value) =>
+                            handleInputChange(
+                              'upstream_model_update_ignored_models',
+                              value,
+                            )
+                          }
+                          showClear
+                        />
+                      </>
+                    )}
+
                     <Form.Input
                       field='test_model'
                       label={t('默认测试模型')}
@@ -3084,7 +3389,7 @@ const EditChannelModal = (props) => {
                       editorType='keyValue'
                       formApi={formApiRef.current}
                       renderStringValueSuffix={({ pairKey, value }) => {
-                        if (!MODEL_FETCHABLE_TYPES.has(inputs.type)) {
+                        if (!MODEL_FETCHABLE_CHANNEL_TYPES.has(inputs.type)) {
                           return null;
                         }
                         const disabled = !String(pairKey ?? '').trim();
@@ -3260,63 +3565,129 @@ const EditChannelModal = (props) => {
                         '\n{\n  "operations": [\n    {\n      "path": "temperature",\n      "mode": "set",\n      "value": 0.7,\n      "conditions": [\n        {\n          "path": "model",\n          "mode": "prefix",\n          "value": "gpt"\n        }\n      ]\n    }\n  ]\n}'
                       }
                       autosize
+
+                      <Form.Switch
+                      field='upstream_model_update_auto_sync_enabled'
+                      label={t('是否自动同步上游模型更新')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      disabled={!inputs.upstream_model_update_check_enabled}
                       onChange={(value) =>
-                        handleInputChange('param_override', value)
+                        handleChannelOtherSettingsChange(
+                          'upstream_model_update_auto_sync_enabled',
+                          value,
+                        )
                       }
-                      extraText={
-                        <div className='flex gap-2 flex-wrap'>
-                          <Text
-                            className='!text-semi-color-primary cursor-pointer'
-                            onClick={() =>
-                              handleInputChange(
-                                'param_override',
-                                JSON.stringify({ temperature: 0 }, null, 2),
-                              )
-                            }
-                          >
-                            {t('旧格式模板')}
-                          </Text>
-                          <Text
-                            className='!text-semi-color-primary cursor-pointer'
-                            onClick={() =>
-                              handleInputChange(
-                                'param_override',
-                                JSON.stringify(
-                                  {
-                                    operations: [
-                                      {
-                                        path: 'temperature',
-                                        mode: 'set',
-                                        value: 0.7,
-                                        conditions: [
-                                          {
-                                            path: 'model',
-                                            mode: 'prefix',
-                                            value: 'gpt',
-                                          },
-                                        ],
-                                        logic: 'AND',
-                                      },
-                                    ],
-                                  },
-                                  null,
-                                  2,
-                                ),
-                              )
-                            }
-                          >
-                            {t('新格式模板')}
-                          </Text>
-                          <Text
-                            className='!text-semi-color-primary cursor-pointer'
-                            onClick={() => formatJsonField('param_override')}
-                          >
-                            {t('格式化')}
-                          </Text>
-                        </div>
-                      }
-                      showClear
+                      extraText={t(
+                        '开启后检测到新增模型会自动加入当前渠道模型列表',
+                      )}
                     />
+                    <div className='text-xs text-gray-500 mb-3'>
+                      {t('上次检测到可加入模型')}:&nbsp;
+                      {upstreamDetectedModels.length === 0 ? (
+                        t('暂无')
+                      ) : (
+                        <>
+                          <Tooltip
+                            position='topLeft'
+                            content={
+                              <div className='max-w-[640px] break-all text-xs leading-5'>
+                                {upstreamDetectedModels.join(', ')}
+                              </div>
+                            }
+                          >
+                            <span className='cursor-help break-all'>
+                              {upstreamDetectedModelsPreview.join(', ')}
+                            </span>
+                          </Tooltip>
+                          <span className='ml-1 text-gray-400'>
+                            {upstreamDetectedModelsOmittedCount > 0
+                              ? t('（共 {{total}} 个，省略 {{omit}} 个）', {
+                                total: upstreamDetectedModels.length,
+                                omit: upstreamDetectedModelsOmittedCount,
+                              })
+                              : t('（共 {{total}} 个）', {
+                                total: upstreamDetectedModels.length,
+                              })}
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    <div className='mb-4'>
+                      <div className='flex items-center justify-between gap-2 mb-1'>
+                        <Text className='text-sm font-medium'>{t('参数覆盖')}</Text>
+                        <Space wrap>
+                          <Button
+                            size='small'
+                            type='primary'
+                            icon={<IconCode size={14} />}
+                            onClick={() => setParamOverrideEditorVisible(true)}
+                          >
+                            {t('可视化编辑')}
+                          </Button>
+                          <Button
+                            size='small'
+                            onClick={() =>
+                              applyParamOverrideTemplate('operations', 'fill')
+                            }
+                          >
+                            {t('填充新模板')}
+                          </Button>
+                          <Button
+                            size='small'
+                            onClick={() =>
+                              applyParamOverrideTemplate('legacy', 'fill')
+                            }
+                          >
+                            {t('填充旧模板')}
+                          </Button>
+                          <Button
+                            size='small'
+                            type='tertiary'
+                            onClick={clearParamOverride}
+                          >
+                            {t('清空')}
+                          </Button>
+                        </Space>
+                      </div>
+                      <Text type='tertiary' size='small'>
+                        {t('此项可选，用于覆盖请求参数。不支持覆盖 stream 参数')}
+                      </Text>
+                      <div
+                        className='mt-2 rounded-xl p-3'
+                        style={{
+                          backgroundColor: 'var(--semi-color-fill-0)',
+                          border: '1px solid var(--semi-color-fill-2)',
+                        }}
+                      >
+                        <div className='flex items-center justify-between mb-2'>
+                          <Tag color={paramOverrideMeta.tagColor}>
+                            {paramOverrideMeta.tagLabel}
+                          </Tag>
+                          <Space spacing={8}>
+                            <Button
+                              size='small'
+                              icon={<IconCopy />}
+                              type='tertiary'
+                              onClick={copyParamOverrideJson}
+                            >
+                              {t('复制')}
+                            </Button>
+                            <Button
+                              size='small'
+                              type='tertiary'
+                              onClick={() => setParamOverrideEditorVisible(true)}
+                            >
+                              {t('编辑')}
+                            </Button>
+                          </Space>
+                        </div>
+                        <pre className='mb-0 text-xs leading-5 whitespace-pre-wrap break-all max-h-56 overflow-auto'>
+                          {paramOverrideMeta.preview}
+                        </pre>
+                      </div>
+                    </div>
 
                     <Form.TextArea
                       field='header_override'
@@ -3394,7 +3765,6 @@ const EditChannelModal = (props) => {
                       }
                       showClear
                     />
-
                     <JSONEditor
                       key={`status_code_mapping-${isEdit ? channelId : 'new'}`}
                       field='status_code_mapping'
@@ -3735,6 +4105,16 @@ const EditChannelModal = (props) => {
           )}
         />
       </Modal>
+
+      <ParamOverrideEditorModal
+        visible={paramOverrideEditorVisible}
+        value={inputs.param_override || ''}
+        onCancel={() => setParamOverrideEditorVisible(false)}
+        onSave={(nextValue) => {
+          handleInputChange('param_override', nextValue);
+          setParamOverrideEditorVisible(false);
+        }}
+      />
 
       <ModelSelectModal
         visible={modelModalVisible}

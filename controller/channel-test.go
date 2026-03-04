@@ -363,7 +363,7 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 			newAPIError: types.NewError(err, types.ErrorCodeConvertRequestFailed),
 		}
 	}
-	jsonData, err := json.Marshal(convertedRequest)
+	jsonData, err := common.Marshal(convertedRequest)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -373,8 +373,15 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	}
 
 	if len(info.ParamOverride) > 0 {
-		jsonData, err = relaycommon.ApplyParamOverride(jsonData, info.ParamOverride, relaycommon.BuildParamOverrideContext(info))
+		jsonData, err = relaycommon.ApplyParamOverrideWithRelayInfo(jsonData, info)
 		if err != nil {
+			if fixedErr, ok := relaycommon.AsParamOverrideReturnError(err); ok {
+				return testResult{
+					context:     c,
+					localErr:    fixedErr,
+					newAPIError: relaycommon.NewAPIErrorFromParamOverride(fixedErr),
+				}
+			}
 			return testResult{
 				context:     c,
 				localErr:    err,
@@ -506,7 +513,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			return &dto.ImageRequest{
 				Model:  model,
 				Prompt: "a cute cat",
-				N:      1,
+				N:      lo.ToPtr(uint(1)),
 				Size:   "1024x1024",
 			}
 		case constant.EndpointTypeJinaRerank:
@@ -515,13 +522,14 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 				Model:     model,
 				Query:     "What is Deep Learning?",
 				Documents: []any{"Deep Learning is a subset of machine learning.", "Machine learning is a field of artificial intelligence."},
-				TopN:      2,
+				TopN:      lo.ToPtr(2),
 			}
 		case constant.EndpointTypeOpenAIResponse:
 			// 返回 OpenAIResponsesRequest
 			return &dto.OpenAIResponsesRequest{
-				Model: model,
-				Input: testResponsesInput,
+				Model:  model,
+				Input:  testResponsesInput,
+				Stream: lo.ToPtr(false),
 			}
 		case constant.EndpointTypeOpenAIResponseCompact:
 			// 返回 OpenAIResponsesCompactionRequest
@@ -537,14 +545,14 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			}
 			return &dto.GeneralOpenAIRequest{
 				Model:  model,
-				Stream: false,
+				Stream: lo.ToPtr(false),
 				Messages: []dto.Message{
 					{
 						Role:    "user",
 						Content: testCase,
 					},
 				},
-				MaxTokens: maxTokens,
+				MaxTokens: lo.ToPtr(maxTokens),
 			}
 		}
 	}
@@ -555,7 +563,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 			Model:     model,
 			Query:     "What is Deep Learning?",
 			Documents: []any{"Deep Learning is a subset of machine learning.", "Machine learning is a field of artificial intelligence."},
-			TopN:      2,
+			TopN:      lo.ToPtr(2),
 		}
 	}
 
@@ -581,15 +589,16 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 	// Responses-only models (e.g. codex series)
 	if strings.Contains(strings.ToLower(model), "codex") {
 		return &dto.OpenAIResponsesRequest{
-			Model: model,
-			Input: testResponsesInput,
+			Model:  model,
+			Input:  testResponsesInput,
+			Stream: lo.ToPtr(false),
 		}
 	}
 
 	// Chat/Completion 请求 - 返回 GeneralOpenAIRequest
 	testRequest := &dto.GeneralOpenAIRequest{
 		Model:  model,
-		Stream: false,
+		Stream: lo.ToPtr(false),
 		Messages: []dto.Message{
 			{
 				Role:    "user",
@@ -599,15 +608,15 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel)
 	}
 
 	if strings.HasPrefix(model, "o") {
-		testRequest.MaxCompletionTokens = 16
+		testRequest.MaxCompletionTokens = lo.ToPtr(uint(16))
 	} else if strings.Contains(model, "thinking") {
 		if !strings.Contains(model, "claude") {
-			testRequest.MaxTokens = 50
+			testRequest.MaxTokens = lo.ToPtr(uint(50))
 		}
 	} else if strings.Contains(model, "gemini") {
-		testRequest.MaxTokens = 3000
+		testRequest.MaxTokens = lo.ToPtr(uint(3000))
 	} else {
-		testRequest.MaxTokens = 16
+		testRequest.MaxTokens = lo.ToPtr(uint(16))
 	}
 
 	return testRequest

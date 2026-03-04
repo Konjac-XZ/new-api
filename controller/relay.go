@@ -27,6 +27,7 @@ import (
 	"github.com/QuantumNous/new-api/types"
 
 	"github.com/bytedance/gopkg/util/gopool"
+	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -245,6 +246,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		ModelName:  relayInfo.OriginModelName,
 		Retry:      common.GetPointer(0),
 	}
+	relayInfo.RetryIndex = 0
+	relayInfo.LastError = nil
 
 	attemptCounter := 0
 
@@ -263,6 +266,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			return
 		}
 
+		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
@@ -370,11 +374,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		if newAPIError == nil {
+			relayInfo.LastError = nil
 			return
 		}
 		if stopRetrying {
 			break
 		}
+
+		newAPIError = service.NormalizeViolationFeeError(newAPIError)
+		relayInfo.LastError = newAPIError
 	}
 
 	useChannel := c.GetStringSlice("use_channel")
@@ -432,15 +440,17 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 	}
 	switch r := request.(type) {
 	case *dto.GeneralOpenAIRequest:
-		if r.MaxCompletionTokens > r.MaxTokens {
-			meta.MaxTokens = int(r.MaxCompletionTokens)
+		maxCompletionTokens := lo.FromPtrOr(r.MaxCompletionTokens, uint(0))
+		maxTokens := lo.FromPtrOr(r.MaxTokens, uint(0))
+		if maxCompletionTokens > maxTokens {
+			meta.MaxTokens = int(maxCompletionTokens)
 		} else {
-			meta.MaxTokens = int(r.MaxTokens)
+			meta.MaxTokens = int(maxTokens)
 		}
 	case *dto.OpenAIResponsesRequest:
-		meta.MaxTokens = int(r.MaxOutputTokens)
+		meta.MaxTokens = int(lo.FromPtrOr(r.MaxOutputTokens, uint(0)))
 	case *dto.ClaudeRequest:
-		meta.MaxTokens = int(r.MaxTokens)
+		meta.MaxTokens = int(lo.FromPtr(r.MaxTokens))
 	case *dto.ImageRequest:
 		// Pricing for image requests depends on ImagePriceRatio; safe to compute even when CountToken is disabled.
 		return r.GetTokenCountMeta()
