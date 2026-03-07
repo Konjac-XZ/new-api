@@ -1158,12 +1158,12 @@ func testChannelStream(channel *model.Channel, testModel string) testResult {
 
 	request := buildTestRequest(testModel, "", channel)
 	if generalReq, ok := request.(*dto.GeneralOpenAIRequest); ok {
-		generalReq.Stream = true
+		generalReq.Stream = lo.ToPtr(true)
 		if strings.HasPrefix(testModel, "o") {
-			generalReq.MaxCompletionTokens = 10
-			generalReq.MaxTokens = 0
-		} else if generalReq.MaxTokens == 0 && generalReq.MaxCompletionTokens == 0 {
-			generalReq.MaxTokens = 10
+			generalReq.MaxCompletionTokens = lo.ToPtr(uint(10))
+			generalReq.MaxTokens = lo.ToPtr(uint(0))
+		} else if lo.FromPtr(generalReq.MaxTokens) == 0 && lo.FromPtr(generalReq.MaxCompletionTokens) == 0 {
+			generalReq.MaxTokens = lo.ToPtr(uint(10))
 		}
 	}
 

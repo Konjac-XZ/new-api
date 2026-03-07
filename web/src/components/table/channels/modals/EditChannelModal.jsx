@@ -3565,6 +3565,7 @@ const EditChannelModal = (props) => {
                         '\n{\n  "operations": [\n    {\n      "path": "temperature",\n      "mode": "set",\n      "value": 0.7,\n      "conditions": [\n        {\n          "path": "model",\n          "mode": "prefix",\n          "value": "gpt"\n        }\n      ]\n    }\n  ]\n}'
                       }
                       autosize
+                    />
 
                       <Form.Switch
                       field='upstream_model_update_auto_sync_enabled'
