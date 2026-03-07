@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/monitor"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -132,6 +133,22 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
+	}
+
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		var statusCode int
+		var respHeaders http.Header
+		if httpResp != nil {
+			statusCode = httpResp.StatusCode
+			respHeaders = httpResp.Header
+		}
+		var bodyBytes []byte
+		if info.MonitorResponseBody != nil && info.MonitorResponseBody.Len() > 0 {
+			bodyBytes = []byte(info.MonitorResponseBody.String())
+		}
+		respUsage := usage.(*dto.Usage)
+		monitor.RecordResponse(monitorID, statusCode, respHeaders, bodyBytes, respUsage.PromptTokens, respUsage.CompletionTokens, nil)
+		c.Set("monitor_response_recorded", true)
 	}
 
 	usageDto := usage.(*dto.Usage)

@@ -213,15 +213,19 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	usageData := usage.(*dto.Usage)
 
-	// Record response for monitoring when it hasn't been recorded upstream
-	if monitorID := c.GetString("monitor_id"); monitorID != "" && !c.GetBool("monitor_response_recorded") {
+	// Record response for monitoring
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
 		var statusCode int
 		var respHeaders http.Header
 		if httpResp != nil {
 			statusCode = httpResp.StatusCode
 			respHeaders = httpResp.Header
 		}
-		monitor.RecordResponse(monitorID, statusCode, respHeaders, nil, usageData.PromptTokens, usageData.CompletionTokens, nil)
+		var bodyBytes []byte
+		if info.MonitorResponseBody != nil && info.MonitorResponseBody.Len() > 0 {
+			bodyBytes = []byte(info.MonitorResponseBody.String())
+		}
+		monitor.RecordResponse(monitorID, statusCode, respHeaders, bodyBytes, usageData.PromptTokens, usageData.CompletionTokens, nil)
 		c.Set("monitor_response_recorded", true)
 	}
 

@@ -119,6 +119,10 @@ type RelayInfo struct {
 	RelayFormat            types.RelayFormat
 	SendResponseCount      int
 	ReceivedResponseCount  int
+	// MonitorResponseBody accumulates streaming response text for centralized monitor
+	// recording. Written by channel stream handlers; read once by top-level helpers
+	// after DoResponse returns.
+	MonitorResponseBody    *strings.Builder
 	FinalPreConsumedQuota  int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
@@ -482,6 +486,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 			//promptTokens: common.GetContextKeyInt(c, constant.ContextKeyPromptTokens),
 			estimatePromptTokens: common.GetContextKeyInt(c, constant.ContextKeyEstimatedTokens),
 		},
+		MonitorResponseBody: &strings.Builder{},
 	}
 
 	if info.RelayMode == relayconstant.RelayModeUnknown {

@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/monitor"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -196,6 +197,22 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	if openaiErr != nil {
 		service.ResetStatusCode(openaiErr, statusCodeMappingStr)
 		return openaiErr
+	}
+
+	if monitorID := c.GetString("monitor_id"); monitorID != "" {
+		var statusCode int
+		var respHeaders http.Header
+		if httpResp != nil {
+			statusCode = httpResp.StatusCode
+			respHeaders = httpResp.Header
+		}
+		var bodyBytes []byte
+		if info.MonitorResponseBody != nil && info.MonitorResponseBody.Len() > 0 {
+			bodyBytes = []byte(info.MonitorResponseBody.String())
+		}
+		geminiUsage := usage.(*dto.Usage)
+		monitor.RecordResponse(monitorID, statusCode, respHeaders, bodyBytes, geminiUsage.PromptTokens, geminiUsage.CompletionTokens, nil)
+		c.Set("monitor_response_recorded", true)
 	}
 
 	postConsumeQuota(c, info, usage.(*dto.Usage))

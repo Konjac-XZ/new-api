@@ -10,7 +10,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
-	"github.com/QuantumNous/new-api/monitor"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -186,6 +185,10 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		logger.LogError(c, "error processing tokens: "+err.Error())
 	}
 
+	if info.MonitorResponseBody != nil {
+		info.MonitorResponseBody.WriteString(responseTextBuilder.String())
+	}
+
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		usage.CompletionTokens += toolCount * 7
@@ -194,19 +197,6 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(lastStreamData))
 
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
-
-	// Record final streaming response for monitoring
-	if monitorID := c.GetString("monitor_id"); monitorID != "" {
-		body := []byte(responseTextBuilder.String())
-		status := 0
-		var headers http.Header
-		if resp != nil {
-			status = resp.StatusCode
-			headers = resp.Header
-		}
-		monitor.RecordResponse(monitorID, status, headers, body, usage.PromptTokens, usage.CompletionTokens, nil)
-		c.Set("monitor_response_recorded", true)
-	}
 
 	return usage, nil
 }
@@ -315,16 +305,8 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
-	// Record final non-streaming response for monitoring
-	if monitorID := c.GetString("monitor_id"); monitorID != "" {
-		status := 0
-		var headers http.Header
-		if resp != nil {
-			status = resp.StatusCode
-			headers = resp.Header
-		}
-		monitor.RecordResponse(monitorID, status, headers, responseBody, simpleResponse.Usage.PromptTokens, simpleResponse.Usage.CompletionTokens, nil)
-		c.Set("monitor_response_recorded", true)
+	if info.MonitorResponseBody != nil {
+		info.MonitorResponseBody.Write(responseBody)
 	}
 
 	return &simpleResponse.Usage, nil
