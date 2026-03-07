@@ -3261,7 +3261,7 @@ const EditChannelModal = (props) => {
                                       );
                                       if (Array.isArray(parsed)) items = parsed;
                                     }
-                                  } catch { }
+                                  } catch {}
                                   const current =
                                     formApiRef.current?.getValue('models') ||
                                     inputs.models ||
@@ -3550,22 +3550,6 @@ const EditChannelModal = (props) => {
                       )}
                     />
 
-                    <Form.TextArea
-                      field='param_override'
-                      label={t('参数覆盖')}
-                      placeholder={
-                        t(
-                          '此项可选，用于覆盖请求参数。不支持覆盖 stream 参数',
-                        ) +
-                        '\n' +
-                        t('旧格式（直接覆盖）：') +
-                        '\n{\n  "temperature": 0,\n  "max_tokens": 1000\n}' +
-                        '\n\n' +
-                        t('新格式（支持条件判断与json自定义）：') +
-                        '\n{\n  "operations": [\n    {\n      "path": "temperature",\n      "mode": "set",\n      "value": 0.7,\n      "conditions": [\n        {\n          "path": "model",\n          "mode": "prefix",\n          "value": "gpt"\n        }\n      ]\n    }\n  ]\n}'
-                      }
-                      autosize
-                    />
 
                       <Form.Switch
                       field='upstream_model_update_auto_sync_enabled'
@@ -3583,6 +3567,7 @@ const EditChannelModal = (props) => {
                         '开启后检测到新增模型会自动加入当前渠道模型列表',
                       )}
                     />
+
                     <div className='text-xs text-gray-500 mb-3'>
                       {t('上次检测到可加入模型')}:&nbsp;
                       {upstreamDetectedModels.length === 0 ? (
