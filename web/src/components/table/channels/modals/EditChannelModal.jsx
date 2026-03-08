@@ -60,6 +60,7 @@ import SingleModelSelectModal from './SingleModelSelectModal';
 import OllamaModelModal from './OllamaModelModal';
 import CodexOAuthModal from './CodexOAuthModal';
 import ParamOverrideEditorModal from './ParamOverrideEditorModal';
+import ChannelBreakerStatusCard from './ChannelBreakerStatusCard';
 import JSONEditor from '../../../common/ui/JSONEditor';
 import SecureVerificationModal from '../../../common/modals/SecureVerificationModal';
 import StatusCodeRiskGuardModal from './StatusCodeRiskGuardModal';
@@ -160,6 +161,7 @@ const EditChannelModal = (props) => {
   const channelId = props.editingChannel.id;
   const isEdit = channelId !== undefined;
   const [loading, setLoading] = useState(isEdit);
+  const [breakerState, setBreakerState] = useState(null);
   const isMobile = useIsMobile();
   const handleCancel = () => {
     props.handleClose();
@@ -806,12 +808,14 @@ const EditChannelModal = (props) => {
 
   const loadChannel = async () => {
     setLoading(true);
+    setBreakerState(null);
     let res = await API.get(`/api/channel/${channelId}`);
     if (res === undefined) {
       return;
     }
     const { success, message, data } = res.data;
     if (success) {
+      setBreakerState(data.breaker_state || null);
       if (data.models === '') {
         data.models = [];
       } else {
@@ -1365,6 +1369,7 @@ const EditChannelModal = (props) => {
     }
     // 重置本地输入，避免下次打开残留上一次的 JSON 字段值
     setInputs(getInitValues());
+    setBreakerState(null);
     // 重置密钥显示状态
     resetKeyDisplayState();
   };
@@ -3573,6 +3578,14 @@ const EditChannelModal = (props) => {
                         '仅在开启自动禁用时生效。根据真实请求的近期失败、连续失败和恢复情况，临时将该渠道移出候选列表；不改变现有优先级和权重机制。',
                       )}
                     />
+
+                    {isEdit && breakerState && (
+                      <ChannelBreakerStatusCard
+                        breakerState={breakerState}
+                        t={t}
+                        visible={props.visible}
+                      />
+                    )}
 
                     <Form.InputNumber
                       field='scheduled_test_interval'

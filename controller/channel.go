@@ -358,6 +358,57 @@ func SearchChannels(c *gin.Context) {
 	return
 }
 
+type ChannelBreakerState struct {
+	AutoBanEnabled            bool    `json:"auto_ban_enabled"`
+	DynamicEnabled            bool    `json:"dynamic_enabled"`
+	Phase                     string  `json:"phase"`
+	Pressure                  float64 `json:"pressure"`
+	FailStreak                int     `json:"fail_streak"`
+	LastFailure               string  `json:"last_failure,omitempty"`
+	CooldownAt                int64   `json:"cooldown_at"`
+	UpdatedAt                 int64   `json:"updated_at"`
+	RemainingCooldownSeconds  int64   `json:"remaining_cooldown_seconds"`
+	CooldownSeconds           int64   `json:"cooldown_seconds"`
+	ObservationElapsedSeconds int64   `json:"observation_elapsed_seconds"`
+}
+
+func buildChannelBreakerState(channel *model.Channel) *ChannelBreakerState {
+	if channel == nil {
+		return nil
+	}
+	now := time.Now().Unix()
+	state := &ChannelBreakerState{
+		AutoBanEnabled: channel.GetAutoBan(),
+		DynamicEnabled: channel.IsDynamicCircuitBreakerEnabled(),
+		Pressure:       channel.BreakerPressure,
+		FailStreak:     channel.BreakerFailStreak,
+		LastFailure:    channel.BreakerLastFailure,
+		CooldownAt:     channel.BreakerCooldownAt,
+		UpdatedAt:      channel.BreakerUpdatedAt,
+		Phase:          "disabled",
+	}
+
+	if !state.DynamicEnabled {
+		return state
+	}
+	if channel.IsBreakerCoolingAt(now) {
+		state.Phase = "cooling"
+		state.RemainingCooldownSeconds = channel.BreakerCooldownAt - now
+		if channel.BreakerUpdatedAt > 0 && channel.BreakerCooldownAt > channel.BreakerUpdatedAt {
+			state.CooldownSeconds = channel.BreakerCooldownAt - channel.BreakerUpdatedAt
+		}
+		return state
+	}
+	if channel.IsBreakerProbationAt(now) {
+		state.Phase = "observation"
+		state.ObservationElapsedSeconds = now - channel.BreakerCooldownAt
+		return state
+	}
+
+	state.Phase = "closed"
+	return state
+}
+
 func GetChannel(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -372,10 +423,18 @@ func GetChannel(c *gin.Context) {
 	if channel != nil {
 		clearChannelInfo(channel)
 	}
+	type channelDetailResponse struct {
+		*model.Channel
+		BreakerState *ChannelBreakerState `json:"breaker_state,omitempty"`
+	}
+	resp := &channelDetailResponse{
+		Channel:      channel,
+		BreakerState: buildChannelBreakerState(channel),
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    channel,
+		"data":    resp,
 	})
 	return
 }
@@ -879,7 +938,7 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
-    // Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
+	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
 
 	// If the request explicitly specifies a new MultiKeyMode, apply it on top of the original info.
@@ -887,11 +946,11 @@ func UpdateChannel(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
 	}
 
-    // Detect explicit intent to clear max_first_token_latency (0 means disable per UI copy)
-    // We record it before normalization because normalization converts <=0 to nil.
-    shouldClearMaxFirstTokenLatency := channel.MaxFirstTokenLatency != nil && *channel.MaxFirstTokenLatency <= 0
+	// Detect explicit intent to clear max_first_token_latency (0 means disable per UI copy)
+	// We record it before normalization because normalization converts <=0 to nil.
+	shouldClearMaxFirstTokenLatency := channel.MaxFirstTokenLatency != nil && *channel.MaxFirstTokenLatency <= 0
 
-    normalizeChannelDefaults(&channel.Channel)
+	normalizeChannelDefaults(&channel.Channel)
 
 	// 处理多key模式下的密钥追加/覆盖逻辑
 	if channel.KeyMode != nil && channel.ChannelInfo.IsMultiKey {
@@ -979,14 +1038,14 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
-    // When user sets max_first_token_latency to 0 (disable), ensure DB column is explicitly set to NULL.
-    if shouldClearMaxFirstTokenLatency {
-        if dbErr := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("max_first_token_latency", nil).Error; dbErr != nil {
-            // Not fatal for the whole update, but report to client for visibility
-            common.ApiError(c, fmt.Errorf("清空最大首 Token 延迟失败: %v", dbErr))
-            return
-        }
-    }
+	// When user sets max_first_token_latency to 0 (disable), ensure DB column is explicitly set to NULL.
+	if shouldClearMaxFirstTokenLatency {
+		if dbErr := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("max_first_token_latency", nil).Error; dbErr != nil {
+			// Not fatal for the whole update, but report to client for visibility
+			common.ApiError(c, fmt.Errorf("清空最大首 Token 延迟失败: %v", dbErr))
+			return
+		}
+	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()
 	channel.Key = ""
