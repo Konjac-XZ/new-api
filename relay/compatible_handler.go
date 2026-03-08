@@ -213,6 +213,14 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	usageData := usage.(*dto.Usage)
 
+	if info.ChannelSetting.TreatEmptyReplyAsFailure && usageData.CompletionTokens == 0 {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("channel returned empty reply (no content or tool calls)"),
+			types.ErrorCodeChannelEmptyReply,
+			http.StatusInternalServerError,
+		)
+	}
+
 	// Record response for monitoring
 	if monitorID := c.GetString("monitor_id"); monitorID != "" {
 		var statusCode int

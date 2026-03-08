@@ -873,6 +873,8 @@
     "启用签到功能": "Activer la fonction d'enregistrement",
     "启用绘图功能": "Activer la fonction de dessin",
     "启用请求体透传功能": "Activer la fonctionnalité de transmission du corps de la requête",
+    "将空回复视为失败": "Traiter la réponse vide comme un échec",
+    "启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试": "Lorsqu'activé, les réponses en amont sans contenu ni appel d'outil sont traitées comme des défaillances de canal, déclenchant la désactivation automatique et les nouvelles tentatives.",
     "启用请求透传": "Activer la transmission de la requête",
     "启用违规扣费": "Activer la déduction de violation",
     "启用额度消费日志记录": "Activer la journalisation de la consommation de quota",

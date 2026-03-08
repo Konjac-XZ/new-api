@@ -207,6 +207,16 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		c.Set("monitor_response_recorded", true)
 	}
 
-	service.PostClaudeConsumeQuota(c, info, usage.(*dto.Usage))
+	claudeUsageData := usage.(*dto.Usage)
+
+	if info.ChannelSetting.TreatEmptyReplyAsFailure && claudeUsageData.CompletionTokens == 0 {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("channel returned empty reply (no content or tool calls)"),
+			types.ErrorCodeChannelEmptyReply,
+			http.StatusInternalServerError,
+		)
+	}
+
+	service.PostClaudeConsumeQuota(c, info, claudeUsageData)
 	return nil
 }

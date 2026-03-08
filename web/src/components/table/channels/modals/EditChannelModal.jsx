@@ -193,6 +193,7 @@ const EditChannelModal = (props) => {
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
+    treat_empty_reply_as_failure: false,
     system_prompt: '',
     system_prompt_override: false,
     settings: '',
@@ -529,6 +530,7 @@ const EditChannelModal = (props) => {
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
+    treat_empty_reply_as_failure: false,
     system_prompt: '',
     max_retry_attempts: 1,
   });
@@ -848,6 +850,8 @@ const EditChannelModal = (props) => {
           data.proxy = parsedSettings.proxy || '';
           data.pass_through_body_enabled =
             parsedSettings.pass_through_body_enabled || false;
+          data.treat_empty_reply_as_failure =
+            parsedSettings.treat_empty_reply_as_failure || false;
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
@@ -858,6 +862,7 @@ const EditChannelModal = (props) => {
           data.thinking_to_content = false;
           data.proxy = '';
           data.pass_through_body_enabled = false;
+          data.treat_empty_reply_as_failure = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
           data.max_retry_attempts = 1;
@@ -867,6 +872,7 @@ const EditChannelModal = (props) => {
         data.thinking_to_content = false;
         data.proxy = '';
         data.pass_through_body_enabled = false;
+        data.treat_empty_reply_as_failure = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
         data.max_retry_attempts = 1;
@@ -973,6 +979,7 @@ const EditChannelModal = (props) => {
         thinking_to_content: data.thinking_to_content,
         proxy: data.proxy,
         pass_through_body_enabled: data.pass_through_body_enabled,
+        treat_empty_reply_as_failure: data.treat_empty_reply_as_failure || false,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
         max_retry_attempts: data.max_retry_attempts || 1,
@@ -1332,6 +1339,7 @@ const EditChannelModal = (props) => {
       thinking_to_content: false,
       proxy: '',
       pass_through_body_enabled: false,
+      treat_empty_reply_as_failure: false,
       system_prompt: '',
       system_prompt_override: false,
     });
@@ -1704,6 +1712,8 @@ const EditChannelModal = (props) => {
       thinking_to_content: localInputs.thinking_to_content || false,
       proxy: localInputs.proxy || '',
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
+      treat_empty_reply_as_failure:
+        localInputs.treat_empty_reply_as_failure || false,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
       max_retry_attempts: normalizedMaxRetryAttempts,
@@ -1800,6 +1810,7 @@ const EditChannelModal = (props) => {
     delete localInputs.thinking_to_content;
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
+    delete localInputs.treat_empty_reply_as_failure;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
     delete localInputs.is_enterprise_account;
@@ -3261,7 +3272,7 @@ const EditChannelModal = (props) => {
                                       );
                                       if (Array.isArray(parsed)) items = parsed;
                                     }
-                                  } catch {}
+                                  } catch { }
                                   const current =
                                     formApiRef.current?.getValue('models') ||
                                     inputs.models ||
@@ -3551,7 +3562,7 @@ const EditChannelModal = (props) => {
                     />
 
 
-                      <Form.Switch
+                    <Form.Switch
                       field='upstream_model_update_auto_sync_enabled'
                       label={t('是否自动同步上游模型更新')}
                       checkedText={t('开')}
@@ -3977,6 +3988,22 @@ const EditChannelModal = (props) => {
                         )
                       }
                       extraText={t('启用请求体透传功能')}
+                    />
+
+                    <Form.Switch
+                      field='treat_empty_reply_as_failure'
+                      label={t('将空回复视为失败')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'treat_empty_reply_as_failure',
+                          value,
+                        )
+                      }
+                      extraText={t(
+                        '启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试',
+                      )}
                     />
 
                     <Form.Input

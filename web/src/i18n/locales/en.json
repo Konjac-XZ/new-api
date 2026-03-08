@@ -878,6 +878,8 @@
     "启用签到功能": "Enable check-in feature",
     "启用绘图功能": "Enable drawing function",
     "启用请求体透传功能": "Enable request body pass-through functionality",
+    "将空回复视为失败": "Treat Empty Reply as Failure",
+    "启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试": "When enabled, upstream responses with no content and no tool calls are treated as channel failures, triggering auto-disable and retry.",
     "启用请求透传": "Enable request pass-through",
     "启用违规扣费": "Enable violation deduction",
     "启用额度消费日志记录": "Enable quota consumption logging",

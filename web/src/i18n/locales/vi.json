@@ -865,6 +865,8 @@
     "启用签到功能": "Bật tính năng đăng nhập",
     "启用绘图功能": "Bật chức năng vẽ",
     "启用请求体透传功能": "Bật chức năng truyền qua thân yêu cầu",
+    "将空回复视为失败": "Coi phản hồi trống là thất bại",
+    "启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试": "Khi bật, phản hồi từ upstream không có nội dung và không có lệnh gọi công cụ sẽ được coi là lỗi kênh, kích hoạt tự động vô hiệu hóa và thử lại.",
     "启用请求透传": "Bật truyền qua yêu cầu",
     "启用违规扣费": "Bật trừ phí vi phạm",
     "启用额度消费日志记录": "Bật ghi nhật ký tiêu thụ hạn ngạch",

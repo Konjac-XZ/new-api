@@ -215,7 +215,17 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		c.Set("monitor_response_recorded", true)
 	}
 
-	postConsumeQuota(c, info, usage.(*dto.Usage))
+	geminiUsageData := usage.(*dto.Usage)
+
+	if info.ChannelSetting.TreatEmptyReplyAsFailure && geminiUsageData.CompletionTokens == 0 {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("channel returned empty reply (no content or tool calls)"),
+			types.ErrorCodeChannelEmptyReply,
+			http.StatusInternalServerError,
+		)
+	}
+
+	postConsumeQuota(c, info, geminiUsageData)
 	return nil
 }
 
