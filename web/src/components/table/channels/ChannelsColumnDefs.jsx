@@ -48,6 +48,7 @@ import {
   IconTreeTriangleDown,
   IconMore,
   IconAlertTriangle,
+  IconFlash,
 } from '@douyinfe/semi-icons';
 import { FaRandom } from 'react-icons/fa';
 
@@ -198,51 +199,86 @@ const renderStatus = (
   breakerState = undefined,
   t,
 ) => {
-  const breakerTag = renderBreakerPhaseStatus(breakerState, t);
-  if (breakerTag) {
+  // Always compute the primary status tag first
+  let mainTag;
+  if (channelInfo?.is_multi_key) {
+    let keySize = channelInfo.multi_key_size;
+    let enabledKeySize = keySize;
+    if (channelInfo.multi_key_status_list) {
+      enabledKeySize =
+        keySize - Object.keys(channelInfo.multi_key_status_list).length;
+    }
+    mainTag = renderMultiKeyStatus(status, keySize, enabledKeySize, t);
+  } else {
+    switch (status) {
+      case 1:
+        mainTag = (
+          <Tag color='green' shape='circle'>
+            {t('已启用')}
+          </Tag>
+        );
+        break;
+      case 2:
+        mainTag = (
+          <Tag color='red' shape='circle'>
+            {t('已禁用')}
+          </Tag>
+        );
+        break;
+      case 3:
+        mainTag = (
+          <Tag color='yellow' shape='circle'>
+            {t('自动禁用')}
+          </Tag>
+        );
+        break;
+      default:
+        mainTag = (
+          <Tag color='grey' shape='circle'>
+            {t('未知状态')}
+          </Tag>
+        );
+    }
+  }
+
+  // If dynamic circuit breaking is enabled, append a badge
+  if (breakerState?.dynamic_enabled) {
+    const phaseTag = renderBreakerPhaseStatus(breakerState, t);
     const phaseTip = getBreakerPhaseTooltip(breakerState, t);
-    if (phaseTip) {
-      return <Tooltip content={phaseTip}>{breakerTag}</Tooltip>;
+
+    let breakerBadge;
+    if (phaseTag) {
+      // Active phase (cooling / observation / awaiting_probe)
+      breakerBadge = phaseTip ? (
+        <Tooltip content={phaseTip}>{phaseTag}</Tooltip>
+      ) : (
+        phaseTag
+      );
+    } else {
+      // Normal operation — show positive "dynamic breaker enabled" indicator
+      breakerBadge = (
+        <Tooltip content={t('已开启动态熔断保护，异常时自动冷却并自愈')} position='top'>
+          <Tag
+            color='light-blue'
+            shape='circle'
+            type='light'
+            prefixIcon={<IconFlash />}
+          >
+            {t('动态熔断')}
+          </Tag>
+        </Tooltip>
+      );
     }
-    return breakerTag;
+
+    return (
+      <Space spacing={4} align='center'>
+        {mainTag}
+        {breakerBadge}
+      </Space>
+    );
   }
-  if (channelInfo) {
-    if (channelInfo.is_multi_key) {
-      let keySize = channelInfo.multi_key_size;
-      let enabledKeySize = keySize;
-      if (channelInfo.multi_key_status_list) {
-        enabledKeySize =
-          keySize - Object.keys(channelInfo.multi_key_status_list).length;
-      }
-      return renderMultiKeyStatus(status, keySize, enabledKeySize, t);
-    }
-  }
-  switch (status) {
-    case 1:
-      return (
-        <Tag color='green' shape='circle'>
-          {t('已启用')}
-        </Tag>
-      );
-    case 2:
-      return (
-        <Tag color='red' shape='circle'>
-          {t('已禁用')}
-        </Tag>
-      );
-    case 3:
-      return (
-        <Tag color='yellow' shape='circle'>
-          {t('自动禁用')}
-        </Tag>
-      );
-    default:
-      return (
-        <Tag color='grey' shape='circle'>
-          {t('未知状态')}
-        </Tag>
-      );
-  }
+
+  return mainTag;
 };
 
 const renderMultiKeyStatus = (status, keySize, enabledKeySize, t) => {
