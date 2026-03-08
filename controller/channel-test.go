@@ -1007,12 +1007,27 @@ func testScheduledChannel(channel *model.Channel) {
 		Group:            groupValue,
 		IsStream:         isStream,
 	}
+	if latest, err := model.GetChannelById(channel.Id, true); err == nil && latest != nil {
+		channel = latest
+	}
+	dynamicBreakerEnabled := channel.IsDynamicCircuitBreakerEnabled()
 
 	if result.localErr != nil {
 		// 测试失败
 		autoAction := ""
-		// 如果渠道当前是启用状态，则禁用它
-		if channel.Status == 1 && channel.GetAutoBan() {
+		if dynamicBreakerEnabled {
+			autoAction = "breaker_penalized"
+			breakerErr := result.newAPIError
+			if breakerErr == nil {
+				breakerErr = types.NewErrorWithStatusCode(
+					fmt.Errorf("scheduled probe failed: %w", result.localErr),
+					types.ErrorCodeBadResponse,
+					http.StatusBadGateway,
+				)
+			}
+			service.RecordChannelRelayFailure(channel, nil, breakerErr)
+		} else if channel.Status == common.ChannelStatusEnabled && channel.GetAutoBan() {
+			// 如果渠道当前是启用状态，则禁用它
 			autoAction = "auto_disabled"
 			service.DisableChannel(*types.NewChannelError(
 				channel.Id,
@@ -1046,8 +1061,26 @@ func testScheduledChannel(channel *model.Channel) {
 			threshold := maxLatencyMs
 			if firstTokenLatencyMs > maxLatencyMs {
 				// 延迟超过阈值
-				// 如果渠道当前是启用状态，则禁用它
-				if channel.Status == 1 && channel.GetAutoBan() {
+				if dynamicBreakerEnabled {
+					autoAction := "breaker_penalized"
+					service.RecordChannelRelayFailure(
+						channel,
+						nil,
+						types.NewErrorWithStatusCode(
+							fmt.Errorf("first token latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs),
+							types.ErrorCodeChannelFirstTokenLatencyExceeded,
+							http.StatusGatewayTimeout,
+						),
+					)
+					params := baseParams
+					params.Result = "failure"
+					//params.Message = fmt.Sprintf("Scheduled test latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs)
+					params.LatencyMs = &latency
+					params.ThresholdMs = &threshold
+					params.AutoAction = autoAction
+					// model.RecordScheduledTestLog(params)
+				} else if channel.Status == common.ChannelStatusEnabled && channel.GetAutoBan() {
+					// 如果渠道当前是启用状态，则禁用它
 					autoAction := "auto_disabled"
 					service.DisableChannel(*types.NewChannelError(
 						channel.Id,
@@ -1074,8 +1107,26 @@ func testScheduledChannel(channel *model.Channel) {
 				}
 			} else {
 				// 延迟在阈值内
-				// 如果渠道当前是禁用状态，则重新启用它
-				if channel.Status != 1 {
+				if dynamicBreakerEnabled {
+					autoAction := ""
+					if service.RecordChannelProbeSuccess(channel) {
+						autoAction = "breaker_probation"
+						if channel.Status != common.ChannelStatusEnabled {
+							service.EnableChannel(channel.Id, "", channel.Name)
+							autoAction = "auto_enabled_probation"
+						}
+					}
+					params := baseParams
+					params.Result = "success"
+					params.Message = fmt.Sprintf("Scheduled test latency %dms within threshold %dms", firstTokenLatencyMs, maxLatencyMs)
+					params.LatencyMs = &latency
+					params.ThresholdMs = &threshold
+					if autoAction != "" {
+						params.AutoAction = autoAction
+					}
+					// model.RecordScheduledTestLog(params)
+				} else if channel.Status != common.ChannelStatusEnabled {
+					// 如果渠道当前是禁用状态，则重新启用它
 					autoAction := "auto_enabled"
 					service.EnableChannel(channel.Id, "", channel.Name)
 					params := baseParams

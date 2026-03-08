@@ -156,6 +156,41 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 	}
 }
 
+// RecordChannelProbeSuccess promotes a cooling channel into probation.
+// It intentionally does not clear breaker pressure/fail streak, so a probe
+// success alone cannot fully recover the channel.
+func RecordChannelProbeSuccess(channel *model.Channel) bool {
+	if channel == nil {
+		return false
+	}
+	channelBreakerStateLock.Lock()
+	defer channelBreakerStateLock.Unlock()
+
+	current, err := model.GetChannelById(channel.Id, true)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("failed to load channel breaker state on probe success: channel_id=%d, error=%v", channel.Id, err))
+		return false
+	}
+	if !current.IsDynamicCircuitBreakerEnabled() {
+		return false
+	}
+
+	now := time.Now()
+	applyBreakerDecay(current, now)
+	nowUnix := now.Unix()
+	if !current.IsBreakerCoolingAt(nowUnix) {
+		return false
+	}
+
+	current.BreakerCooldownAt = nowUnix
+	current.BreakerUpdatedAt = nowUnix
+	if err := model.UpdateChannelBreakerState(current); err != nil {
+		common.SysLog(fmt.Sprintf("failed to persist channel breaker probe success state: channel_id=%d, error=%v", channel.Id, err))
+		return false
+	}
+	return true
+}
+
 func applyBreakerDecay(channel *model.Channel, now time.Time) {
 	if channel == nil {
 		return
