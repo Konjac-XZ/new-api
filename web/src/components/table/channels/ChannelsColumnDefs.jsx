@@ -48,7 +48,7 @@ import {
   IconTreeTriangleDown,
   IconMore,
   IconAlertTriangle,
-  IconFlash,
+  IconBolt,
 } from '@douyinfe/semi-icons';
 import { FaRandom } from 'react-icons/fa';
 
@@ -254,20 +254,10 @@ const renderStatus = (
       ) : (
         phaseTag
       );
-    } else {
-      // Normal operation — show positive "dynamic breaker enabled" indicator
-      breakerBadge = (
-        <Tooltip content={t('已开启动态熔断保护，异常时自动冷却并自愈')} position='top'>
-          <Tag
-            color='light-blue'
-            shape='circle'
-            type='light'
-            prefixIcon={<IconFlash />}
-          >
-            {t('动态熔断')}
-          </Tag>
-        </Tooltip>
-      );
+    }
+
+    if (!breakerBadge) {
+      return mainTag;
     }
 
     return (
@@ -442,6 +432,9 @@ export const getChannelsColumns = ({
           upstreamUpdateMeta.supported &&
           upstreamUpdateMeta.enabled &&
           (pendingAddCount > 0 || pendingRemoveCount > 0);
+        const dynamicBreakerEnabled =
+          record.children === undefined &&
+          record.breaker_state?.dynamic_enabled === true;
         const nameNode =
           record.remark && record.remark.trim() !== '' ? (
             <Tooltip
@@ -477,13 +470,23 @@ export const getChannelsColumns = ({
             <span>{text}</span>
           );
 
-        if (!passThroughEnabled && !showUpstreamUpdateTag) {
+        if (!passThroughEnabled && !showUpstreamUpdateTag && !dynamicBreakerEnabled) {
           return nameNode;
         }
 
         return (
           <Space spacing={6} align='center'>
             {nameNode}
+            {dynamicBreakerEnabled && (
+              <Tooltip
+                content={t('已开启动态熔断保护，异常时自动冷却并自愈')}
+                position='top'
+              >
+                <span className='inline-flex items-center' style={{ color: 'var(--semi-color-link)' }}>
+                  <IconBolt size='small' />
+                </span>
+              </Tooltip>
+            )}
             {passThroughEnabled && (
               <Tooltip
                 content={t(

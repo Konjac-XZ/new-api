@@ -169,7 +169,7 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 	}
 }
 
-// RecordChannelProbeSuccess promotes a cooling channel into probation.
+// RecordChannelProbeSuccess promotes an awaiting-probe channel into probation.
 // It intentionally does not clear breaker pressure/fail streak, so a probe
 // success alone cannot fully recover the channel.
 func RecordChannelProbeSuccess(channel *model.Channel) bool {
@@ -190,12 +190,13 @@ func RecordChannelProbeSuccess(channel *model.Channel) bool {
 
 	now := time.Now()
 	nowUnix := now.Unix()
-	isCooling := current.IsBreakerCoolingAt(nowUnix)
 	isAwaitingProbe := current.IsBreakerAwaitingProbeAt(nowUnix)
 	if current.BreakerCooldownAt <= 0 || current.IsBreakerProbationAt(nowUnix) {
 		return false
 	}
-	if !isCooling && !isAwaitingProbe {
+	// Never allow probe success to fast-forward the stress-index cooldown.
+	// Promotion is only valid after cooldown expires (awaiting probe phase).
+	if !isAwaitingProbe {
 		return false
 	}
 	applyBreakerDecay(current, now)
