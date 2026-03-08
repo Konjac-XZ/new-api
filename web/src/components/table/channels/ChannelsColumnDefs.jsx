@@ -148,7 +148,64 @@ const renderTagType = (t) => {
   );
 };
 
-const renderStatus = (status, channelInfo = undefined, t) => {
+const renderBreakerPhaseStatus = (breakerState, t) => {
+  if (!breakerState?.dynamic_enabled) {
+    return null;
+  }
+  switch (breakerState.phase) {
+    case 'cooling':
+      return (
+        <Tag color='red' shape='circle'>
+          {t('冷却中')}
+        </Tag>
+      );
+    case 'observation':
+      return (
+        <Tag color='orange' shape='circle'>
+          {t('观察期')}
+        </Tag>
+      );
+    case 'awaiting_probe':
+      return (
+        <Tag color='yellow' shape='circle'>
+          {t('待探测')}
+        </Tag>
+      );
+    default:
+      return null;
+  }
+};
+
+const getBreakerPhaseTooltip = (breakerState, t) => {
+  if (!breakerState?.dynamic_enabled) {
+    return '';
+  }
+  switch (breakerState.phase) {
+    case 'cooling':
+      return t('动态熔断冷却中，渠道暂不参与分配');
+    case 'observation':
+      return t('探测通过，处于观察期');
+    case 'awaiting_probe':
+      return t('冷却已结束，等待最近一次探测成功后进入观察期');
+    default:
+      return '';
+  }
+};
+
+const renderStatus = (
+  status,
+  channelInfo = undefined,
+  breakerState = undefined,
+  t,
+) => {
+  const breakerTag = renderBreakerPhaseStatus(breakerState, t);
+  if (breakerTag) {
+    const phaseTip = getBreakerPhaseTooltip(breakerState, t);
+    if (phaseTip) {
+      return <Tooltip content={phaseTip}>{breakerTag}</Tooltip>;
+    }
+    return breakerTag;
+  }
   if (channelInfo) {
     if (channelInfo.is_multi_key) {
       let keySize = channelInfo.multi_key_size;
@@ -508,12 +565,22 @@ export const getChannelsColumns = ({
                   t('原因：') + reason + t('，时间：') + timestamp2string(time)
                 }
               >
-                {renderStatus(text, record.channel_info, t)}
+                {renderStatus(
+                  text,
+                  record.channel_info,
+                  record.breaker_state,
+                  t,
+                )}
               </Tooltip>
             </div>
           );
         } else {
-          return renderStatus(text, record.channel_info, t);
+          return renderStatus(
+            text,
+            record.channel_info,
+            record.breaker_state,
+            t,
+          );
         }
       },
     },

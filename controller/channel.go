@@ -147,6 +147,7 @@ func GetAllChannels(c *gin.Context) {
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
+	items := buildChannelListItems(channelData)
 
 	countQuery := model.DB.Model(&model.Channel{})
 	if statusFilter == common.ChannelStatusEnabled {
@@ -164,7 +165,7 @@ func GetAllChannels(c *gin.Context) {
 		typeCounts[r.Type] = r.Count
 	}
 	common.ApiSuccess(c, gin.H{
-		"items":       channelData,
+		"items":       items,
 		"total":       total,
 		"page":        pageInfo.GetPage(),
 		"page_size":   pageInfo.GetPageSize(),
@@ -345,12 +346,13 @@ func SearchChannels(c *gin.Context) {
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
+	items := buildChannelListItems(pagedData)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"items":       pagedData,
+			"items":       items,
 			"total":       total,
 			"type_counts": typeCounts,
 		},
@@ -370,6 +372,25 @@ type ChannelBreakerState struct {
 	RemainingCooldownSeconds  int64   `json:"remaining_cooldown_seconds"`
 	CooldownSeconds           int64   `json:"cooldown_seconds"`
 	ObservationElapsedSeconds int64   `json:"observation_elapsed_seconds"`
+}
+
+type channelListItem struct {
+	*model.Channel
+	BreakerState *ChannelBreakerState `json:"breaker_state,omitempty"`
+}
+
+func buildChannelListItems(channels []*model.Channel) []*channelListItem {
+	items := make([]*channelListItem, 0, len(channels))
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		items = append(items, &channelListItem{
+			Channel:      channel,
+			BreakerState: buildChannelBreakerState(channel),
+		})
+	}
+	return items
 }
 
 func buildChannelBreakerState(channel *model.Channel) *ChannelBreakerState {

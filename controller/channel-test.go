@@ -810,6 +810,8 @@ func TestAllChannels(c *gin.Context) {
 }
 
 func isWithinTestTime() bool {
+	return true
+	
 	now := time.Now()
 	hour := now.Hour()
 	minute := now.Minute()
@@ -907,6 +909,12 @@ func ScheduledTestChannels() {
 
 				// 如果是第一次或者到了测试时间
 				if !exists || now >= nextTestTime {
+					common.SysLog(fmt.Sprintf(
+						"scheduled test dispatch: channel_id=%d, channel_name=%s, interval_min=%d",
+						channel.Id,
+						channel.Name,
+						interval,
+					))
 					// 异步测试渠道
 					gopool.Go(func() {
 						testScheduledChannel(channel)
@@ -938,15 +946,39 @@ func testScheduledChannel(channel *model.Channel) {
 
 	channelcache.Remember(channel.Id, channel.Name)
 	channelLabel := channelcache.Label(channel.Id, channel.Name)
+	startAt := time.Now()
+	resultTag := "unknown"
+	resultDetail := ""
+	common.SysLog(fmt.Sprintf("scheduled test started: %s", channelLabel))
+	defer func() {
+		elapsed := time.Since(startAt).Round(time.Millisecond)
+		if resultTag == "unknown" {
+			resultTag = "panic_or_unexpected"
+		}
+		if resultDetail == "" {
+			resultDetail = "-"
+		}
+		common.SysLog(fmt.Sprintf(
+			"scheduled test finished: %s, result=%s, detail=%s, elapsed=%s",
+			channelLabel,
+			resultTag,
+			resultDetail,
+			elapsed,
+		))
+	}()
 
 	defer func() {
 		if r := recover(); r != nil {
+			resultTag = "panic"
+			resultDetail = fmt.Sprintf("%v", r)
 			common.SysLog(fmt.Sprintf("scheduled test %s panic: %v", channelLabel, r))
 		}
 	}()
 
 	maxLatency := channel.GetMaxFirstTokenLatency()
 	if maxLatency <= 0 {
+		resultTag = "skipped"
+		resultDetail = "max_first_token_latency_not_configured"
 		// 如果没有设置最大首Token延迟，则记录跳过日志并退出
 		// testModel := ""
 		// if channel.TestModel != nil {
@@ -1014,6 +1046,8 @@ func testScheduledChannel(channel *model.Channel) {
 
 	if result.localErr != nil {
 		// 测试失败
+		resultTag = "failure"
+		resultDetail = result.localErr.Error()
 		autoAction := ""
 		if dynamicBreakerEnabled {
 			autoAction = "breaker_penalized"
@@ -1061,6 +1095,8 @@ func testScheduledChannel(channel *model.Channel) {
 			threshold := maxLatencyMs
 			if firstTokenLatencyMs > maxLatencyMs {
 				// 延迟超过阈值
+				resultTag = "failure"
+				resultDetail = fmt.Sprintf("first_token_latency_exceeded: %dms > %dms", firstTokenLatencyMs, maxLatencyMs)
 				if dynamicBreakerEnabled {
 					autoAction := "breaker_penalized"
 					service.RecordChannelRelayFailure(
@@ -1107,6 +1143,8 @@ func testScheduledChannel(channel *model.Channel) {
 				}
 			} else {
 				// 延迟在阈值内
+				resultTag = "success"
+				resultDetail = fmt.Sprintf("first_token_latency_ok: %dms <= %dms", firstTokenLatencyMs, maxLatencyMs)
 				if dynamicBreakerEnabled {
 					autoAction := ""
 					if service.RecordChannelProbeSuccess(channel) {
@@ -1147,12 +1185,16 @@ func testScheduledChannel(channel *model.Channel) {
 			}
 		} else {
 			// 如果无法测量首Token延迟，记录警告
+			resultTag = "warning"
+			resultDetail = "first_token_latency_not_measured"
 			params := baseParams
 			params.Result = "warning"
 			params.Message = "Scheduled test could not measure first token latency"
 			// model.RecordScheduledTestLog(params)
 		}
 	} else {
+		resultTag = "warning"
+		resultDetail = "scheduled_test_context_missing"
 		params := baseParams
 		params.Result = "warning"
 		params.Message = "Scheduled test completed without context information"

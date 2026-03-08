@@ -189,14 +189,16 @@ func RecordChannelProbeSuccess(channel *model.Channel) bool {
 	}
 
 	now := time.Now()
-	applyBreakerDecay(current, now)
 	nowUnix := now.Unix()
+	isCooling := current.IsBreakerCoolingAt(nowUnix)
+	isAwaitingProbe := current.IsBreakerAwaitingProbeAt(nowUnix)
 	if current.BreakerCooldownAt <= 0 || current.IsBreakerProbationAt(nowUnix) {
 		return false
 	}
-	if !current.IsBreakerCoolingAt(nowUnix) && !current.IsBreakerAwaitingProbeAt(nowUnix) {
+	if !isCooling && !isAwaitingProbe {
 		return false
 	}
+	applyBreakerDecay(current, now)
 
 	current.BreakerCooldownAt = nowUnix
 	current.BreakerUpdatedAt = nowUnix
