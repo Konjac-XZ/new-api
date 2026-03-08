@@ -306,6 +306,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 
 			if newAPIError == nil {
+				service.RecordChannelRelaySuccess(channel, relayInfo)
 				if monitorID != "" {
 					monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusSucceeded, monitor.PhaseCompleted, "", "", c.Writer.Status())
 				}
@@ -354,6 +355,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusFailed, monitor.PhaseError, reason, errCode, newAPIError.StatusCode)
 			}
 
+			service.RecordChannelRelayFailure(channel, relayInfo, newAPIError)
 			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
 			remainingChannelRetries := common.RetryTimes - retryParam.GetRetry()
@@ -720,10 +722,12 @@ func RelayTask(c *gin.Context) {
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
+			service.RecordChannelRelaySuccess(channel, relayInfo)
 			break
 		}
 
 		if !taskErr.LocalError {
+			service.RecordChannelRelayFailure(channel, relayInfo, types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 			processChannelError(c,
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),

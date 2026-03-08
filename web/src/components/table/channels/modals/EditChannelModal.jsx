@@ -194,6 +194,7 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     treat_empty_reply_as_failure: false,
+    dynamic_circuit_breaker: false,
     system_prompt: '',
     system_prompt_override: false,
     settings: '',
@@ -531,6 +532,7 @@ const EditChannelModal = (props) => {
     proxy: '',
     pass_through_body_enabled: false,
     treat_empty_reply_as_failure: false,
+    dynamic_circuit_breaker: false,
     system_prompt: '',
     max_retry_attempts: 1,
   });
@@ -852,6 +854,8 @@ const EditChannelModal = (props) => {
             parsedSettings.pass_through_body_enabled || false;
           data.treat_empty_reply_as_failure =
             parsedSettings.treat_empty_reply_as_failure || false;
+          data.dynamic_circuit_breaker =
+            parsedSettings.dynamic_circuit_breaker === true;
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
@@ -863,6 +867,7 @@ const EditChannelModal = (props) => {
           data.proxy = '';
           data.pass_through_body_enabled = false;
           data.treat_empty_reply_as_failure = false;
+          data.dynamic_circuit_breaker = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
           data.max_retry_attempts = 1;
@@ -873,6 +878,7 @@ const EditChannelModal = (props) => {
         data.proxy = '';
         data.pass_through_body_enabled = false;
         data.treat_empty_reply_as_failure = false;
+        data.dynamic_circuit_breaker = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
         data.max_retry_attempts = 1;
@@ -980,6 +986,7 @@ const EditChannelModal = (props) => {
         proxy: data.proxy,
         pass_through_body_enabled: data.pass_through_body_enabled,
         treat_empty_reply_as_failure: data.treat_empty_reply_as_failure || false,
+        dynamic_circuit_breaker: data.dynamic_circuit_breaker || false,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
         max_retry_attempts: data.max_retry_attempts || 1,
@@ -1340,6 +1347,7 @@ const EditChannelModal = (props) => {
       proxy: '',
       pass_through_body_enabled: false,
       treat_empty_reply_as_failure: false,
+      dynamic_circuit_breaker: false,
       system_prompt: '',
       system_prompt_override: false,
     });
@@ -1714,6 +1722,8 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
       treat_empty_reply_as_failure:
         localInputs.treat_empty_reply_as_failure || false,
+      dynamic_circuit_breaker:
+        localInputs.dynamic_circuit_breaker === true,
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
       max_retry_attempts: normalizedMaxRetryAttempts,
@@ -1811,6 +1821,7 @@ const EditChannelModal = (props) => {
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
     delete localInputs.treat_empty_reply_as_failure;
+    delete localInputs.dynamic_circuit_breaker;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
     delete localInputs.is_enterprise_account;
@@ -3544,6 +3555,23 @@ const EditChannelModal = (props) => {
                         '仅当自动禁用开启时有效，关闭后不会自动禁用该渠道',
                       )}
                       initValue={autoBan}
+                    />
+
+                    <Form.Switch
+                      field='dynamic_circuit_breaker'
+                      label={t('启用动态熔断冷却')}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      disabled={!autoBan}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'dynamic_circuit_breaker',
+                          value,
+                        )
+                      }
+                      extraText={t(
+                        '仅在开启自动禁用时生效。根据真实请求的近期失败、连续失败和恢复情况，临时将该渠道移出候选列表；不改变现有优先级和权重机制。',
+                      )}
                     />
 
                     <Form.InputNumber

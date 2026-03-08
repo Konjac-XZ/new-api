@@ -9,6 +9,7 @@ type ChannelSettings struct {
 	SystemPromptOverride     bool   `json:"system_prompt_override,omitempty"`
 	MaxRetryAttempts         int    `json:"max_retry_attempts,omitempty"`
 	TreatEmptyReplyAsFailure bool   `json:"treat_empty_reply_as_failure,omitempty"`
+	DynamicCircuitBreaker    bool   `json:"dynamic_circuit_breaker,omitempty"`
 }
 
 type VertexKeyType string

@@ -906,10 +906,10 @@ const RequestDetail = ({
 
               <MetaPill icon={<Activity size={14} />} label={t('当前响应状态')}>
                 <Tag
-                  color={channelPhaseColors[record.current_phase] || 'grey'}
+                  color={record.status === 'abandoned' ? 'grey' : (channelPhaseColors[record.current_phase] || 'grey')}
                   size='small'
                 >
-                  {phaseLabels[record.current_phase] || t('未知状态')}
+                  {record.status === 'abandoned' ? t('已放弃') : (phaseLabels[record.current_phase] || t('未知状态'))}
                 </Tag>
               </MetaPill>
 
@@ -1337,7 +1337,7 @@ const RequestDetail = ({
               </MetaPill>
             </div>
 
-            {record.response.error && (
+            {record.response.error && record.status !== 'abandoned' && (
               <div
                 style={{
                   marginTop: '10px',

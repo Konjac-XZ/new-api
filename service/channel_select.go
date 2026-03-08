@@ -97,6 +97,16 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			exclude[id] = true
 		}
 	}
+	mergeDynamicSuppressed := func(group string) error {
+		suppressed, err := GetDynamicSuppressedChannelIDs(group, param.ModelName)
+		if err != nil {
+			return err
+		}
+		for id := range suppressed {
+			exclude[id] = true
+		}
+		return nil
+	}
 
 	if param.TokenGroup == "auto" {
 		if len(setting.GetAutoGroups()) == 0 {
@@ -117,6 +127,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 
 		for i := startGroupIndex; i < len(autoGroups); i++ {
 			autoGroup := autoGroups[i]
+			if err := mergeDynamicSuppressed(autoGroup); err != nil {
+				return nil, selectGroup, err
+			}
 			// Calculate priorityRetry for current group
 			// 计算当前分组的 priorityRetry
 			priorityRetry := param.GetRetry()
@@ -169,6 +182,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			break
 		}
 	} else {
+		if err := mergeDynamicSuppressed(param.TokenGroup); err != nil {
+			return nil, param.TokenGroup, err
+		}
 		if len(exclude) > 0 {
 			channel, err = model.GetRandomSatisfiedChannelExclude(param.TokenGroup, param.ModelName, exclude)
 		} else {

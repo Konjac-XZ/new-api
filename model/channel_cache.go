@@ -198,91 +198,170 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 // It will keep retrying within the same priority (weighted) until all channels
 // at that priority are exhausted, then fall back to the next lower priority.
 func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[int]bool) (*Channel, error) {
-    // if memory cache is disabled, defer to DB-based implementation
-    if !common.MemoryCacheEnabled {
-        return GetChannelExclude(group, model, exclude)
-    }
+	// if memory cache is disabled, defer to DB-based implementation
+	if !common.MemoryCacheEnabled {
+		return GetChannelExclude(group, model, exclude)
+	}
 
-    channelSyncLock.RLock()
-    defer channelSyncLock.RUnlock()
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
 
-    // First, try to find channels with the exact model name.
-    channels := group2model2channels[group][model]
+	// First, try to find channels with the exact model name.
+	channels := group2model2channels[group][model]
 
-    // If no channels found, try to find channels with the normalized model name.
-    if len(channels) == 0 {
-        normalizedModel := ratio_setting.FormatMatchingModelName(model)
-        channels = group2model2channels[group][normalizedModel]
-    }
+	// If no channels found, try to find channels with the normalized model name.
+	if len(channels) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		channels = group2model2channels[group][normalizedModel]
+	}
 
-    if len(channels) == 0 {
-        return nil, nil
-    }
+	if len(channels) == 0 {
+		return nil, nil
+	}
 
-    // Collect priorities in descending order
-    uniquePriorities := make(map[int]bool)
-    for _, channelId := range channels {
-        ch, ok := channelsIDM[channelId]
-        if !ok {
-            return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
-        }
-        uniquePriorities[int(ch.GetPriority())] = true
-    }
-    var sortedPriorities []int
-    for p := range uniquePriorities {
-        sortedPriorities = append(sortedPriorities, p)
-    }
-    sort.Sort(sort.Reverse(sort.IntSlice(sortedPriorities)))
+	// Collect priorities in descending order
+	uniquePriorities := make(map[int]bool)
+	for _, channelId := range channels {
+		ch, ok := channelsIDM[channelId]
+		if !ok {
+			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+		}
+		uniquePriorities[int(ch.GetPriority())] = true
+	}
+	var sortedPriorities []int
+	for p := range uniquePriorities {
+		sortedPriorities = append(sortedPriorities, p)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(sortedPriorities)))
 
-    // Iterate priorities from highest to lowest
-    for _, p := range sortedPriorities {
-        targetPriority := int64(p)
-        var targetChannels []*Channel
-        sumWeight := 0
-        for _, channelId := range channels {
-            ch, ok := channelsIDM[channelId]
-            if !ok {
-                return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
-            }
-            if ch.GetPriority() == targetPriority {
-                if exclude != nil && exclude[ch.Id] {
-                    continue
-                }
-                targetChannels = append(targetChannels, ch)
-                sumWeight += ch.GetWeight()
-            }
-        }
+	// Iterate priorities from highest to lowest
+	for _, p := range sortedPriorities {
+		targetPriority := int64(p)
+		var targetChannels []*Channel
+		sumWeight := 0
+		for _, channelId := range channels {
+			ch, ok := channelsIDM[channelId]
+			if !ok {
+				return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+			}
+			if ch.GetPriority() == targetPriority {
+				if exclude != nil && exclude[ch.Id] {
+					continue
+				}
+				targetChannels = append(targetChannels, ch)
+				sumWeight += ch.GetWeight()
+			}
+		}
 
-        if len(targetChannels) == 0 {
-            // nothing left at this priority, go next lower
-            continue
-        }
+		if len(targetChannels) == 0 {
+			// nothing left at this priority, go next lower
+			continue
+		}
 
-        // smoothing factor and adjustment
-        smoothingFactor := 1
-        smoothingAdjustment := 0
-        if sumWeight == 0 {
-            // when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
-            sumWeight = len(targetChannels) * 100
-            smoothingAdjustment = 100
-        } else if sumWeight/len(targetChannels) < 10 {
-            // when the average weight is less than 10, set smoothing factor to 100
-            smoothingFactor = 100
-        }
+		// smoothing factor and adjustment
+		smoothingFactor := 1
+		smoothingAdjustment := 0
+		if sumWeight == 0 {
+			// when all channels have weight 0, set sumWeight to the number of channels and set smoothing adjustment to 100
+			sumWeight = len(targetChannels) * 100
+			smoothingAdjustment = 100
+		} else if sumWeight/len(targetChannels) < 10 {
+			// when the average weight is less than 10, set smoothing factor to 100
+			smoothingFactor = 100
+		}
 
-        totalWeight := sumWeight * smoothingFactor
-        randomWeight := rand.Intn(totalWeight)
-        for _, ch := range targetChannels {
-            randomWeight -= ch.GetWeight()*smoothingFactor + smoothingAdjustment
-            if randomWeight < 0 {
-                return ch, nil
-            }
-        }
-        // go to next if none picked (shouldn't happen)
-    }
+		totalWeight := sumWeight * smoothingFactor
+		randomWeight := rand.Intn(totalWeight)
+		for _, ch := range targetChannels {
+			randomWeight -= ch.GetWeight()*smoothingFactor + smoothingAdjustment
+			if randomWeight < 0 {
+				return ch, nil
+			}
+		}
+		// go to next if none picked (shouldn't happen)
+	}
 
-    // No channel left after exclusion
-    return nil, errors.New("channel not found after exclusion")
+	// No channel left after exclusion
+	return nil, errors.New("channel not found after exclusion")
+}
+
+func GetEnabledChannelsByGroupModel(group string, model string) ([]*Channel, error) {
+	if !common.MemoryCacheEnabled {
+		return getEnabledChannelsByGroupModelDB(group, model)
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	channels := group2model2channels[group][model]
+	if len(channels) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		channels = group2model2channels[group][normalizedModel]
+	}
+	if len(channels) == 0 {
+		return nil, nil
+	}
+
+	result := make([]*Channel, 0, len(channels))
+	for _, channelId := range channels {
+		channel, ok := channelsIDM[channelId]
+		if !ok {
+			return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
+		}
+		result = append(result, channel)
+	}
+	return result, nil
+}
+
+func getEnabledChannelsByGroupModelDB(group string, model string) ([]*Channel, error) {
+	channelIDs, err := getEnabledChannelIDsByGroupModelDB(group, model)
+	if err != nil {
+		return nil, err
+	}
+	if len(channelIDs) == 0 {
+		return nil, nil
+	}
+	channels, err := GetChannelsByIds(channelIDs)
+	if err != nil {
+		return nil, err
+	}
+	channelMap := make(map[int]*Channel, len(channels))
+	for _, channel := range channels {
+		channelMap[channel.Id] = channel
+	}
+	result := make([]*Channel, 0, len(channelIDs))
+	for _, id := range channelIDs {
+		if channel, ok := channelMap[id]; ok {
+			result = append(result, channel)
+		}
+	}
+	return result, nil
+}
+
+func getEnabledChannelIDsByGroupModelDB(group string, model string) ([]int, error) {
+	var channelIDs []int
+	err := DB.Model(&Ability{}).
+		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Order("priority DESC").
+		Order("weight DESC").
+		Pluck("channel_id", &channelIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(channelIDs) == 0 {
+		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		if normalizedModel != model {
+			err = DB.Model(&Ability{}).
+				Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, normalizedModel, true).
+				Order("priority DESC").
+				Order("weight DESC").
+				Pluck("channel_id", &channelIDs).Error
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return channelIDs, nil
 }
 
 func CacheGetChannel(id int) (*Channel, error) {
@@ -357,4 +436,19 @@ func CacheUpdateChannel(channel *Channel) {
 	println("before:", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
 	channelsIDM[channel.Id] = channel
 	println("after :", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
+}
+
+func CacheUpdateChannelBreakerState(channel *Channel) {
+	if !common.MemoryCacheEnabled || channel == nil {
+		return
+	}
+	channelSyncLock.Lock()
+	defer channelSyncLock.Unlock()
+	if cached, ok := channelsIDM[channel.Id]; ok {
+		cached.BreakerPressure = channel.BreakerPressure
+		cached.BreakerUpdatedAt = channel.BreakerUpdatedAt
+		cached.BreakerFailStreak = channel.BreakerFailStreak
+		cached.BreakerCooldownAt = channel.BreakerCooldownAt
+		cached.BreakerLastFailure = channel.BreakerLastFailure
+	}
 }

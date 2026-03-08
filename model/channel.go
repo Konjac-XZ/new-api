@@ -43,15 +43,20 @@ type Channel struct {
 	UsedQuota             int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping          *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
-	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
-	OtherInfo         string  `json:"other_info"`
-	Tag               *string `json:"tag" gorm:"index"`
-	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride     *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	StatusCodeMapping  *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
+	Priority           *int64  `json:"priority" gorm:"bigint;default:0"`
+	AutoBan            *int    `json:"auto_ban" gorm:"default:1"`
+	OtherInfo          string  `json:"other_info"`
+	Tag                *string `json:"tag" gorm:"index"`
+	Setting            *string `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride      *string `json:"param_override" gorm:"type:text"`
+	HeaderOverride     *string `json:"header_override" gorm:"type:text"`
+	Remark             *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	BreakerPressure    float64 `json:"-" gorm:"column:breaker_pressure;default:0"`
+	BreakerUpdatedAt   int64   `json:"-" gorm:"column:breaker_updated_at;bigint;default:0"`
+	BreakerFailStreak  int     `json:"-" gorm:"column:breaker_fail_streak;default:0"`
+	BreakerCooldownAt  int64   `json:"-" gorm:"column:breaker_cooldown_at;bigint;default:0"`
+	BreakerLastFailure string  `json:"-" gorm:"column:breaker_last_failure;type:varchar(64);default:''"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -251,6 +256,27 @@ func (channel *Channel) GetAutoBan() bool {
 		return false
 	}
 	return *channel.AutoBan == 1
+}
+
+func (channel *Channel) IsDynamicCircuitBreakerEnabled() bool {
+	if channel == nil || !channel.GetAutoBan() {
+		return false
+	}
+	return channel.GetSetting().DynamicCircuitBreaker
+}
+
+func (channel *Channel) IsBreakerCoolingAt(now int64) bool {
+	if channel == nil || !channel.IsDynamicCircuitBreakerEnabled() {
+		return false
+	}
+	return channel.BreakerCooldownAt > now
+}
+
+func (channel *Channel) IsBreakerProbationAt(now int64) bool {
+	if channel == nil || !channel.IsDynamicCircuitBreakerEnabled() {
+		return false
+	}
+	return channel.BreakerCooldownAt > 0 && channel.BreakerCooldownAt <= now
 }
 
 func (channel *Channel) Save() error {
@@ -902,6 +928,24 @@ func (channel *Channel) GetMaxRetryAttempts() int {
 		return 1
 	}
 	return setting.MaxRetryAttempts
+}
+
+func UpdateChannelBreakerState(channel *Channel) error {
+	if channel == nil {
+		return errors.New("channel is nil")
+	}
+	updates := map[string]interface{}{
+		"breaker_pressure":     channel.BreakerPressure,
+		"breaker_updated_at":   channel.BreakerUpdatedAt,
+		"breaker_fail_streak":  channel.BreakerFailStreak,
+		"breaker_cooldown_at":  channel.BreakerCooldownAt,
+		"breaker_last_failure": channel.BreakerLastFailure,
+	}
+	if err := DB.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error; err != nil {
+		return err
+	}
+	CacheUpdateChannelBreakerState(channel)
+	return nil
 }
 
 func (channel *Channel) SetSetting(setting dto.ChannelSettings) {
