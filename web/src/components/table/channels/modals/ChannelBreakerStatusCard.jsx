@@ -49,6 +49,12 @@ const getPhaseMeta = (phase, t) => {
         label: t('观察期'),
         description: t('冷却已结束，下一次成功请求将恢复到正常状态'),
       };
+    case 'awaiting_probe':
+      return {
+        color: 'yellow',
+        label: t('待探测'),
+        description: t('冷却已结束，等待最近一次探测成功后进入观察期'),
+      };
     case 'closed':
       return {
         color: 'green',

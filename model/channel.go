@@ -272,11 +272,34 @@ func (channel *Channel) IsBreakerCoolingAt(now int64) bool {
 	return channel.BreakerCooldownAt > now
 }
 
+func (channel *Channel) IsBreakerAwaitingProbeAt(now int64) bool {
+	if channel == nil || !channel.IsDynamicCircuitBreakerEnabled() {
+		return false
+	}
+	// If no scheduled probe is configured, cooldown expiry directly enters observation.
+	if channel.GetScheduledTestInterval() <= 0 {
+		return false
+	}
+	if channel.BreakerCooldownAt <= 0 || channel.BreakerCooldownAt > now {
+		return false
+	}
+	// Probe success is marked by setting updated_at to cooldown_at (or later) when promoting.
+	return channel.BreakerUpdatedAt < channel.BreakerCooldownAt
+}
+
 func (channel *Channel) IsBreakerProbationAt(now int64) bool {
 	if channel == nil || !channel.IsDynamicCircuitBreakerEnabled() {
 		return false
 	}
-	return channel.BreakerCooldownAt > 0 && channel.BreakerCooldownAt <= now
+	if channel.BreakerCooldownAt <= 0 || channel.BreakerCooldownAt > now {
+		return false
+	}
+	// With regular scheduled probes, observation is entered only after the latest
+	// probe succeeds and explicitly promotes the channel.
+	if channel.GetScheduledTestInterval() > 0 {
+		return channel.BreakerUpdatedAt >= channel.BreakerCooldownAt
+	}
+	return true
 }
 
 func (channel *Channel) Save() error {

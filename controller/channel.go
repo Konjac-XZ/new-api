@@ -399,6 +399,10 @@ func buildChannelBreakerState(channel *model.Channel) *ChannelBreakerState {
 		}
 		return state
 	}
+	if channel.IsBreakerAwaitingProbeAt(now) {
+		state.Phase = "awaiting_probe"
+		return state
+	}
 	if channel.IsBreakerProbationAt(now) {
 		state.Phase = "observation"
 		state.ObservationElapsedSeconds = now - channel.BreakerCooldownAt

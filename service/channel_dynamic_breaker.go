@@ -32,6 +32,7 @@ const (
 	breakerProbationRecoveryFactor = 0.45
 	breakerSlowSuccessPressure     = 0.35
 	breakerProbationPenalty        = 0.75
+	breakerAwaitingProbePenalty    = 4.0
 	breakerMinPressure             = 0.05
 	breakerMaxPressureContribution = 8.0
 	breakerSlowSuccessThreshold    = 15 * time.Second
@@ -50,7 +51,10 @@ func GetDynamicSuppressedChannelIDs(group string, modelName string) (map[int]boo
 	now := time.Now().Unix()
 	exclude := make(map[int]bool)
 	for _, channel := range channels {
-		if channel == nil || !channel.IsBreakerCoolingAt(now) {
+		if channel == nil {
+			continue
+		}
+		if !channel.IsBreakerCoolingAt(now) && !channel.IsBreakerAwaitingProbeAt(now) {
 			continue
 		}
 		exclude[channel.Id] = true
@@ -121,12 +125,18 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 
 	now := time.Now()
 	wasInProbation := current.IsBreakerProbationAt(now.Unix())
+	wasAwaitingProbe := current.IsBreakerAwaitingProbeAt(now.Unix())
 	applyBreakerDecay(current, now)
 
 	failureKind := classifyChannelFailure(info, err)
 	current.BreakerPressure += failurePressureWeight(failureKind)
 	if wasInProbation {
 		current.BreakerPressure += breakerProbationPenalty
+	}
+	if wasAwaitingProbe {
+		// Cooldown has already elapsed, but a probe still failed: treat this as a
+		// high-confidence reliability signal and apply a strong pressure bonus.
+		current.BreakerPressure += breakerAwaitingProbePenalty
 	}
 	current.BreakerFailStreak++
 
@@ -136,6 +146,9 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 	}
 	if wasInProbation {
 		multiplier += 0.75
+	}
+	if wasAwaitingProbe {
+		multiplier += 1.5
 	}
 
 	baseCooldown := failureBaseCooldown(failureKind)
@@ -178,7 +191,10 @@ func RecordChannelProbeSuccess(channel *model.Channel) bool {
 	now := time.Now()
 	applyBreakerDecay(current, now)
 	nowUnix := now.Unix()
-	if !current.IsBreakerCoolingAt(nowUnix) {
+	if current.BreakerCooldownAt <= 0 || current.IsBreakerProbationAt(nowUnix) {
+		return false
+	}
+	if !current.IsBreakerCoolingAt(nowUnix) && !current.IsBreakerAwaitingProbeAt(nowUnix) {
 		return false
 	}
 
