@@ -501,6 +501,8 @@ func (s *Store) GetStats() MonitorStats {
 				stats.Completed++
 			case StatusError:
 				stats.Errors++
+			case StatusAbandoned:
+				stats.Abandoned++
 			}
 		}
 		slot.mu.RUnlock()

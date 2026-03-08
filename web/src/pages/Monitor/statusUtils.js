@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 const ACTIVE_STATUSES = ['processing', 'waiting_upstream', 'streaming'];
-const TERMINAL_STATUSES = ['completed', 'error'];
+const TERMINAL_STATUSES = ['completed', 'error', 'abandoned'];
 
 export const deriveDisplayStatus = (record) => {
   if (!record) return '';

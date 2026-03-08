@@ -1184,6 +1184,7 @@
     "已复制模型名称": "Model name copied",
     "已复制版本号": "Version copied",
     "已复制自动生成的 API Key": "Auto-generated API Key copied",
+    "已放弃": "Abandoned",
     "已完成": "Completed",
     "已开启全局请求透传：参数覆写、模型重定向、渠道适配等 NewAPI 内置功能将失效，非最佳实践；如因此产生问题，请勿提交 issue 反馈。": "Global request pass-through is enabled. Built-in NewAPI features such as parameter overrides, model redirection, and channel adaptation will be disabled. This is not a best practice. If this causes issues, please do not submit an issue.",
     "已成功开始测试所有已启用通道，请刷新页面查看结果。": "Successfully started testing all enabled channels. Please refresh page to view results.",

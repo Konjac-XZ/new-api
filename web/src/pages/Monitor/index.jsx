@@ -93,6 +93,7 @@ const statusColors = {
   streaming: 'purple',
   completed: 'green',
   error: 'red',
+  abandoned: 'grey',
 };
 
 const channelPhaseColors = {
@@ -234,6 +235,7 @@ const getStatusLabels = (t) => ({
   streaming: t('流式返回中'),
   completed: t('已完成'),
   error: t('错误'),
+  abandoned: t('已放弃'),
 });
 
 const getPhaseLabels = (t) => ({
@@ -1669,6 +1671,7 @@ const Monitor = () => {
           />
           <TabPane tab={t('已完成')} itemKey='completed' />
           <TabPane tab={t('错误')} itemKey='error' />
+          <TabPane tab={t('已放弃')} itemKey='abandoned' />
         </Tabs>
 
         <div style={{ flex: 1, minHeight: 0 }}>

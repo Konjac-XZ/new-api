@@ -331,6 +331,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				if monitorID != "" {
 					reason, errCode := monitorReasonFromError(newAPIError)
 					monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusAbandoned, monitor.PhaseError, reason, errCode, newAPIError.StatusCode)
+					monitor.MarkRequestAbandoned(monitorID)
 				}
 				return
 			}

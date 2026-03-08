@@ -179,7 +179,9 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 		r.Duration = now.Sub(r.StartTime).Milliseconds()
 		r.Response = response
 		if response.Error != nil {
-			r.Status = StatusError
+			if r.Status != StatusAbandoned {
+				r.Status = StatusError
+			}
 		} else {
 			r.Status = StatusCompleted
 		}
@@ -211,7 +213,9 @@ func RecordError(recordID string, err error) {
 		now := time.Now()
 		r.EndTime = &now
 		r.Duration = now.Sub(r.StartTime).Milliseconds()
-		r.Status = StatusError
+		if r.Status != StatusAbandoned {
+			r.Status = StatusError
+		}
 		if r.Response == nil {
 			r.Response = &ResponseInfo{}
 		}
@@ -259,6 +263,18 @@ func RecordErrorWithContext(c *gin.Context, err error) {
 		return
 	}
 	RecordError(recordID, err)
+}
+
+// MarkRequestAbandoned pre-marks a request as abandoned so that subsequent
+// RecordResponse / RecordError calls do not overwrite the status.
+// Call this when the downstream client disconnects before the request completes.
+func MarkRequestAbandoned(recordID string) {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
+		return
+	}
+	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
+		r.Status = StatusAbandoned
+	})
 }
 
 // StartChannelAttempt records that we are about to try a specific channel.

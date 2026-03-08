@@ -25,6 +25,7 @@ const (
 	StatusStreaming       = "streaming"
 	StatusCompleted       = "completed"
 	StatusError           = "error"
+	StatusAbandoned       = "abandoned"
 )
 
 // Channel phases (real-time state of upstream interaction)
@@ -165,6 +166,7 @@ type MonitorStats struct {
 	ActiveRequests int   `json:"active_requests"`
 	Completed      int   `json:"completed"`
 	Errors         int   `json:"errors"`
+	Abandoned      int   `json:"abandoned"`
 	MemoryBytes    int64 `json:"memory_bytes"`
 }
 
