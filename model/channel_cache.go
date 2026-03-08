@@ -39,7 +39,7 @@ func InitChannelCache() {
 		newGroup2model2channels[group] = make(map[string][]int)
 	}
 	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
+		if !channel.IsHardConstraintEnabled() {
 			continue // skip disabled channels
 		}
 		groups := strings.Split(channel.Group, ",")
@@ -404,16 +404,16 @@ func CacheUpdateChannelStatus(id int, status int) {
 	defer channelSyncLock.Unlock()
 	if channel, ok := channelsIDM[id]; ok {
 		channel.Status = status
-	}
-	if status != common.ChannelStatusEnabled {
-		// delete the channel from group2model2channels
-		for group, model2channels := range group2model2channels {
-			for model, channels := range model2channels {
-				for i, channelId := range channels {
-					if channelId == id {
-						// remove the channel from the slice
-						group2model2channels[group][model] = append(channels[:i], channels[i+1:]...)
-						break
+		if !channel.IsHardConstraintEnabled() {
+			// delete the channel from group2model2channels
+			for group, model2channels := range group2model2channels {
+				for model, channels := range model2channels {
+					for i, channelId := range channels {
+						if channelId == id {
+							// remove the channel from the slice
+							group2model2channels[group][model] = append(channels[:i], channels[i+1:]...)
+							break
+						}
 					}
 				}
 			}

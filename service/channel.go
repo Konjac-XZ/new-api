@@ -27,6 +27,16 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 		return
 	}
 
+	// Dynamic breaker channels keep hard constraints enabled and rely on
+	// soft suppression (breaker pressure/cooldown) instead.
+	channel, err := model.GetChannelById(channelError.ChannelId, true)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("通道「%s」（#%d）加载失败，继续执行自动禁用，error=%v", channelError.ChannelName, channelError.ChannelId, err))
+	} else if channel.IsDynamicCircuitBreakerEnabled() {
+		common.SysLog(fmt.Sprintf("通道「%s」（#%d）启用了动态熔断，屏蔽硬禁用，仅使用软约束", channelError.ChannelName, channelError.ChannelId))
+		return
+	}
+
 	success := model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
 	if success {
 		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)

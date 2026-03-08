@@ -755,6 +755,7 @@ func testAllChannels(notify bool) error {
 
 		for _, channel := range channels {
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
+			dynamicBreakerEnabled := channel.IsDynamicCircuitBreakerEnabled()
 			tik := time.Now()
 			result := testChannel(channel, "", "")
 			tok := time.Now()
@@ -776,13 +777,19 @@ func testAllChannels(notify bool) error {
 				}
 			}
 
-			// disable channel
-			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
+			// For dynamic breaker channels, channel-test failures should affect soft constraints only.
+			// Keep hard status gating unchanged unless user explicitly manual-disables the channel.
+			if shouldBanChannel && channel.GetAutoBan() && dynamicBreakerEnabled && newAPIError != nil {
+				service.RecordChannelRelayFailure(channel, nil, newAPIError)
+			}
+
+			// disable channel (hard constraint path)
+			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() && !dynamicBreakerEnabled {
 				processChannelError(result.context, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 			}
 
 			// enable channel
-			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+			if !dynamicBreakerEnabled && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 			}
 
@@ -811,7 +818,7 @@ func TestAllChannels(c *gin.Context) {
 
 func isWithinTestTime() bool {
 	return true
-	
+
 	now := time.Now()
 	hour := now.Hour()
 	minute := now.Minute()

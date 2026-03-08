@@ -265,6 +265,26 @@ func (channel *Channel) IsDynamicCircuitBreakerEnabled() bool {
 	return channel.GetSetting().DynamicCircuitBreaker
 }
 
+// IsHardConstraintEnabled indicates whether a channel passes hard-constraint
+// gating for routing/abilities.
+// Manual disable is always hard-off.
+// Auto-disable is treated as soft-only when dynamic breaker is enabled.
+func (channel *Channel) IsHardConstraintEnabled() bool {
+	if channel == nil {
+		return false
+	}
+	switch channel.Status {
+	case common.ChannelStatusEnabled:
+		return true
+	case common.ChannelStatusManuallyDisabled:
+		return false
+	case common.ChannelStatusAutoDisabled:
+		return channel.IsDynamicCircuitBreakerEnabled()
+	default:
+		return false
+	}
+}
+
 func (channel *Channel) IsBreakerCoolingAt(now int64) bool {
 	if channel == nil || !channel.IsDynamicCircuitBreakerEnabled() {
 		return false
@@ -716,9 +736,10 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	}
 
 	shouldUpdateAbilities := false
+	abilityEnabled := false
 	defer func() {
 		if shouldUpdateAbilities {
-			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
+			err := UpdateAbilityStatus(channelId, abilityEnabled)
 			if err != nil {
 				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))
 			}
@@ -741,6 +762,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			pollingLock.Unlock()
 			if beforeStatus != channel.Status {
 				shouldUpdateAbilities = true
+				abilityEnabled = channel.IsHardConstraintEnabled()
 			}
 		} else {
 			info := channel.GetOtherInfo()
@@ -749,6 +771,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			channel.SetOtherInfo(info)
 			channel.Status = status
 			shouldUpdateAbilities = true
+			abilityEnabled = channel.IsHardConstraintEnabled()
 		}
 		err = channel.SaveWithoutKey()
 		if err != nil {

@@ -148,84 +148,84 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 // priority (weighted) until all channels of that priority are exhausted,
 // then falls back to the next lower priority.
 func GetChannelExclude(group string, model string, exclude map[int]bool) (*Channel, error) {
-    // Collect distinct priorities in descending order
-    var priorities []int
-    err := DB.Model(&Ability{}).
-        Select("DISTINCT(priority)").
-        Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
-        Order("priority DESC").
-        Pluck("priority", &priorities).Error
-    if err != nil {
-        return nil, err
-    }
-    if len(priorities) == 0 {
-        return nil, errors.New("数据库一致性被破坏")
-    }
+	// Collect distinct priorities in descending order
+	var priorities []int
+	err := DB.Model(&Ability{}).
+		Select("DISTINCT(priority)").
+		Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).
+		Order("priority DESC").
+		Pluck("priority", &priorities).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(priorities) == 0 {
+		return nil, errors.New("数据库一致性被破坏")
+	}
 
-    // Iterate priorities from highest to lowest
-    for _, p := range priorities {
-        var abilities []Ability
-        q := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, p)
-        if common.UsingSQLite || common.UsingPostgreSQL {
-            err = q.Order("weight DESC").Find(&abilities).Error
-        } else {
-            err = q.Order("weight DESC").Find(&abilities).Error
-        }
-        if err != nil {
-            return nil, err
-        }
+	// Iterate priorities from highest to lowest
+	for _, p := range priorities {
+		var abilities []Ability
+		q := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, p)
+		if common.UsingSQLite || common.UsingPostgreSQL {
+			err = q.Order("weight DESC").Find(&abilities).Error
+		} else {
+			err = q.Order("weight DESC").Find(&abilities).Error
+		}
+		if err != nil {
+			return nil, err
+		}
 
-        if len(abilities) == 0 {
-            continue
-        }
+		if len(abilities) == 0 {
+			continue
+		}
 
-        // Filter out excluded channels at this priority
-        filtered := make([]Ability, 0, len(abilities))
-        sumWeight := 0
-        for _, a := range abilities {
-            if exclude != nil && exclude[a.ChannelId] {
-                continue
-            }
-            filtered = append(filtered, a)
-            sumWeight += int(a.Weight)
-        }
-        if len(filtered) == 0 {
-            // all channels at this priority have been used
-            continue
-        }
+		// Filter out excluded channels at this priority
+		filtered := make([]Ability, 0, len(abilities))
+		sumWeight := 0
+		for _, a := range abilities {
+			if exclude != nil && exclude[a.ChannelId] {
+				continue
+			}
+			filtered = append(filtered, a)
+			sumWeight += int(a.Weight)
+		}
+		if len(filtered) == 0 {
+			// all channels at this priority have been used
+			continue
+		}
 
-        // Smoothing same as memory cache path
-        smoothingFactor := 1
-        smoothingAdjustment := 0
-        if sumWeight == 0 {
-            sumWeight = len(filtered) * 100
-            smoothingAdjustment = 100
-        } else if sumWeight/len(filtered) < 10 {
-            smoothingFactor = 100
-        }
+		// Smoothing same as memory cache path
+		smoothingFactor := 1
+		smoothingAdjustment := 0
+		if sumWeight == 0 {
+			sumWeight = len(filtered) * 100
+			smoothingAdjustment = 100
+		} else if sumWeight/len(filtered) < 10 {
+			smoothingFactor = 100
+		}
 
-        totalWeight := sumWeight * smoothingFactor
-        w := common.GetRandomInt(totalWeight)
-        var chosen Ability
-        for _, a := range filtered {
-            w -= int(a.Weight)*smoothingFactor + smoothingAdjustment
-            if w < 0 {
-                chosen = a
-                break
-            }
-        }
-        if chosen.ChannelId == 0 {
-            // fallback to first
-            chosen = filtered[0]
-        }
+		totalWeight := sumWeight * smoothingFactor
+		w := common.GetRandomInt(totalWeight)
+		var chosen Ability
+		for _, a := range filtered {
+			w -= int(a.Weight)*smoothingFactor + smoothingAdjustment
+			if w < 0 {
+				chosen = a
+				break
+			}
+		}
+		if chosen.ChannelId == 0 {
+			// fallback to first
+			chosen = filtered[0]
+		}
 
-        channel := Channel{}
-        err = DB.First(&channel, "id = ?", chosen.ChannelId).Error
-        return &channel, err
-    }
+		channel := Channel{}
+		err = DB.First(&channel, "id = ?", chosen.ChannelId).Error
+		return &channel, err
+	}
 
-    // nothing available
-    return nil, nil
+	// nothing available
+	return nil, nil
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
@@ -244,7 +244,7 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 				Group:     group,
 				Model:     model,
 				ChannelId: channel.Id,
-				Enabled:   channel.Status == common.ChannelStatusEnabled,
+				Enabled:   channel.IsHardConstraintEnabled(),
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
@@ -316,7 +316,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 				Group:     group,
 				Model:     model,
 				ChannelId: channel.Id,
-				Enabled:   channel.Status == common.ChannelStatusEnabled,
+				Enabled:   channel.IsHardConstraintEnabled(),
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,

@@ -62,3 +62,19 @@ func TestBreakerProbationWithoutScheduledProbe(t *testing.T) {
 		t.Fatal("expected probation when cooldown expires and no scheduled probe is configured")
 	}
 }
+
+func TestIsHardConstraintEnabled_DynamicBreakerMasksAutoDisabled(t *testing.T) {
+	ch := newDynamicBreakerChannelForTest()
+	ch.Status = common.ChannelStatusAutoDisabled
+	if !ch.IsHardConstraintEnabled() {
+		t.Fatal("expected dynamic breaker auto-disabled channel to stay hard-enabled")
+	}
+}
+
+func TestIsHardConstraintEnabled_ManualDisableAlwaysHardOff(t *testing.T) {
+	ch := newDynamicBreakerChannelForTest()
+	ch.Status = common.ChannelStatusManuallyDisabled
+	if ch.IsHardConstraintEnabled() {
+		t.Fatal("expected manually disabled channel to be hard-disabled")
+	}
+}
