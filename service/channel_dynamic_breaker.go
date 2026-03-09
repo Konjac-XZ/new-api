@@ -27,7 +27,7 @@ const (
 // Pressure system constants (unchanged — controls cooldown duration)
 const (
 	breakerDecayWindow             = time.Hour
-	breakerMaxCooldown             = 30 * time.Minute
+	breakerMaxCooldown             = 120 * time.Minute
 	breakerMinimumCooldown         = 30 * time.Second
 	breakerNormalRecoveryFactor    = 0.7
 	breakerProbationRecoveryFactor = 0.45
@@ -37,7 +37,7 @@ const (
 	breakerProbeTestPenalty        = 2.5
 	breakerProbeObservationPenalty = 5.0
 	breakerMinPressure             = 0.05
-	breakerMaxPressureContribution = 8.0
+	breakerMaxPressureContribution = 100.0
 	breakerSlowSuccessThreshold    = 15 * time.Second
 )
 
@@ -212,7 +212,7 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 		// Calculate cooldown duration using existing pressure-based formula
 		multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
 		if current.BreakerFailStreak > 1 {
-			multiplier += float64(minInt(current.BreakerFailStreak-1, 6)) * 0.75
+			multiplier += float64(minInt(current.BreakerFailStreak-1, 100)) * 0.75
 		}
 		if wasInProbation {
 			multiplier += 0.75

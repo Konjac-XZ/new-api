@@ -99,9 +99,7 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
         0,
         Math.min(
           100,
-          ((totalCooldownSeconds - remainingCooldownSeconds) /
-            totalCooldownSeconds) *
-          100,
+          (remainingCooldownSeconds / totalCooldownSeconds) * 100,
         ),
       )
       : 0;
@@ -184,19 +182,9 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
           <Text size='small' type='tertiary'>
             {t('压力值')}
           </Text>
-          <div className='flex items-center justify-between mb-1'>
+          <div style={{ marginTop: 4 }}>
             <Text strong>{pressureRaw.toFixed(2)}</Text>
-            <Text size='small' type='tertiary'>
-              / 8.00
-            </Text>
           </div>
-          <Progress
-            percent={pressurePercent}
-            showInfo={false}
-            size='small'
-            stroke={phase === 'closed' ? '#22c55e' : '#f59e0b'}
-            style={{ height: 6, borderRadius: 999 }}
-          />
         </Col>
         <Col span={12}>
           <Text size='small' type='tertiary'>
