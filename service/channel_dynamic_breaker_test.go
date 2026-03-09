@@ -106,6 +106,100 @@ func TestRecordChannelProbeSuccess_PromotesOnlyInAwaitingProbe(t *testing.T) {
 	}
 }
 
+func TestRecordChannelProbeFailure_IgnoresCoolingPhase(t *testing.T) {
+	now := time.Now().Unix()
+	channel := seedDynamicBreakerChannelForProbeTest(t, now+180, now-10, 5)
+
+	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+		"breaker_pressure":     1.5,
+		"breaker_fail_streak":  2,
+		"breaker_last_failure": "",
+	}).Error; err != nil {
+		t.Fatalf("failed to set breaker baseline: %v", err)
+	}
+
+	probeErr := types.NewErrorWithStatusCode(
+		fmt.Errorf("probe failed during cooling"),
+		types.ErrorCodeBadResponse,
+		http.StatusBadGateway,
+	)
+	RecordChannelProbeFailure(channel, probeErr)
+
+	var latest model.Channel
+	if err := model.DB.Select("breaker_pressure", "breaker_fail_streak", "breaker_cooldown_at", "breaker_updated_at", "breaker_last_failure").
+		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
+		t.Fatalf("failed to reload channel breaker state: %v", err)
+	}
+	if latest.BreakerPressure != 1.5 {
+		t.Fatalf("expected pressure unchanged during cooling, got %f", latest.BreakerPressure)
+	}
+	if latest.BreakerFailStreak != 2 {
+		t.Fatalf("expected fail_streak unchanged during cooling, got %d", latest.BreakerFailStreak)
+	}
+	if latest.BreakerCooldownAt != channel.BreakerCooldownAt {
+		t.Fatalf("expected cooldown unchanged during cooling, got %d want %d", latest.BreakerCooldownAt, channel.BreakerCooldownAt)
+	}
+}
+
+func TestRecordChannelProbeFailure_AwaitingProbeRestartsCooldown(t *testing.T) {
+	now := time.Now().Unix()
+	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)
+
+	probeErr := types.NewErrorWithStatusCode(
+		fmt.Errorf("probe failed in awaiting probe"),
+		types.ErrorCodeBadResponse,
+		http.StatusBadGateway,
+	)
+	RecordChannelProbeFailure(channel, probeErr)
+
+	var latest model.Channel
+	if err := model.DB.Select("breaker_pressure", "breaker_fail_streak", "breaker_cooldown_at", "breaker_last_failure").
+		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
+		t.Fatalf("failed to reload channel breaker state: %v", err)
+	}
+	if latest.BreakerCooldownAt <= now {
+		t.Fatalf("expected cooldown to restart from now, got cooldown_at=%d now=%d", latest.BreakerCooldownAt, now)
+	}
+	if latest.BreakerFailStreak != 1 {
+		t.Fatalf("expected fail_streak incremented to 1, got %d", latest.BreakerFailStreak)
+	}
+	if latest.BreakerPressure <= 0 {
+		t.Fatalf("expected pressure to increase on awaiting-probe failure, got %f", latest.BreakerPressure)
+	}
+	if latest.BreakerLastFailure == "" {
+		t.Fatal("expected last_failure to be recorded")
+	}
+}
+
+func TestRecordChannelProbeFailure_ObservationPenaltyIsStronger(t *testing.T) {
+	now := time.Now().Unix()
+	awaiting := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)
+	observation := seedDynamicBreakerChannelForProbeTest(t, now-30, now-30, 5)
+
+	probeErr := types.NewErrorWithStatusCode(
+		fmt.Errorf("probe failed"),
+		types.ErrorCodeBadResponse,
+		http.StatusBadGateway,
+	)
+	RecordChannelProbeFailure(awaiting, probeErr)
+	RecordChannelProbeFailure(observation, probeErr)
+
+	var awaitingLatest model.Channel
+	if err := model.DB.Select("breaker_pressure", "breaker_cooldown_at").Where("id = ?", awaiting.Id).First(&awaitingLatest).Error; err != nil {
+		t.Fatalf("failed to reload awaiting channel: %v", err)
+	}
+	var observationLatest model.Channel
+	if err := model.DB.Select("breaker_pressure", "breaker_cooldown_at").Where("id = ?", observation.Id).First(&observationLatest).Error; err != nil {
+		t.Fatalf("failed to reload observation channel: %v", err)
+	}
+	if observationLatest.BreakerPressure <= awaitingLatest.BreakerPressure {
+		t.Fatalf("expected observation pressure penalty > awaiting penalty, got observation=%f awaiting=%f", observationLatest.BreakerPressure, awaitingLatest.BreakerPressure)
+	}
+	if observationLatest.BreakerCooldownAt <= awaitingLatest.BreakerCooldownAt {
+		t.Fatalf("expected observation cooldown restart to be stricter, got observation=%d awaiting=%d", observationLatest.BreakerCooldownAt, awaitingLatest.BreakerCooldownAt)
+	}
+}
+
 func seedDynamicBreakerChannelForProbeTest(t *testing.T, cooldownAt int64, updatedAt int64, interval int) *model.Channel {
 	t.Helper()
 	settingBytes, err := common.Marshal(dto.ChannelSettings{DynamicCircuitBreaker: true})

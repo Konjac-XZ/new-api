@@ -33,6 +33,8 @@ const (
 	breakerSlowSuccessPressure     = 0.35
 	breakerProbationPenalty        = 0.75
 	breakerAwaitingProbePenalty    = 4.0
+	breakerProbeTestPenalty        = 2.5
+	breakerProbeObservationPenalty = 5.0
 	breakerMinPressure             = 0.05
 	breakerMaxPressureContribution = 8.0
 	breakerSlowSuccessThreshold    = 15 * time.Second
@@ -166,6 +168,73 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 
 	if err := model.UpdateChannelBreakerState(current); err != nil {
 		common.SysLog(fmt.Sprintf("failed to persist channel breaker failure state: channel_id=%d, error=%v", channel.Id, err))
+	}
+}
+
+// RecordChannelProbeFailure applies stage-aware handling for scheduled probe failures.
+// Cooling phase failures are ignored. Awaiting-probe and observation failures both
+// restart cooldown from now, with observation applying a stronger pressure penalty.
+func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
+	if channel == nil || err == nil {
+		return
+	}
+	channelBreakerStateLock.Lock()
+	defer channelBreakerStateLock.Unlock()
+
+	current, loadErr := model.GetChannelById(channel.Id, true)
+	if loadErr != nil {
+		common.SysLog(fmt.Sprintf("failed to load channel breaker state on probe failure: channel_id=%d, error=%v", channel.Id, loadErr))
+		return
+	}
+	if !current.IsDynamicCircuitBreakerEnabled() {
+		return
+	}
+
+	now := time.Now()
+	nowUnix := now.Unix()
+	if current.IsBreakerCoolingAt(nowUnix) {
+		// During active cooldown, probe failures do not change breaker state.
+		return
+	}
+
+	wasAwaitingProbe := current.IsBreakerAwaitingProbeAt(nowUnix)
+	wasInProbation := current.IsBreakerProbationAt(nowUnix)
+
+	applyBreakerDecay(current, now)
+
+	failureKind := classifyChannelFailure(nil, err)
+	current.BreakerPressure += failurePressureWeight(failureKind)
+	current.BreakerFailStreak++
+
+	multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
+	if current.BreakerFailStreak > 1 {
+		multiplier += float64(minInt(current.BreakerFailStreak-1, 6)) * 0.75
+	}
+
+	switch {
+	case wasInProbation:
+		current.BreakerPressure += breakerProbeObservationPenalty
+		multiplier += 2.5
+	case wasAwaitingProbe:
+		current.BreakerPressure += breakerProbeTestPenalty
+		multiplier += 1.5
+	}
+
+	baseCooldown := failureBaseCooldown(failureKind)
+	cooldown := time.Duration(float64(baseCooldown) * multiplier)
+	if cooldown < breakerMinimumCooldown {
+		cooldown = breakerMinimumCooldown
+	}
+	if cooldown > breakerMaxCooldown {
+		cooldown = breakerMaxCooldown
+	}
+
+	current.BreakerCooldownAt = now.Add(cooldown).Unix()
+	current.BreakerLastFailure = string(failureKind)
+	current.BreakerUpdatedAt = nowUnix
+
+	if err := model.UpdateChannelBreakerState(current); err != nil {
+		common.SysLog(fmt.Sprintf("failed to persist channel breaker probe failure state: channel_id=%d, error=%v", channel.Id, err))
 	}
 }
 

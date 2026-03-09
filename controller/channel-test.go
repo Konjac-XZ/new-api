@@ -1066,7 +1066,7 @@ func testScheduledChannel(channel *model.Channel) {
 					http.StatusBadGateway,
 				)
 			}
-			service.RecordChannelRelayFailure(channel, nil, breakerErr)
+			service.RecordChannelProbeFailure(channel, breakerErr)
 		} else if channel.Status == common.ChannelStatusEnabled && channel.GetAutoBan() {
 			// 如果渠道当前是启用状态，则禁用它
 			autoAction = "auto_disabled"
@@ -1106,9 +1106,8 @@ func testScheduledChannel(channel *model.Channel) {
 				resultDetail = fmt.Sprintf("first_token_latency_exceeded: %dms > %dms", firstTokenLatencyMs, maxLatencyMs)
 				if dynamicBreakerEnabled {
 					autoAction := "breaker_penalized"
-					service.RecordChannelRelayFailure(
+					service.RecordChannelProbeFailure(
 						channel,
-						nil,
 						types.NewErrorWithStatusCode(
 							fmt.Errorf("first token latency %dms exceeds threshold %dms", firstTokenLatencyMs, maxLatencyMs),
 							types.ErrorCodeChannelFirstTokenLatencyExceeded,
