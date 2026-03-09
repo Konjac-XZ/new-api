@@ -96,14 +96,14 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
   const cooldownPercent =
     totalCooldownSeconds > 0
       ? Math.max(
-          0,
-          Math.min(
-            100,
-            ((totalCooldownSeconds - remainingCooldownSeconds) /
-              totalCooldownSeconds) *
-              100,
-          ),
-        )
+        0,
+        Math.min(
+          100,
+          ((totalCooldownSeconds - remainingCooldownSeconds) /
+            totalCooldownSeconds) *
+          100,
+        ),
+      )
       : 0;
   const pressureRaw = Number(breakerState?.pressure || 0);
   const pressurePercent = Math.max(0, Math.min(100, (pressureRaw / 8) * 100));
@@ -111,6 +111,13 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
   const failureLabel = failureKind
     ? failureLabelMap[failureKind] || failureKind
     : t('无');
+
+  // HP data
+  const hpMax = Number(breakerState?.max_hp || 10);
+  const hpValue = breakerState?.hp != null ? Number(breakerState.hp) : hpMax;
+  const hpPercent = hpMax > 0 ? Math.max(0, Math.min(100, (hpValue / hpMax) * 100)) : 100;
+  const hpStroke = hpPercent > 60 ? '#22c55e' : hpPercent > 30 ? '#f59e0b' : '#ef4444';
+  const isDynamicEnabled = phase !== 'disabled';
 
   return (
     <Card
@@ -149,6 +156,24 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
             showInfo={false}
             size='small'
             stroke='#ef4444'
+            style={{ height: 6, borderRadius: 999 }}
+          />
+        </div>
+      )}
+
+      {isDynamicEnabled && (
+        <div style={{ marginTop: 12, marginBottom: 8 }}>
+          <div className='flex items-center justify-between mb-1'>
+            <Text size='small'>{t('当前HP')}</Text>
+            <Text size='small' type='tertiary'>
+              {hpValue.toFixed(1)} / {hpMax.toFixed(1)}
+            </Text>
+          </div>
+          <Progress
+            percent={hpPercent}
+            showInfo={false}
+            size='small'
+            stroke={hpStroke}
             style={{ height: 6, borderRadius: 999 }}
           />
         </div>
@@ -204,6 +229,48 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
           </div>
         </Col>
       </Row>
+
+      {isDynamicEnabled && (
+        <Row gutter={12} style={{ marginTop: 10 }}>
+          <Col span={12}>
+            <Text size='small' type='tertiary'>
+              {t('熔断次数')}
+            </Text>
+            <div style={{ marginTop: 4 }}>
+              <Text strong>{breakerState?.trip_count || 0}</Text>
+            </div>
+          </Col>
+          <Col span={12}>
+            <Text size='small' type='tertiary'>
+              {t('容错系数')}
+            </Text>
+            <div style={{ marginTop: 4 }}>
+              <Text strong>{(breakerState?.tolerance_coefficient || 1.0).toFixed(1)}</Text>
+            </div>
+          </Col>
+        </Row>
+      )}
+
+      {isDynamicEnabled && (
+        <Row gutter={12} style={{ marginTop: 10 }}>
+          <Col span={12}>
+            <Text size='small' type='tertiary'>
+              {t('近期失败率')}
+            </Text>
+            <div style={{ marginTop: 4 }}>
+              <Text strong>{((breakerState?.failure_rate || 0) * 100).toFixed(1)}%</Text>
+            </div>
+          </Col>
+          <Col span={12}>
+            <Text size='small' type='tertiary'>
+              {t('近期超时率')}
+            </Text>
+            <div style={{ marginTop: 4 }}>
+              <Text strong>{((breakerState?.timeout_rate || 0) * 100).toFixed(1)}%</Text>
+            </div>
+          </Col>
+        </Row>
+      )}
 
       {phase === 'observation' && (
         <div style={{ marginTop: 10 }}>

@@ -24,6 +24,7 @@ const (
 	channelFailureKindEmptyReply        channelFailureKind = "empty_reply"
 )
 
+// Pressure system constants (unchanged — controls cooldown duration)
 const (
 	breakerDecayWindow             = time.Hour
 	breakerMaxCooldown             = 30 * time.Minute
@@ -38,6 +39,22 @@ const (
 	breakerMinPressure             = 0.05
 	breakerMaxPressureContribution = 8.0
 	breakerSlowSuccessThreshold    = 15 * time.Second
+)
+
+// HP system constants — controls whether cooldown triggers
+const (
+	hpBase                       = 10.0  // base max HP before coefficient
+	hpMinCoefficient             = 0.1   // minimum tolerance coefficient
+	hpMaxCoefficient             = 10.0  // maximum tolerance coefficient
+	hpDefaultCoefficient         = 1.0   // default when not configured
+	hpMinimum                    = 1.0   // minimum maxHP floor
+	hpPassiveRecoveryPerHour     = 0.5   // HP recovered per hour passively
+	hpSuccessRecovery            = 0.5   // HP recovered per successful request
+	hpProbationSuccessRecovery   = 0.8   // HP recovered per success during observation
+	hpProbationDamageMultiplier  = 1.5   // damage multiplier during observation
+	hpAwaitingProbeDamageMultiplier = 2.0 // damage multiplier when awaiting probe
+	hpEWMADecayWindow            = time.Hour // EWMA decay time constant
+	hpEWMAMinValue               = 0.01 // minimum EWMA value before zeroing
 )
 
 var channelBreakerStateLock sync.Mutex
@@ -85,6 +102,8 @@ func RecordChannelRelaySuccess(channel *model.Channel, info *relaycommon.RelayIn
 
 	now := time.Now()
 	wasInProbation := current.IsBreakerProbationAt(now.Unix())
+
+	// Pressure system (unchanged)
 	applyBreakerDecay(current, now)
 	current.BreakerFailStreak = 0
 	current.BreakerCooldownAt = 0
@@ -102,6 +121,28 @@ func RecordChannelRelaySuccess(channel *model.Channel, info *relaycommon.RelayIn
 	if current.BreakerPressure < breakerMinPressure {
 		current.BreakerPressure = 0
 	}
+
+	// EWMA tracking: record success event
+	applyEWMADecay(current, now)
+	current.BreakerRecentRequests += 1.0
+
+	// HP system
+	ensureHPInitialized(current)
+	applyHPPassiveRecovery(current, now)
+
+	if wasInProbation {
+		// Transitioning out of observation: refill HP to maxHP
+		maxHP := computeMaxHP(current)
+		current.BreakerHP = maxHP
+		if current.BreakerTripCount > 0 {
+			current.BreakerTripCount--
+		}
+	} else {
+		recovery := hpSuccessRecovery
+		maxHP := computeMaxHP(current)
+		current.BreakerHP = math.Min(current.BreakerHP+recovery, maxHP)
+	}
+
 	current.BreakerUpdatedAt = now.Unix()
 
 	if err := model.UpdateChannelBreakerState(current); err != nil {
@@ -128,6 +169,8 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 	now := time.Now()
 	wasInProbation := current.IsBreakerProbationAt(now.Unix())
 	wasAwaitingProbe := current.IsBreakerAwaitingProbeAt(now.Unix())
+
+	// Pressure system (unchanged — still accumulates for cooldown duration calculation)
 	applyBreakerDecay(current, now)
 
 	failureKind := classifyChannelFailure(info, err)
@@ -136,33 +179,61 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 		current.BreakerPressure += breakerProbationPenalty
 	}
 	if wasAwaitingProbe {
-		// Cooldown has already elapsed, but a probe still failed: treat this as a
-		// high-confidence reliability signal and apply a strong pressure bonus.
 		current.BreakerPressure += breakerAwaitingProbePenalty
 	}
 	current.BreakerFailStreak++
 
-	multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
-	if current.BreakerFailStreak > 1 {
-		multiplier += float64(minInt(current.BreakerFailStreak-1, 6)) * 0.75
+	// EWMA tracking: record failure event
+	applyEWMADecay(current, now)
+	current.BreakerRecentRequests += 1.0
+	current.BreakerRecentFailures += 1.0
+	if failureKind == channelFailureKindFirstTokenTimeout {
+		current.BreakerRecentTimeouts += 1.0
 	}
+
+	// HP system: apply damage
+	ensureHPInitialized(current)
+	applyHPPassiveRecovery(current, now)
+
+	damage := failurePressureWeight(failureKind)
 	if wasInProbation {
-		multiplier += 0.75
+		damage *= hpProbationDamageMultiplier
 	}
 	if wasAwaitingProbe {
-		multiplier += 1.5
+		damage *= hpAwaitingProbeDamageMultiplier
 	}
+	current.BreakerHP -= damage
 
-	baseCooldown := failureBaseCooldown(failureKind)
-	cooldown := time.Duration(float64(baseCooldown) * multiplier)
-	if cooldown < breakerMinimumCooldown {
-		cooldown = breakerMinimumCooldown
-	}
-	if cooldown > breakerMaxCooldown {
-		cooldown = breakerMaxCooldown
-	}
+	if current.BreakerHP <= 0 {
+		// HP depleted: trigger cooldown
+		current.BreakerHP = 0
+		current.BreakerTripCount++
 
-	current.BreakerCooldownAt = now.Add(cooldown).Unix()
+		// Calculate cooldown duration using existing pressure-based formula
+		multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
+		if current.BreakerFailStreak > 1 {
+			multiplier += float64(minInt(current.BreakerFailStreak-1, 6)) * 0.75
+		}
+		if wasInProbation {
+			multiplier += 0.75
+		}
+		if wasAwaitingProbe {
+			multiplier += 1.5
+		}
+
+		baseCooldown := failureBaseCooldown(failureKind)
+		cooldown := time.Duration(float64(baseCooldown) * multiplier)
+		if cooldown < breakerMinimumCooldown {
+			cooldown = breakerMinimumCooldown
+		}
+		if cooldown > breakerMaxCooldown {
+			cooldown = breakerMaxCooldown
+		}
+
+		current.BreakerCooldownAt = now.Add(cooldown).Unix()
+	}
+	// If HP > 0: no cooldown triggered, channel remains in service
+
 	current.BreakerLastFailure = string(failureKind)
 	current.BreakerUpdatedAt = now.Unix()
 
@@ -173,7 +244,7 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 
 // RecordChannelProbeFailure applies stage-aware handling for scheduled probe failures.
 // Cooling phase failures are ignored. Awaiting-probe and observation failures both
-// restart cooldown from now, with observation applying a stronger pressure penalty.
+// apply HP damage and may restart cooldown if HP depletes.
 func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 	if channel == nil || err == nil {
 		return
@@ -200,36 +271,70 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 	wasAwaitingProbe := current.IsBreakerAwaitingProbeAt(nowUnix)
 	wasInProbation := current.IsBreakerProbationAt(nowUnix)
 
+	// Pressure system (unchanged)
 	applyBreakerDecay(current, now)
 
 	failureKind := classifyChannelFailure(nil, err)
 	current.BreakerPressure += failurePressureWeight(failureKind)
 	current.BreakerFailStreak++
 
-	multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
-	if current.BreakerFailStreak > 1 {
-		multiplier += float64(minInt(current.BreakerFailStreak-1, 6)) * 0.75
-	}
-
 	switch {
 	case wasInProbation:
 		current.BreakerPressure += breakerProbeObservationPenalty
-		multiplier += 2.5
 	case wasAwaitingProbe:
 		current.BreakerPressure += breakerProbeTestPenalty
-		multiplier += 1.5
 	}
 
-	baseCooldown := failureBaseCooldown(failureKind)
-	cooldown := time.Duration(float64(baseCooldown) * multiplier)
-	if cooldown < breakerMinimumCooldown {
-		cooldown = breakerMinimumCooldown
-	}
-	if cooldown > breakerMaxCooldown {
-		cooldown = breakerMaxCooldown
+	// EWMA tracking: record failure event
+	applyEWMADecay(current, now)
+	current.BreakerRecentRequests += 1.0
+	current.BreakerRecentFailures += 1.0
+	if failureKind == channelFailureKindFirstTokenTimeout {
+		current.BreakerRecentTimeouts += 1.0
 	}
 
-	current.BreakerCooldownAt = now.Add(cooldown).Unix()
+	// HP system: apply damage
+	ensureHPInitialized(current)
+	applyHPPassiveRecovery(current, now)
+
+	damage := failurePressureWeight(failureKind)
+	if wasInProbation {
+		damage *= hpProbationDamageMultiplier
+	}
+	if wasAwaitingProbe {
+		damage *= hpAwaitingProbeDamageMultiplier
+	}
+	current.BreakerHP -= damage
+
+	if current.BreakerHP <= 0 {
+		// HP depleted: trigger cooldown
+		current.BreakerHP = 0
+		current.BreakerTripCount++
+
+		multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
+		if current.BreakerFailStreak > 1 {
+			multiplier += float64(minInt(current.BreakerFailStreak-1, 6)) * 0.75
+		}
+
+		switch {
+		case wasInProbation:
+			multiplier += 2.5
+		case wasAwaitingProbe:
+			multiplier += 1.5
+		}
+
+		baseCooldown := failureBaseCooldown(failureKind)
+		cooldown := time.Duration(float64(baseCooldown) * multiplier)
+		if cooldown < breakerMinimumCooldown {
+			cooldown = breakerMinimumCooldown
+		}
+		if cooldown > breakerMaxCooldown {
+			cooldown = breakerMaxCooldown
+		}
+
+		current.BreakerCooldownAt = now.Add(cooldown).Unix()
+	}
+
 	current.BreakerLastFailure = string(failureKind)
 	current.BreakerUpdatedAt = nowUnix
 
@@ -239,8 +344,7 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 }
 
 // RecordChannelProbeSuccess promotes an awaiting-probe channel into probation.
-// It intentionally does not clear breaker pressure/fail streak, so a probe
-// success alone cannot fully recover the channel.
+// On promotion, HP is refilled to maxHP and trip count is decremented.
 func RecordChannelProbeSuccess(channel *model.Channel) bool {
 	if channel == nil {
 		return false
@@ -270,6 +374,14 @@ func RecordChannelProbeSuccess(channel *model.Channel) bool {
 	}
 	applyBreakerDecay(current, now)
 
+	// HP system: refill on entering observation phase
+	ensureHPInitialized(current)
+	maxHP := computeMaxHP(current)
+	current.BreakerHP = maxHP
+	if current.BreakerTripCount > 0 {
+		current.BreakerTripCount--
+	}
+
 	current.BreakerCooldownAt = nowUnix
 	current.BreakerUpdatedAt = nowUnix
 	if err := model.UpdateChannelBreakerState(current); err != nil {
@@ -278,6 +390,146 @@ func RecordChannelProbeSuccess(channel *model.Channel) bool {
 	}
 	return true
 }
+
+// --- HP system helpers ---
+
+// getToleranceCoefficient returns the channel's configured tolerance coefficient,
+// clamped to [hpMinCoefficient, hpMaxCoefficient]. Returns hpDefaultCoefficient if not set.
+func getToleranceCoefficient(channel *model.Channel) float64 {
+	if channel == nil {
+		return hpDefaultCoefficient
+	}
+	setting := channel.GetSetting()
+	if setting.ToleranceCoefficient == nil {
+		return hpDefaultCoefficient
+	}
+	coeff := *setting.ToleranceCoefficient
+	if coeff < hpMinCoefficient {
+		coeff = hpMinCoefficient
+	}
+	if coeff > hpMaxCoefficient {
+		coeff = hpMaxCoefficient
+	}
+	return coeff
+}
+
+// computeMaxHP calculates the dynamic maximum HP for a channel based on
+// tolerance coefficient and reliability metrics.
+func computeMaxHP(channel *model.Channel) float64 {
+	if channel == nil {
+		return hpBase
+	}
+	coeff := getToleranceCoefficient(channel)
+
+	// Failure rate penalty: maps failure_rate [0, 1] to factor [0.5, 1.0]
+	failureRate := 0.0
+	if channel.BreakerRecentRequests >= 1.0 {
+		failureRate = channel.BreakerRecentFailures / channel.BreakerRecentRequests
+	}
+	failureRateFactor := 1.0 - math.Min(failureRate, 1.0)*0.5
+
+	// Timeout rate penalty: maps timeout_rate [0, 1] to factor [0.7, 1.0]
+	timeoutRate := 0.0
+	if channel.BreakerRecentRequests >= 1.0 {
+		timeoutRate = channel.BreakerRecentTimeouts / channel.BreakerRecentRequests
+	}
+	timeoutRateFactor := 1.0 - math.Min(timeoutRate, 1.0)*0.3
+
+	// Trip count penalty: diminishing — 1/(1 + trips*0.15)
+	tripFactor := 1.0 / (1.0 + float64(channel.BreakerTripCount)*0.15)
+
+	// Consecutive failure penalty: 1/(1 + streak*0.05)
+	streakFactor := 1.0 / (1.0 + float64(channel.BreakerFailStreak)*0.05)
+
+	maxHP := hpBase * coeff * failureRateFactor * timeoutRateFactor * tripFactor * streakFactor
+	return math.Max(maxHP, hpMinimum)
+}
+
+// ensureHPInitialized sets HP to maxHP if uninitialized (BreakerHP == -1).
+func ensureHPInitialized(channel *model.Channel) {
+	if channel == nil {
+		return
+	}
+	if channel.BreakerHP < 0 {
+		channel.BreakerHP = computeMaxHP(channel)
+	}
+}
+
+// applyHPPassiveRecovery applies time-based passive HP recovery.
+// Uses BreakerUpdatedAt as the reference timestamp.
+func applyHPPassiveRecovery(channel *model.Channel, now time.Time) {
+	if channel == nil || channel.BreakerUpdatedAt <= 0 {
+		return
+	}
+	elapsed := now.Sub(time.Unix(channel.BreakerUpdatedAt, 0))
+	if elapsed <= 0 {
+		return
+	}
+	recovery := (elapsed.Seconds() / 3600.0) * hpPassiveRecoveryPerHour
+	maxHP := computeMaxHP(channel)
+	channel.BreakerHP = math.Min(channel.BreakerHP+recovery, maxHP)
+}
+
+// --- EWMA helpers ---
+
+// applyEWMADecay applies exponential decay to EWMA counters based on elapsed time.
+func applyEWMADecay(channel *model.Channel, now time.Time) {
+	if channel == nil || channel.BreakerUpdatedAt <= 0 {
+		return
+	}
+	elapsed := now.Sub(time.Unix(channel.BreakerUpdatedAt, 0))
+	if elapsed <= 0 {
+		return
+	}
+	decayFactor := math.Exp(-elapsed.Seconds() / hpEWMADecayWindow.Seconds())
+	channel.BreakerRecentRequests *= decayFactor
+	channel.BreakerRecentFailures *= decayFactor
+	channel.BreakerRecentTimeouts *= decayFactor
+
+	if channel.BreakerRecentRequests < hpEWMAMinValue {
+		channel.BreakerRecentRequests = 0
+	}
+	if channel.BreakerRecentFailures < hpEWMAMinValue {
+		channel.BreakerRecentFailures = 0
+	}
+	if channel.BreakerRecentTimeouts < hpEWMAMinValue {
+		channel.BreakerRecentTimeouts = 0
+	}
+}
+
+// ChannelBreakerHPInfo holds HP-related state for external consumers (e.g., controller API).
+type ChannelBreakerHPInfo struct {
+	HP                   float64
+	MaxHP                float64
+	TripCount            int
+	ToleranceCoefficient float64
+	FailureRate          float64
+	TimeoutRate          float64
+}
+
+// GetChannelBreakerHPInfo returns the current HP state for a channel.
+// Safe to call on nil channel — returns sensible defaults.
+func GetChannelBreakerHPInfo(channel *model.Channel) ChannelBreakerHPInfo {
+	if channel == nil {
+		return ChannelBreakerHPInfo{HP: hpBase, MaxHP: hpBase, ToleranceCoefficient: hpDefaultCoefficient}
+	}
+	maxHP := computeMaxHP(channel)
+	hp := channel.BreakerHP
+	if hp < 0 {
+		hp = maxHP
+	}
+	reqs := math.Max(channel.BreakerRecentRequests, 1.0)
+	return ChannelBreakerHPInfo{
+		HP:                   hp,
+		MaxHP:                maxHP,
+		TripCount:            channel.BreakerTripCount,
+		ToleranceCoefficient: getToleranceCoefficient(channel),
+		FailureRate:          channel.BreakerRecentFailures / reqs,
+		TimeoutRate:          channel.BreakerRecentTimeouts / reqs,
+	}
+}
+
+// --- Pressure system helpers (unchanged) ---
 
 func applyBreakerDecay(channel *model.Channel, now time.Time) {
 	if channel == nil {

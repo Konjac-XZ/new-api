@@ -52,11 +52,16 @@ type Channel struct {
 	ParamOverride      *string `json:"param_override" gorm:"type:text"`
 	HeaderOverride     *string `json:"header_override" gorm:"type:text"`
 	Remark             *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
-	BreakerPressure    float64 `json:"-" gorm:"column:breaker_pressure;default:0"`
-	BreakerUpdatedAt   int64   `json:"-" gorm:"column:breaker_updated_at;bigint;default:0"`
-	BreakerFailStreak  int     `json:"-" gorm:"column:breaker_fail_streak;default:0"`
-	BreakerCooldownAt  int64   `json:"-" gorm:"column:breaker_cooldown_at;bigint;default:0"`
-	BreakerLastFailure string  `json:"-" gorm:"column:breaker_last_failure;type:varchar(64);default:''"`
+	BreakerPressure        float64 `json:"-" gorm:"column:breaker_pressure;default:0"`
+	BreakerUpdatedAt       int64   `json:"-" gorm:"column:breaker_updated_at;bigint;default:0"`
+	BreakerFailStreak      int     `json:"-" gorm:"column:breaker_fail_streak;default:0"`
+	BreakerCooldownAt      int64   `json:"-" gorm:"column:breaker_cooldown_at;bigint;default:0"`
+	BreakerLastFailure     string  `json:"-" gorm:"column:breaker_last_failure;type:varchar(64);default:''"`
+	BreakerHP              float64 `json:"-" gorm:"column:breaker_hp;default:-1"`
+	BreakerTripCount       int     `json:"-" gorm:"column:breaker_trip_count;default:0"`
+	BreakerRecentRequests  float64 `json:"-" gorm:"column:breaker_recent_requests;default:0"`
+	BreakerRecentFailures  float64 `json:"-" gorm:"column:breaker_recent_failures;default:0"`
+	BreakerRecentTimeouts  float64 `json:"-" gorm:"column:breaker_recent_timeouts;default:0"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -981,11 +986,16 @@ func UpdateChannelBreakerState(channel *Channel) error {
 		return errors.New("channel is nil")
 	}
 	updates := map[string]interface{}{
-		"breaker_pressure":     channel.BreakerPressure,
-		"breaker_updated_at":   channel.BreakerUpdatedAt,
-		"breaker_fail_streak":  channel.BreakerFailStreak,
-		"breaker_cooldown_at":  channel.BreakerCooldownAt,
-		"breaker_last_failure": channel.BreakerLastFailure,
+		"breaker_pressure":        channel.BreakerPressure,
+		"breaker_updated_at":      channel.BreakerUpdatedAt,
+		"breaker_fail_streak":     channel.BreakerFailStreak,
+		"breaker_cooldown_at":     channel.BreakerCooldownAt,
+		"breaker_last_failure":    channel.BreakerLastFailure,
+		"breaker_hp":              channel.BreakerHP,
+		"breaker_trip_count":      channel.BreakerTripCount,
+		"breaker_recent_requests": channel.BreakerRecentRequests,
+		"breaker_recent_failures": channel.BreakerRecentFailures,
+		"breaker_recent_timeouts": channel.BreakerRecentTimeouts,
 	}
 	if err := DB.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error; err != nil {
 		return err

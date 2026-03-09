@@ -372,6 +372,13 @@ type ChannelBreakerState struct {
 	RemainingCooldownSeconds  int64   `json:"remaining_cooldown_seconds"`
 	CooldownSeconds           int64   `json:"cooldown_seconds"`
 	ObservationElapsedSeconds int64   `json:"observation_elapsed_seconds"`
+	// HP system fields
+	HP                   float64 `json:"hp"`
+	MaxHP                float64 `json:"max_hp"`
+	TripCount            int     `json:"trip_count"`
+	ToleranceCoefficient float64 `json:"tolerance_coefficient"`
+	FailureRate          float64 `json:"failure_rate"`
+	TimeoutRate          float64 `json:"timeout_rate"`
 }
 
 type channelListItem struct {
@@ -408,6 +415,15 @@ func buildChannelBreakerState(channel *model.Channel) *ChannelBreakerState {
 		UpdatedAt:      channel.BreakerUpdatedAt,
 		Phase:          "disabled",
 	}
+
+	// Populate HP fields regardless of dynamic breaker state
+	hpInfo := service.GetChannelBreakerHPInfo(channel)
+	state.HP = hpInfo.HP
+	state.MaxHP = hpInfo.MaxHP
+	state.TripCount = hpInfo.TripCount
+	state.ToleranceCoefficient = hpInfo.ToleranceCoefficient
+	state.FailureRate = hpInfo.FailureRate
+	state.TimeoutRate = hpInfo.TimeoutRate
 
 	if !state.DynamicEnabled {
 		return state

@@ -232,3 +232,176 @@ func seedDynamicBreakerChannelForProbeTest(t *testing.T, cooldownAt int64, updat
 	})
 	return channel
 }
+
+// --- HP system unit tests (pure functions, no DB required) ---
+
+func TestComputeMaxHP_DefaultCoefficient(t *testing.T) {
+	channel := &model.Channel{}
+	maxHP := computeMaxHP(channel)
+	if maxHP != hpBase {
+		t.Fatalf("expected maxHP=%f for clean channel, got %f", hpBase, maxHP)
+	}
+}
+
+func TestComputeMaxHP_CustomCoefficient(t *testing.T) {
+	coeff := 3.0
+	settingBytes, err := common.Marshal(dto.ChannelSettings{
+		DynamicCircuitBreaker: true,
+		ToleranceCoefficient:  &coeff,
+	})
+	if err != nil {
+		t.Fatalf("marshal setting failed: %v", err)
+	}
+	channel := &model.Channel{Setting: common.GetPointer(string(settingBytes))}
+	maxHP := computeMaxHP(channel)
+	expected := hpBase * coeff
+	if maxHP != expected {
+		t.Fatalf("expected maxHP=%f, got %f", expected, maxHP)
+	}
+}
+
+func TestComputeMaxHP_FailureRatePenalty(t *testing.T) {
+	// 50% failure rate → failureRateFactor = 0.75
+	channel := &model.Channel{
+		BreakerRecentRequests: 10.0,
+		BreakerRecentFailures: 5.0,
+	}
+	maxHP := computeMaxHP(channel)
+	expected := hpBase * 1.0 * 0.75 * 1.0 * 1.0 * 1.0 // only failure rate factor
+	if maxHP != expected {
+		t.Fatalf("expected maxHP=%f for 50%% failure rate, got %f", expected, maxHP)
+	}
+}
+
+func TestComputeMaxHP_TripCountPenalty(t *testing.T) {
+	channel := &model.Channel{BreakerTripCount: 3}
+	maxHP := computeMaxHP(channel)
+	tripFactor := 1.0 / (1.0 + float64(3)*0.15)
+	expected := hpBase * tripFactor
+	if maxHP != expected {
+		t.Fatalf("expected maxHP=%f for trip_count=3, got %f", expected, maxHP)
+	}
+}
+
+func TestComputeMaxHP_Minimum(t *testing.T) {
+	// Extremely high trip count should clamp to minimum
+	channel := &model.Channel{BreakerTripCount: 1000, BreakerRecentRequests: 10, BreakerRecentFailures: 10, BreakerRecentTimeouts: 10}
+	maxHP := computeMaxHP(channel)
+	if maxHP < hpMinimum {
+		t.Fatalf("maxHP must not fall below hpMinimum=%f, got %f", hpMinimum, maxHP)
+	}
+}
+
+func TestEnsureHPInitialized_SetsMaxHP(t *testing.T) {
+	channel := &model.Channel{BreakerHP: -1}
+	ensureHPInitialized(channel)
+	if channel.BreakerHP != hpBase {
+		t.Fatalf("expected HP=%f after init, got %f", hpBase, channel.BreakerHP)
+	}
+}
+
+func TestEnsureHPInitialized_DoesNotOverwrite(t *testing.T) {
+	channel := &model.Channel{BreakerHP: 5.0}
+	ensureHPInitialized(channel)
+	if channel.BreakerHP != 5.0 {
+		t.Fatalf("expected HP=5.0 to remain unchanged, got %f", channel.BreakerHP)
+	}
+}
+
+func TestHPPassiveRecovery_RecoversByElapsedTime(t *testing.T) {
+	twohrs := time.Now().Add(-2 * time.Hour)
+	channel := &model.Channel{
+		BreakerHP:        3.0,
+		BreakerUpdatedAt: twohrs.Unix(),
+	}
+	applyHPPassiveRecovery(channel, time.Now())
+	// 2 hours * 0.5 HP/hr = 1.0 recovery, capped at maxHP=10
+	expected := 4.0
+	if channel.BreakerHP != expected {
+		t.Fatalf("expected HP=%f after 2hr passive recovery, got %f", expected, channel.BreakerHP)
+	}
+}
+
+func TestHPPassiveRecovery_CapsAtMaxHP(t *testing.T) {
+	// Even after 1000 hours, HP should not exceed maxHP
+	channel := &model.Channel{
+		BreakerHP:        9.5,
+		BreakerUpdatedAt: time.Now().Add(-1000 * time.Hour).Unix(),
+	}
+	applyHPPassiveRecovery(channel, time.Now())
+	if channel.BreakerHP > hpBase {
+		t.Fatalf("expected HP capped at maxHP=%f, got %f", hpBase, channel.BreakerHP)
+	}
+}
+
+func TestApplyEWMADecay_ReducesCounters(t *testing.T) {
+	channel := &model.Channel{
+		BreakerRecentRequests: 100.0,
+		BreakerRecentFailures: 50.0,
+		BreakerRecentTimeouts: 10.0,
+		BreakerUpdatedAt:      time.Now().Add(-time.Hour).Unix(),
+	}
+	applyEWMADecay(channel, time.Now())
+	// After 1 decay window (1 hour), decay factor = e^-1 ≈ 0.368
+	if channel.BreakerRecentRequests >= 100.0 {
+		t.Fatalf("expected requests to decay, still at %f", channel.BreakerRecentRequests)
+	}
+	if channel.BreakerRecentFailures >= 50.0 {
+		t.Fatalf("expected failures to decay, still at %f", channel.BreakerRecentFailures)
+	}
+	// Validate relative decay consistency
+	expectedRatio := channel.BreakerRecentFailures / channel.BreakerRecentRequests
+	const tolerance = 0.001
+	if expectedRatio < 0.5-tolerance || expectedRatio > 0.5+tolerance {
+		t.Fatalf("expected failure/requests ratio ~0.5 after decay, got %f", expectedRatio)
+	}
+}
+
+func TestApplyEWMADecay_ZerosOutSmallValues(t *testing.T) {
+	channel := &model.Channel{
+		BreakerRecentRequests: hpEWMAMinValue / 2,
+		BreakerRecentFailures: hpEWMAMinValue / 2,
+		BreakerUpdatedAt:      time.Now().Add(-time.Minute).Unix(),
+	}
+	applyEWMADecay(channel, time.Now())
+	if channel.BreakerRecentRequests != 0 {
+		t.Fatalf("expected near-zero requests to be zeroed out, got %f", channel.BreakerRecentRequests)
+	}
+}
+
+func TestGetChannelBreakerHPInfo_Defaults(t *testing.T) {
+	info := GetChannelBreakerHPInfo(nil)
+	if info.HP != hpBase || info.MaxHP != hpBase {
+		t.Fatalf("expected default HP=%f MaxHP=%f for nil channel, got HP=%f MaxHP=%f", hpBase, hpBase, info.HP, info.MaxHP)
+	}
+	if info.ToleranceCoefficient != hpDefaultCoefficient {
+		t.Fatalf("expected default coefficient=%f, got %f", hpDefaultCoefficient, info.ToleranceCoefficient)
+	}
+}
+
+func TestGetChannelBreakerHPInfo_UninitializedHP(t *testing.T) {
+	channel := &model.Channel{BreakerHP: -1}
+	info := GetChannelBreakerHPInfo(channel)
+	// Uninitialized HP should be reported as maxHP
+	if info.HP != info.MaxHP {
+		t.Fatalf("expected uninitialized HP to report as maxHP, got HP=%f MaxHP=%f", info.HP, info.MaxHP)
+	}
+}
+
+func TestGetChannelBreakerHPInfo_RatesCalculation(t *testing.T) {
+	channel := &model.Channel{
+		BreakerHP:             5.0,
+		BreakerRecentRequests: 20.0,
+		BreakerRecentFailures: 4.0,
+		BreakerRecentTimeouts: 2.0,
+	}
+	info := GetChannelBreakerHPInfo(channel)
+	const eps = 0.001
+	if info.FailureRate < 0.2-eps || info.FailureRate > 0.2+eps {
+		t.Fatalf("expected failure_rate=0.20, got %f", info.FailureRate)
+	}
+	if info.TimeoutRate < 0.1-eps || info.TimeoutRate > 0.1+eps {
+		t.Fatalf("expected timeout_rate=0.10, got %f", info.TimeoutRate)
+	}
+}
+

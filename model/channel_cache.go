@@ -450,5 +450,10 @@ func CacheUpdateChannelBreakerState(channel *Channel) {
 		cached.BreakerFailStreak = channel.BreakerFailStreak
 		cached.BreakerCooldownAt = channel.BreakerCooldownAt
 		cached.BreakerLastFailure = channel.BreakerLastFailure
+		cached.BreakerHP = channel.BreakerHP
+		cached.BreakerTripCount = channel.BreakerTripCount
+		cached.BreakerRecentRequests = channel.BreakerRecentRequests
+		cached.BreakerRecentFailures = channel.BreakerRecentFailures
+		cached.BreakerRecentTimeouts = channel.BreakerRecentTimeouts
 	}
 }

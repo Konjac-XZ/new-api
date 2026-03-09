@@ -197,6 +197,7 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     treat_empty_reply_as_failure: false,
     dynamic_circuit_breaker: false,
+    tolerance_coefficient: null,
     system_prompt: '',
     system_prompt_override: false,
     settings: '',
@@ -535,6 +536,7 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     treat_empty_reply_as_failure: false,
     dynamic_circuit_breaker: false,
+    tolerance_coefficient: null,
     system_prompt: '',
     max_retry_attempts: 1,
   });
@@ -860,6 +862,7 @@ const EditChannelModal = (props) => {
             parsedSettings.treat_empty_reply_as_failure || false;
           data.dynamic_circuit_breaker =
             parsedSettings.dynamic_circuit_breaker === true;
+          data.tolerance_coefficient = parsedSettings.tolerance_coefficient ?? null;
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
@@ -872,6 +875,7 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.treat_empty_reply_as_failure = false;
           data.dynamic_circuit_breaker = false;
+          data.tolerance_coefficient = null;
           data.system_prompt = '';
           data.system_prompt_override = false;
           data.max_retry_attempts = 1;
@@ -883,6 +887,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.treat_empty_reply_as_failure = false;
         data.dynamic_circuit_breaker = false;
+        data.tolerance_coefficient = null;
         data.system_prompt = '';
         data.system_prompt_override = false;
         data.max_retry_attempts = 1;
@@ -991,6 +996,7 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         treat_empty_reply_as_failure: data.treat_empty_reply_as_failure || false,
         dynamic_circuit_breaker: data.dynamic_circuit_breaker || false,
+        tolerance_coefficient: data.tolerance_coefficient ?? null,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
         max_retry_attempts: data.max_retry_attempts || 1,
@@ -1352,6 +1358,7 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: false,
       treat_empty_reply_as_failure: false,
       dynamic_circuit_breaker: false,
+      tolerance_coefficient: null,
       system_prompt: '',
       system_prompt_override: false,
     });
@@ -1729,6 +1736,9 @@ const EditChannelModal = (props) => {
         localInputs.treat_empty_reply_as_failure || false,
       dynamic_circuit_breaker:
         localInputs.dynamic_circuit_breaker === true,
+      ...(localInputs.tolerance_coefficient != null && {
+        tolerance_coefficient: Number(localInputs.tolerance_coefficient),
+      }),
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
       max_retry_attempts: normalizedMaxRetryAttempts,
@@ -1827,6 +1837,7 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.treat_empty_reply_as_failure;
     delete localInputs.dynamic_circuit_breaker;
+    delete localInputs.tolerance_coefficient;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
     delete localInputs.is_enterprise_account;
@@ -3586,6 +3597,27 @@ const EditChannelModal = (props) => {
                         visible={props.visible}
                       />
                     )}
+
+                    <Form.InputNumber
+                      field='tolerance_coefficient'
+                      label={t('容错系数')}
+                      placeholder='1.0'
+                      min={0.1}
+                      max={10.0}
+                      step={0.1}
+                      precision={1}
+                      disabled={!autoBan || !channelSettings.dynamic_circuit_breaker}
+                      onChange={(value) =>
+                        handleChannelSettingsChange(
+                          'tolerance_coefficient',
+                          value || null,
+                        )
+                      }
+                      style={{ width: '100%' }}
+                      extraText={t(
+                        '动态熔断容错系数，范围 0.1 - 10.0，默认 1.0。值越大允许更多失败次数才触发冷却，值越小则更灵敏。',
+                      )}
+                    />
 
                     <Form.InputNumber
                       field='scheduled_test_interval'

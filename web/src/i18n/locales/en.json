@@ -3322,6 +3322,12 @@
     "5m缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m缓存创建倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}": "5m cache creation: {{tokens}} / 1M * model ratio {{modelRatio}} * 5m cache creation ratio {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}",
     "1h缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h缓存创建倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}": "1h cache creation: {{tokens}} / 1M * model ratio {{modelRatio}} * 1h cache creation ratio {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}",
     "输出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 输出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}": "Output: {{tokens}} / 1M * model ratio {{modelRatio}} * output ratio {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}",
-    "空": "Empty"
+    "空": "Empty",
+    "当前HP": "Current HP",
+    "熔断次数": "Trip Count",
+    "容错系数": "Tolerance Coefficient",
+    "近期失败率": "Recent Failure Rate",
+    "近期超时率": "Recent Timeout Rate",
+    "动态熔断容错系数，范围 0.1 - 10.0，默认 1.0。值越大允许更多失败次数才触发冷却，值越小则更灵敏。": "Tolerance coefficient for the dynamic circuit breaker, range 0.1-10.0, default 1.0. Higher values tolerate more failures before triggering cooldown; lower values are more sensitive."
   }
 }
