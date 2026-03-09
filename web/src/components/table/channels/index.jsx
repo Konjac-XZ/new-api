@@ -34,6 +34,7 @@ import EditChannelModal from './modals/EditChannelModal';
 import EditTagModal from './modals/EditTagModal';
 import MultiKeyManageModal from './modals/MultiKeyManageModal';
 import ChannelUpstreamUpdateModal from './modals/ChannelUpstreamUpdateModal';
+import ChannelBreakerStatusModal from './modals/ChannelBreakerStatusModal';
 import { createCardProPagination } from '../../../helpers/utils';
 
 const ChannelsPage = () => {
@@ -72,6 +73,12 @@ const ChannelsPage = () => {
         confirmLoading={channelsData.upstreamApplyLoading}
         onConfirm={channelsData.applyUpstreamUpdates}
         onCancel={channelsData.closeUpstreamUpdateModal}
+      />
+      <ChannelBreakerStatusModal
+        visible={channelsData.showBreakerStatusModal}
+        onCancel={() => channelsData.setShowBreakerStatusModal(false)}
+        channel={channelsData.currentBreakerStatusChannel}
+        t={channelsData.t}
       />
 
       {/* Main Content */}

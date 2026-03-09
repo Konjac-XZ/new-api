@@ -309,16 +309,18 @@ func TestEnsureHPInitialized_DoesNotOverwrite(t *testing.T) {
 }
 
 func TestHPPassiveRecovery_RecoversByElapsedTime(t *testing.T) {
-	twohrs := time.Now().Add(-2 * time.Hour)
+	now := time.Now()
+	twohrsAgo := now.Add(-2 * time.Hour)
 	channel := &model.Channel{
 		BreakerHP:        3.0,
-		BreakerUpdatedAt: twohrs.Unix(),
+		BreakerUpdatedAt: twohrsAgo.Unix(),
 	}
-	applyHPPassiveRecovery(channel, time.Now())
+	applyHPPassiveRecovery(channel, now)
 	// 2 hours * 0.5 HP/hr = 1.0 recovery, capped at maxHP=10
 	expected := 4.0
-	if channel.BreakerHP != expected {
-		t.Fatalf("expected HP=%f after 2hr passive recovery, got %f", expected, channel.BreakerHP)
+	const tolerance = 0.01
+	if channel.BreakerHP < expected-tolerance || channel.BreakerHP > expected+tolerance {
+		t.Fatalf("expected HP~=%f after 2hr passive recovery, got %f", expected, channel.BreakerHP)
 	}
 }
 

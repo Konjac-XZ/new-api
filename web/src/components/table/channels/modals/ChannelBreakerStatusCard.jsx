@@ -164,7 +164,7 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
       {isDynamicEnabled && (
         <div style={{ marginTop: 12, marginBottom: 8 }}>
           <div className='flex items-center justify-between mb-1'>
-            <Text size='small'>{t('当前HP')}</Text>
+            <Text size='small'>{t('当前 HP')}</Text>
             <Text size='small' type='tertiary'>
               {hpValue.toFixed(1)} / {hpMax.toFixed(1)}
             </Text>

@@ -118,6 +118,11 @@ export const useChannelsData = () => {
   const [showMultiKeyManageModal, setShowMultiKeyManageModal] = useState(false);
   const [currentMultiKeyChannel, setCurrentMultiKeyChannel] = useState(null);
 
+  // Breaker status modal states
+  const [showBreakerStatusModal, setShowBreakerStatusModal] = useState(false);
+  const [currentBreakerStatusChannel, setCurrentBreakerStatusChannel] =
+    useState(null);
+
   // Refs
   const requestCounter = useRef(0);
   const allSelectingRef = useRef(false);
@@ -521,7 +526,7 @@ export const useChannelsData = () => {
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
     setActivePage(page);
     if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
-      loadChannels(page, pageSize, idSort, enableTagMode).then(() => {});
+      loadChannels(page, pageSize, idSort, enableTagMode).then(() => { });
     } else {
       searchChannels(
         enableTagMode,
@@ -586,7 +591,7 @@ export const useChannelsData = () => {
     } catch (error) {
       showError(
         t('渠道复制失败: ') +
-          (error?.response?.data?.message || error?.message || error),
+        (error?.response?.data?.message || error?.message || error),
       );
     }
   };
@@ -1286,6 +1291,12 @@ export const useChannelsData = () => {
     setShowMultiKeyManageModal,
     currentMultiKeyChannel,
     setCurrentMultiKeyChannel,
+
+    // Breaker status modal states
+    showBreakerStatusModal,
+    setShowBreakerStatusModal,
+    currentBreakerStatusChannel,
+    setCurrentBreakerStatusChannel,
     ...upstreamUpdates,
 
     // Form

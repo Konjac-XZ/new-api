@@ -52,6 +52,21 @@ import {
 } from '@douyinfe/semi-icons';
 import { FaRandom } from 'react-icons/fa';
 
+// Helper
+const formatRemainingSeconds = (seconds) => {
+  if (!seconds || seconds <= 0) return '0s';
+  const day = Math.floor(seconds / 86400);
+  const hour = Math.floor((seconds % 86400) / 3600);
+  const minute = Math.floor((seconds % 3600) / 60);
+  const second = seconds % 60;
+  const parts = [];
+  if (day > 0) parts.push(`${day}d`);
+  if (hour > 0) parts.push(`${hour}h`);
+  if (minute > 0) parts.push(`${minute}m`);
+  if (second > 0 || parts.length === 0) parts.push(`${second}s`);
+  return parts.join(' ');
+};
+
 // Render functions
 const renderType = (type, record = {}, t) => {
   const channelInfo = record?.channel_info;
@@ -182,8 +197,17 @@ const getBreakerPhaseTooltip = (breakerState, t) => {
     return '';
   }
   switch (breakerState.phase) {
-    case 'cooling':
-      return t('动态熔断冷却中，渠道暂不参与分配');
+    case 'cooling': {
+      const totalPenaltySeconds = Math.max(
+        0,
+        Number(breakerState.cooldown_seconds || 0),
+      );
+      const remaining = Math.max(
+        0,
+        (breakerState.cooldown_at || 0) - Math.floor(Date.now() / 1000),
+      );
+      return `${t('总罚时')} ${formatRemainingSeconds(totalPenaltySeconds)} - ${t('剩余')} ${formatRemainingSeconds(remaining)}`;
+    }
     case 'observation':
       return t('探测通过，处于观察期');
     case 'awaiting_probe':
@@ -411,6 +435,8 @@ export const getChannelsColumns = ({
   setCurrentMultiKeyChannel,
   openUpstreamUpdateModal,
   detectChannelUpstreamUpdates,
+  setShowBreakerStatusModal,
+  setCurrentBreakerStatusChannel,
 }) => {
   return [
     {
@@ -479,10 +505,18 @@ export const getChannelsColumns = ({
             {nameNode}
             {dynamicBreakerEnabled && (
               <Tooltip
-                content={t('已开启动态熔断保护，异常时自动冷却并自愈')}
+                content={t('已开启动态熔断保护，点击查看详情')}
                 position='top'
               >
-                <span className='inline-flex items-center' style={{ color: 'var(--semi-color-link)' }}>
+                <span
+                  className='inline-flex items-center cursor-pointer'
+                  style={{ color: 'var(--semi-color-link)' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCurrentBreakerStatusChannel(record);
+                    setShowBreakerStatusModal(true);
+                  }}
+                >
                   <IconBolt size='small' />
                 </span>
               </Tooltip>
