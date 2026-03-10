@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -292,6 +293,47 @@ func TestComputeMaxHP_Minimum(t *testing.T) {
 	}
 }
 
+func TestComputeMaxHP_SustainedSuccessReward(t *testing.T) {
+	channel := &model.Channel{
+		BreakerRecentRequests: 24.0,
+		BreakerRecentFailures: 0,
+	}
+
+	maxHP := computeMaxHP(channel)
+	expected := hpBase * (1.0 + hpSuccessRewardMaxBonus)
+	if maxHP != expected {
+		t.Fatalf("expected maxHP=%f for sustained success, got %f", expected, maxHP)
+	}
+}
+
+func TestComputeMaxHP_SuccessRewardNeedsVolume(t *testing.T) {
+	channel := &model.Channel{
+		BreakerRecentRequests: 4.0,
+		BreakerRecentFailures: 0,
+	}
+
+	maxHP := computeMaxHP(channel)
+	if maxHP <= hpBase {
+		t.Fatalf("expected some reward above base for perfect success, got %f", maxHP)
+	}
+	if maxHP >= hpBase*(1.0+hpSuccessRewardMaxBonus) {
+		t.Fatalf("expected low-volume reward to remain below full bonus, got %f", maxHP)
+	}
+}
+
+func TestComputeMaxHP_SuccessRewardRequiresNearPerfectHealth(t *testing.T) {
+	channel := &model.Channel{
+		BreakerRecentRequests: 50.0,
+		BreakerRecentFailures: 2.0,
+	}
+
+	maxHP := computeMaxHP(channel)
+	penaltyOnly := hpBase * (1.0 - math.Min(channel.BreakerRecentFailures/channel.BreakerRecentRequests, 1.0)*0.5)
+	if maxHP != penaltyOnly {
+		t.Fatalf("expected no success bonus when failure rate is material, got %f want %f", maxHP, penaltyOnly)
+	}
+}
+
 func TestEnsureHPInitialized_SetsMaxHP(t *testing.T) {
 	channel := &model.Channel{BreakerHP: -1}
 	ensureHPInitialized(channel)
@@ -404,6 +446,22 @@ func TestGetChannelBreakerHPInfo_RatesCalculation(t *testing.T) {
 	}
 	if info.TimeoutRate < 0.1-eps || info.TimeoutRate > 0.1+eps {
 		t.Fatalf("expected timeout_rate=0.10, got %f", info.TimeoutRate)
+	}
+}
+
+func TestGetChannelBreakerHPInfo_ReportsRewardedMaxHP(t *testing.T) {
+	channel := &model.Channel{
+		BreakerHP:             12.0,
+		BreakerRecentRequests: 24.0,
+		BreakerRecentFailures: 0,
+	}
+
+	info := GetChannelBreakerHPInfo(channel)
+	if info.MaxHP <= hpBase {
+		t.Fatalf("expected rewarded maxHP above base, got %f", info.MaxHP)
+	}
+	if info.MaxHP != computeMaxHP(channel) {
+		t.Fatalf("expected reported maxHP to match computeMaxHP, got %f want %f", info.MaxHP, computeMaxHP(channel))
 	}
 }
 

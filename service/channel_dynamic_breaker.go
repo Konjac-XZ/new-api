@@ -83,6 +83,9 @@ const (
 	hpAwaitingProbeDamageMultiplier = 2.0       // damage multiplier when awaiting probe
 	hpEWMADecayWindow               = time.Hour // EWMA decay time constant
 	hpEWMAMinValue                  = 0.01      // minimum EWMA value before zeroing
+	hpSuccessRewardConfidence       = 16.0      // recent successful requests needed to unlock the full bonus
+	hpSuccessRewardMinSuccessRate   = 0.90      // minimum success rate required to start earning the bonus
+	hpSuccessRewardMaxBonus         = 1.0       // maximum additive multiplier for sustained success
 )
 
 var channelBreakerStateLock sync.Mutex
@@ -458,8 +461,41 @@ func computeMaxHP(channel *model.Channel) float64 {
 	// Consecutive failure penalty: 1/(1 + streak*0.05)
 	streakFactor := 1.0 / (1.0 + float64(channel.BreakerFailStreak)*0.05)
 
-	maxHP := hpBase * coeff * failureRateFactor * timeoutRateFactor * tripFactor * streakFactor
+	successRewardFactor := computeHPSuccessRewardFactor(channel)
+
+	maxHP := hpBase * coeff * failureRateFactor * timeoutRateFactor * tripFactor * streakFactor * successRewardFactor
 	return math.Max(maxHP, hpMinimum)
+}
+
+func computeHPSuccessRewardFactor(channel *model.Channel) float64 {
+	if channel == nil {
+		return 1.0
+	}
+	requests := math.Max(channel.BreakerRecentRequests, 0)
+	if requests <= 0 {
+		return 1.0
+	}
+
+	recentSuccesses := math.Max(channel.BreakerRecentRequests-channel.BreakerRecentFailures, 0)
+	if recentSuccesses <= 0 {
+		return 1.0
+	}
+
+	successRate := recentSuccesses / requests
+	if successRate <= hpSuccessRewardMinSuccessRate {
+		return 1.0
+	}
+
+	volumeFactor := math.Min(recentSuccesses/hpSuccessRewardConfidence, 1.0)
+	if volumeFactor <= 0 {
+		return 1.0
+	}
+
+	purityFactor := (successRate - hpSuccessRewardMinSuccessRate) / (1.0 - hpSuccessRewardMinSuccessRate)
+	purityFactor = math.Min(math.Max(purityFactor, 0), 1.0)
+	purityFactor = math.Pow(purityFactor, 1.5)
+
+	return 1.0 + hpSuccessRewardMaxBonus*volumeFactor*purityFactor
 }
 
 // ensureHPInitialized sets HP to maxHP if uninitialized (BreakerHP == -1).
