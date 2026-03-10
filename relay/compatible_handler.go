@@ -88,6 +88,15 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			return newApiErr
 		}
 
+		if monitorID := c.GetString("monitor_id"); monitorID != "" {
+			var bodyBytes []byte
+			if info.MonitorResponseBody != nil && info.MonitorResponseBody.Len() > 0 {
+				bodyBytes = []byte(info.MonitorResponseBody.String())
+			}
+			monitor.RecordResponse(monitorID, http.StatusOK, nil, bodyBytes, usage.PromptTokens, usage.CompletionTokens, nil)
+			c.Set("monitor_response_recorded", true)
+		}
+
 		var containAudioTokens = usage.CompletionTokenDetails.AudioTokens > 0 || usage.PromptTokensDetails.AudioTokens > 0
 		var containsAudioRatios = ratio_setting.ContainsAudioRatio(info.OriginModelName) || ratio_setting.ContainsAudioCompletionRatio(info.OriginModelName)
 

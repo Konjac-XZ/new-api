@@ -87,6 +87,9 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+	if info.MonitorResponseBody != nil {
+		info.MonitorResponseBody.Write(responseBody)
+	}
 	return usage, nil
 }
 
@@ -502,6 +505,10 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 	if streamErr != nil {
 		return nil, streamErr
+	}
+
+	if info.MonitorResponseBody != nil {
+		info.MonitorResponseBody.WriteString(usageText.String())
 	}
 
 	if usage.TotalTokens == 0 {

@@ -42,6 +42,9 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+	if info.MonitorResponseBody != nil {
+		info.MonitorResponseBody.Write(responseBody)
+	}
 
 	// compute usage
 	usage := dto.Usage{}
