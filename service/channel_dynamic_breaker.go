@@ -26,35 +26,63 @@ const (
 
 // Pressure system constants (unchanged — controls cooldown duration)
 const (
-	breakerDecayWindow             = time.Hour
-	breakerMaxCooldown             = 120 * time.Minute
-	breakerMinimumCooldown         = 30 * time.Second
-	breakerNormalRecoveryFactor    = 0.7
-	breakerProbationRecoveryFactor = 0.45
-	breakerSlowSuccessPressure     = 0.35
-	breakerProbationPenalty        = 0.75
-	breakerAwaitingProbePenalty    = 4.0
-	breakerProbeTestPenalty        = 2.5
-	breakerProbeObservationPenalty = 5.0
-	breakerMinPressure             = 0.05
-	breakerMaxPressureContribution = 100.0
-	breakerSlowSuccessThreshold    = 15 * time.Second
+	breakerDecayWindow                    = 4 * time.Hour
+	breakerMaxCooldown                    = 120 * time.Minute
+	breakerMinimumCooldown                = 30 * time.Second
+	breakerNormalRecoveryFactor           = 0.7
+	breakerProbationRecoveryFactor        = 0.45
+	breakerSlowSuccessPressure            = 0.35
+	breakerProbationPenalty               = 0.75
+	breakerAwaitingProbePenalty           = 4.0
+	breakerProbeTestPenalty               = 2.5
+	breakerProbeObservationPenalty        = 5.0
+	breakerMinPressure                    = 0.05
+	breakerMaxPressureContribution        = 100.0
+	breakerSlowSuccessThreshold           = 15 * time.Second
+	breakerPressureCooldownWeight         = 0.7
+	breakerFailStreakCooldownWeight       = 1.1
+	breakerFailStreakCooldownExponent     = 0.9
+	breakerFailStreakCooldownCap          = 40
+	breakerTripCooldownWeight             = 12.0
+	breakerTripCooldownStart              = 2
+	breakerTripCooldownCap                = 60
+	breakerFailureRateCooldownThreshold   = 0.65
+	breakerFailureRateCooldownWeight      = 25.0
+	breakerFailureRateCooldownExponent    = 1.35
+	breakerTimeoutRateCooldownThreshold   = 0.35
+	breakerTimeoutRateCooldownWeight      = 12.0
+	breakerTimeoutRateCooldownExponent    = 1.25
+	breakerCooldownRateConfidenceRequests = 10.0
+	breakerShortTermPenaltyMinFactor      = 0.08
+	breakerShortTermPressureMinFactor     = 0.35
+	breakerShortTermStreakScale           = 8.0
+	breakerShortTermStreakExponent        = 1.1
+	breakerShortTermRateExponent          = 1.35
+	breakerShortTermHistoryExponent       = 1.35
+	breakerChronicTripFloorStart          = 3
+	breakerChronicTripFloorWeight         = 12.0
+	breakerChronicFailureFloorThreshold   = 0.8
+	breakerChronicFailureFloorWeight      = 50.0
+	breakerChronicFailureFloorExponent    = 1.4
+	breakerChronicStreakFloorStart        = 10
+	breakerChronicStreakFloorWeight       = 5.0
+	breakerChronicStreakFloorExponent     = 0.75
 )
 
 // HP system constants — controls whether cooldown triggers
 const (
-	hpBase                       = 10.0  // base max HP before coefficient
-	hpMinCoefficient             = 0.1   // minimum tolerance coefficient
-	hpMaxCoefficient             = 10.0  // maximum tolerance coefficient
-	hpDefaultCoefficient         = 1.0   // default when not configured
-	hpMinimum                    = 1.0   // minimum maxHP floor
-	hpPassiveRecoveryPerHour     = 0.5   // HP recovered per hour passively
-	hpSuccessRecovery            = 0.5   // HP recovered per successful request
-	hpProbationSuccessRecovery   = 0.8   // HP recovered per success during observation
-	hpProbationDamageMultiplier  = 1.5   // damage multiplier during observation
-	hpAwaitingProbeDamageMultiplier = 2.0 // damage multiplier when awaiting probe
-	hpEWMADecayWindow            = time.Hour // EWMA decay time constant
-	hpEWMAMinValue               = 0.01 // minimum EWMA value before zeroing
+	hpBase                          = 10.0      // base max HP before coefficient
+	hpMinCoefficient                = 0.1       // minimum tolerance coefficient
+	hpMaxCoefficient                = 10.0      // maximum tolerance coefficient
+	hpDefaultCoefficient            = 1.0       // default when not configured
+	hpMinimum                       = 1.0       // minimum maxHP floor
+	hpPassiveRecoveryPerHour        = 0.5       // HP recovered per hour passively
+	hpSuccessRecovery               = 1.0       // HP recovered per successful request
+	hpProbationSuccessRecovery      = 0.8       // HP recovered per success during observation
+	hpProbationDamageMultiplier     = 1.5       // damage multiplier during observation
+	hpAwaitingProbeDamageMultiplier = 2.0       // damage multiplier when awaiting probe
+	hpEWMADecayWindow               = time.Hour // EWMA decay time constant
+	hpEWMAMinValue                  = 0.01      // minimum EWMA value before zeroing
 )
 
 var channelBreakerStateLock sync.Mutex
@@ -209,20 +237,12 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 		current.BreakerHP = 0
 		current.BreakerTripCount++
 
-		// Calculate cooldown duration using existing pressure-based formula
-		multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
-		if current.BreakerFailStreak > 1 {
-			multiplier += float64(minInt(current.BreakerFailStreak-1, 100)) * 0.75
-		}
-		if wasInProbation {
-			multiplier += 0.75
-		}
-		if wasAwaitingProbe {
-			multiplier += 1.5
-		}
-
+		multiplier := computeBreakerCooldownMultiplier(current, wasInProbation, wasAwaitingProbe)
 		baseCooldown := failureBaseCooldown(failureKind)
 		cooldown := time.Duration(float64(baseCooldown) * multiplier)
+		if chronicFloor := computeBreakerChronicCooldownFloor(current); chronicFloor > cooldown {
+			cooldown = chronicFloor
+		}
 		if cooldown < breakerMinimumCooldown {
 			cooldown = breakerMinimumCooldown
 		}
@@ -244,7 +264,8 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 
 // RecordChannelProbeFailure applies stage-aware handling for scheduled probe failures.
 // Cooling phase failures are ignored. Awaiting-probe and observation failures both
-// apply HP damage and may restart cooldown if HP depletes.
+// apply HP damage and always restart cooldown, because a failed probe means the
+// channel is still not ready to serve traffic.
 func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 	if channel == nil || err == nil {
 		return
@@ -306,25 +327,21 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 	}
 	current.BreakerHP -= damage
 
-	if current.BreakerHP <= 0 {
-		// HP depleted: trigger cooldown
+	if wasAwaitingProbe || wasInProbation || current.BreakerHP <= 0 {
+		// Any failed probe must restart cooldown. Probe failures represent an
+		// explicit readiness check failure, so keep the channel fully suppressed.
 		current.BreakerHP = 0
 		current.BreakerTripCount++
 
-		multiplier := 1.0 + math.Min(current.BreakerPressure, breakerMaxPressureContribution)*0.5
-		if current.BreakerFailStreak > 1 {
-			multiplier += float64(minInt(current.BreakerFailStreak-1, 6)) * 0.75
+		multiplier := computeBreakerCooldownMultiplier(current, wasInProbation, wasAwaitingProbe)
+		if wasInProbation {
+			multiplier += 1.75
 		}
-
-		switch {
-		case wasInProbation:
-			multiplier += 2.5
-		case wasAwaitingProbe:
-			multiplier += 1.5
-		}
-
 		baseCooldown := failureBaseCooldown(failureKind)
 		cooldown := time.Duration(float64(baseCooldown) * multiplier)
+		if chronicFloor := computeBreakerChronicCooldownFloor(current); chronicFloor > cooldown {
+			cooldown = chronicFloor
+		}
 		if cooldown < breakerMinimumCooldown {
 			cooldown = breakerMinimumCooldown
 		}
@@ -527,6 +544,145 @@ func GetChannelBreakerHPInfo(channel *model.Channel) ChannelBreakerHPInfo {
 		FailureRate:          channel.BreakerRecentFailures / reqs,
 		TimeoutRate:          channel.BreakerRecentTimeouts / reqs,
 	}
+}
+
+func computeBreakerFailureRates(channel *model.Channel) (float64, float64, float64) {
+	if channel == nil || channel.BreakerRecentRequests <= 0 {
+		return 0, 0, 0
+	}
+	requests := channel.BreakerRecentRequests
+	failureRate := math.Min(math.Max(channel.BreakerRecentFailures/requests, 0), 1)
+	timeoutRate := math.Min(math.Max(channel.BreakerRecentTimeouts/requests, 0), 1)
+	confidence := math.Min(requests/breakerCooldownRateConfidenceRequests, 1.0)
+	return failureRate, timeoutRate, confidence
+}
+
+func computeBreakerShortTermPenaltyFactor(channel *model.Channel) float64 {
+	if channel == nil {
+		return 1.0
+	}
+
+	streakInstability := 0.0
+	if channel.BreakerFailStreak > 0 {
+		streakInstability = math.Min(
+			math.Pow(float64(channel.BreakerFailStreak)/breakerShortTermStreakScale, breakerShortTermStreakExponent),
+			1.0,
+		)
+	}
+
+	failureRate, timeoutRate, confidence := computeBreakerFailureRates(channel)
+	if confidence <= 0 {
+		if streakInstability <= 0 {
+			return 1.0
+		}
+		return breakerShortTermPenaltyMinFactor + (1.0-breakerShortTermPenaltyMinFactor)*streakInstability
+	}
+
+	instability := streakInstability
+	if failureRate > 0 {
+		instability = math.Max(instability, math.Pow(failureRate, breakerShortTermRateExponent))
+	}
+	if timeoutRate > 0 {
+		instability = math.Max(instability, math.Pow(timeoutRate, breakerShortTermRateExponent)*0.75)
+	}
+
+	blendedInstability := (1.0 - confidence) + confidence*instability
+	factor := breakerShortTermPenaltyMinFactor + (1.0-breakerShortTermPenaltyMinFactor)*blendedInstability
+	if factor < breakerShortTermPenaltyMinFactor {
+		return breakerShortTermPenaltyMinFactor
+	}
+	if factor > 1.0 {
+		return 1.0
+	}
+	return factor
+}
+
+func computeBreakerCooldownMultiplier(channel *model.Channel, wasInProbation bool, wasAwaitingProbe bool) float64 {
+	if channel == nil {
+		return 1.0
+	}
+
+	multiplier := 1.0
+	shortTermPenaltyFactor := computeBreakerShortTermPenaltyFactor(channel)
+	pressurePenaltyFactor := breakerShortTermPressureMinFactor + (1.0-breakerShortTermPressureMinFactor)*shortTermPenaltyFactor
+	historyPenaltyFactor := math.Pow(shortTermPenaltyFactor, breakerShortTermHistoryExponent)
+	multiplier += math.Min(channel.BreakerPressure, breakerMaxPressureContribution) * breakerPressureCooldownWeight * pressurePenaltyFactor
+
+	if channel.BreakerFailStreak > 1 {
+		streakPenalty := math.Pow(
+			float64(minInt(channel.BreakerFailStreak-1, breakerFailStreakCooldownCap)),
+			breakerFailStreakCooldownExponent,
+		) * breakerFailStreakCooldownWeight
+		multiplier += streakPenalty
+	}
+
+	if channel.BreakerTripCount > breakerTripCooldownStart {
+		tripPenalty := math.Log1p(float64(minInt(channel.BreakerTripCount-breakerTripCooldownStart, breakerTripCooldownCap))) * breakerTripCooldownWeight * historyPenaltyFactor
+		multiplier += tripPenalty
+	}
+
+	failureRate, timeoutRate, confidence := computeBreakerFailureRates(channel)
+	if confidence > 0 {
+		if failureRate > breakerFailureRateCooldownThreshold {
+			normalized := (failureRate - breakerFailureRateCooldownThreshold) / (1.0 - breakerFailureRateCooldownThreshold)
+			multiplier += math.Pow(normalized, breakerFailureRateCooldownExponent) * breakerFailureRateCooldownWeight * confidence
+		}
+		if timeoutRate > breakerTimeoutRateCooldownThreshold {
+			normalized := (timeoutRate - breakerTimeoutRateCooldownThreshold) / (1.0 - breakerTimeoutRateCooldownThreshold)
+			multiplier += math.Pow(normalized, breakerTimeoutRateCooldownExponent) * breakerTimeoutRateCooldownWeight * confidence
+		}
+	}
+
+	if wasInProbation {
+		multiplier += 0.75
+	}
+	if wasAwaitingProbe {
+		multiplier += 1.5
+	}
+	if multiplier < 1.0 {
+		return 1.0
+	}
+	return multiplier
+}
+
+func computeBreakerChronicCooldownFloor(channel *model.Channel) time.Duration {
+	if channel == nil {
+		return 0
+	}
+
+	floor := time.Duration(0)
+	shortTermPenaltyFactor := computeBreakerShortTermPenaltyFactor(channel)
+	historyPenaltyFactor := math.Pow(shortTermPenaltyFactor, breakerShortTermHistoryExponent)
+	if channel.BreakerTripCount > breakerChronicTripFloorStart {
+		floor += time.Duration(
+			math.Log1p(float64(minInt(channel.BreakerTripCount-breakerChronicTripFloorStart, breakerTripCooldownCap))) *
+				breakerChronicTripFloorWeight * historyPenaltyFactor * float64(time.Minute),
+		)
+	}
+
+	failureRate, _, confidence := computeBreakerFailureRates(channel)
+	if confidence > 0 && failureRate > breakerChronicFailureFloorThreshold {
+		normalized := (failureRate - breakerChronicFailureFloorThreshold) / (1.0 - breakerChronicFailureFloorThreshold)
+		floor += time.Duration(
+			math.Pow(normalized, breakerChronicFailureFloorExponent) *
+				breakerChronicFailureFloorWeight *
+				confidence * float64(time.Minute),
+		)
+	}
+
+	if channel.BreakerFailStreak > breakerChronicStreakFloorStart {
+		floor += time.Duration(
+			math.Pow(
+				float64(minInt(channel.BreakerFailStreak-breakerChronicStreakFloorStart, breakerFailStreakCooldownCap)),
+				breakerChronicStreakFloorExponent,
+			) * breakerChronicStreakFloorWeight * float64(time.Minute),
+		)
+	}
+
+	if floor > breakerMaxCooldown {
+		return breakerMaxCooldown
+	}
+	return floor
 }
 
 // --- Pressure system helpers (unchanged) ---

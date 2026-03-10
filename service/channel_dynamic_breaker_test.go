@@ -407,3 +407,72 @@ func TestGetChannelBreakerHPInfo_RatesCalculation(t *testing.T) {
 	}
 }
 
+func TestSevereChannelCooldownApproachesMax(t *testing.T) {
+	channel := &model.Channel{
+		BreakerPressure:       40,
+		BreakerFailStreak:     20,
+		BreakerTripCount:      29,
+		BreakerRecentRequests: 90.0,
+		BreakerRecentFailures: 88.02,
+		BreakerRecentTimeouts: 6.0,
+	}
+
+	multiplier := computeBreakerCooldownMultiplier(channel, false, false)
+	cooldown := time.Duration(float64(failureBaseCooldown(channelFailureKindOverloaded)) * multiplier)
+	if chronicFloor := computeBreakerChronicCooldownFloor(channel); chronicFloor > cooldown {
+		cooldown = chronicFloor
+	}
+	if cooldown > breakerMaxCooldown {
+		cooldown = breakerMaxCooldown
+	}
+
+	if cooldown < 105*time.Minute {
+		t.Fatalf("expected severely unhealthy channel cooldown to approach the max cap, got %s", cooldown)
+	}
+	if cooldown > breakerMaxCooldown {
+		t.Fatalf("expected cooldown to remain capped at max, got %s", cooldown)
+	}
+}
+
+func TestRecoveringChannelGetsLighterHistoricalPenalty(t *testing.T) {
+	persistentlyFailing := &model.Channel{
+		BreakerPressure:       40,
+		BreakerFailStreak:     12,
+		BreakerTripCount:      29,
+		BreakerRecentRequests: 60.0,
+		BreakerRecentFailures: 58.2,
+		BreakerRecentTimeouts: 6.0,
+	}
+	recovering := &model.Channel{
+		BreakerPressure:       40,
+		BreakerFailStreak:     1,
+		BreakerTripCount:      29,
+		BreakerRecentRequests: 60.0,
+		BreakerRecentFailures: 12.0,
+		BreakerRecentTimeouts: 1.0,
+	}
+
+	computeCooldown := func(channel *model.Channel) time.Duration {
+		cooldown := time.Duration(float64(failureBaseCooldown(channelFailureKindOverloaded)) * computeBreakerCooldownMultiplier(channel, false, false))
+		if chronicFloor := computeBreakerChronicCooldownFloor(channel); chronicFloor > cooldown {
+			cooldown = chronicFloor
+		}
+		if cooldown > breakerMaxCooldown {
+			cooldown = breakerMaxCooldown
+		}
+		return cooldown
+	}
+
+	persistentlyFailingCooldown := computeCooldown(persistentlyFailing)
+	recoveringCooldown := computeCooldown(recovering)
+
+	if recoveringCooldown >= persistentlyFailingCooldown {
+		t.Fatalf("expected recovering channel cooldown to be lighter, got recovering=%s persistent=%s", recoveringCooldown, persistentlyFailingCooldown)
+	}
+	if recoveringCooldown >= 45*time.Minute {
+		t.Fatalf("expected recovering channel to cool down much faster, got %s", recoveringCooldown)
+	}
+	if computeBreakerShortTermPenaltyFactor(recovering) >= 0.25 {
+		t.Fatalf("expected recovering channel short-term penalty factor to be strongly reduced, got %f", computeBreakerShortTermPenaltyFactor(recovering))
+	}
+}
