@@ -817,22 +817,12 @@ func TestAllChannels(c *gin.Context) {
 }
 
 func isWithinTestTime() bool {
-	return true
 
 	now := time.Now()
 	hour := now.Hour()
-	minute := now.Minute()
 
-	// 8:00 - 11:30
-	if hour >= 8 && hour < 12 {
-		if hour == 11 && minute > 30 {
-			return false
-		}
-		return true
-	}
-
-	// 14:00 - 22:00
-	if hour >= 14 && hour <= 22 {
+	// 8:00 - 22:00
+	if hour >= 8 && hour <= 22 {
 		return true
 	}
 
