@@ -40,7 +40,6 @@ const LogsFilters = ({
       getFormApi={(api) => setFormApi(api)}
       onSubmit={refresh}
       allowEmpty={true}
-      autoComplete='off'
       layout='vertical'
       trigger='change'
       stopValidateWithError={false}

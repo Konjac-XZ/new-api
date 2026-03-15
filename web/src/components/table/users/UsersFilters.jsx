@@ -54,7 +54,6 @@ const UsersFilters = ({
         searchUsers(1, pageSize);
       }}
       allowEmpty={true}
-      autoComplete='off'
       layout='horizontal'
       trigger='change'
       stopValidateWithError={false}

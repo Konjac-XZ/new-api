@@ -49,7 +49,6 @@ const TokensFilters = ({
       }}
       onSubmit={() => searchTokens(1)}
       allowEmpty={true}
-      autoComplete='off'
       layout='horizontal'
       trigger='change'
       stopValidateWithError={false}

@@ -79,7 +79,6 @@ const ChannelsFilters = ({
           getFormApi={(api) => setFormApi(api)}
           onSubmit={() => searchChannels(enableTagMode)}
           allowEmpty={true}
-          autoComplete='off'
           layout='horizontal'
           trigger='change'
           stopValidateWithError={false}

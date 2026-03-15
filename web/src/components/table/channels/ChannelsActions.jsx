@@ -42,6 +42,8 @@ const ChannelsActions = ({
   applyAllUpstreamUpdatesLoading,
   compactMode,
   setCompactMode,
+  dynamicBreakerFilter,
+  setDynamicBreakerFilter,
   idSort,
   setIdSort,
   setEnableBatchDelete,
@@ -228,6 +230,19 @@ const ChannelsActions = ({
             setCompactMode={setCompactMode}
             t={t}
           />
+          <Button
+            size='small'
+            type={dynamicBreakerFilter ? 'primary' : 'tertiary'}
+            theme={dynamicBreakerFilter ? 'solid' : 'light'}
+            className='w-full md:w-auto hidden md:flex'
+            onClick={() => {
+              const next = !dynamicBreakerFilter;
+              localStorage.setItem('channel-dynamic-breaker-filter', next + '');
+              setDynamicBreakerFilter(next);
+            }}
+          >
+            {t('仅动态熔断')}
+          </Button>
         </div>
 
         {/* 右侧：设置开关区域 */}

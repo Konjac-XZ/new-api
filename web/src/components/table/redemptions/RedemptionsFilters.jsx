@@ -49,7 +49,6 @@ const RedemptionsFilters = ({
       }}
       onSubmit={searchRedemptions}
       allowEmpty={true}
-      autoComplete='off'
       layout='horizontal'
       trigger='change'
       stopValidateWithError={false}

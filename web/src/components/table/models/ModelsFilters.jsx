@@ -49,7 +49,6 @@ const ModelsFilters = ({
       }}
       onSubmit={searchModels}
       allowEmpty={true}
-      autoComplete='off'
       layout='horizontal'
       trigger='change'
       stopValidateWithError={false}

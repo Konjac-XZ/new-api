@@ -75,6 +75,11 @@ export const useChannelsData = () => {
     localStorage.getItem('channel-status-filter') || 'all',
   );
 
+  // Dynamic breaker filter
+  const [dynamicBreakerFilter, setDynamicBreakerFilter] = useState(
+    localStorage.getItem('channel-dynamic-breaker-filter') === 'true',
+  );
+
   // Type tabs states
   const [activeTypeKey, setActiveTypeKey] = useState('all');
   const [typeCounts, setTypeCounts] = useState({});
@@ -1221,9 +1226,28 @@ export const useChannelsData = () => {
     return keys;
   }, [channelTypeCounts]);
 
+  const filteredChannels = useMemo(() => {
+    if (!dynamicBreakerFilter) return channels;
+    return channels.reduce((acc, channel) => {
+      if (channel.children !== undefined) {
+        const filteredChildren = channel.children.filter(
+          (child) => child.breaker_state?.dynamic_enabled === true,
+        );
+        if (filteredChildren.length > 0) {
+          acc.push({ ...channel, children: filteredChildren });
+        }
+      } else {
+        if (channel.breaker_state?.dynamic_enabled === true) {
+          acc.push(channel);
+        }
+      }
+      return acc;
+    }, []);
+  }, [channels, dynamicBreakerFilter]);
+
   return {
     // Basic states
-    channels,
+    channels: filteredChannels,
     loading,
     searching,
     activePage,
@@ -1234,6 +1258,7 @@ export const useChannelsData = () => {
     enableTagMode,
     enableBatchDelete,
     statusFilter,
+    dynamicBreakerFilter,
     compactMode,
     globalPassThroughEnabled,
 
@@ -1346,6 +1371,7 @@ export const useChannelsData = () => {
     setEnableTagMode,
     setEnableBatchDelete,
     setStatusFilter,
+    setDynamicBreakerFilter,
     setCompactMode,
     setActivePage,
   };
