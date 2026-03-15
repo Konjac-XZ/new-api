@@ -67,6 +67,7 @@ const UsersFilters = ({
             placeholder={t('支持搜索用户的 ID、用户名、显示名称和邮箱地址')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
         </div>

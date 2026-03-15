@@ -62,6 +62,7 @@ const ModelsFilters = ({
             placeholder={t('搜索模型名称')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
         </div>
@@ -73,6 +74,7 @@ const ModelsFilters = ({
             placeholder={t('搜索供应商')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
         </div>

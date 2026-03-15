@@ -70,6 +70,7 @@ const TaskLogsFilters = ({
             placeholder={t('任务 ID')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
 
@@ -81,6 +82,7 @@ const TaskLogsFilters = ({
               placeholder={t('渠道 ID')}
               showClear
               pure
+              autoComplete='on'
               size='small'
             />
           )}

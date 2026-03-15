@@ -62,6 +62,7 @@ const RedemptionsFilters = ({
             placeholder={t('关键字(id或者名称)')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
         </div>

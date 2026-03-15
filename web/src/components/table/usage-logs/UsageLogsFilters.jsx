@@ -71,6 +71,7 @@ const LogsFilters = ({
             placeholder={t('令牌名称')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
 
@@ -80,6 +81,7 @@ const LogsFilters = ({
             placeholder={t('模型名称')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
 
@@ -89,6 +91,7 @@ const LogsFilters = ({
             placeholder={t('分组')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
 
@@ -98,6 +101,7 @@ const LogsFilters = ({
             placeholder={t('Request ID')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
 
@@ -109,6 +113,7 @@ const LogsFilters = ({
                 placeholder={t('渠道 ID')}
                 showClear
                 pure
+                autoComplete='on'
                 size='small'
               />
               <Form.Input
@@ -117,6 +122,7 @@ const LogsFilters = ({
                 placeholder={t('用户名称')}
                 showClear
                 pure
+                autoComplete='on'
                 size='small'
               />
             </>

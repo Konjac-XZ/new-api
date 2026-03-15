@@ -62,6 +62,7 @@ const TokensFilters = ({
             placeholder={t('搜索关键字')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
         </div>
@@ -73,6 +74,7 @@ const TokensFilters = ({
             placeholder={t('密钥')}
             showClear
             pure
+            autoComplete='on'
             size='small'
           />
         </div>

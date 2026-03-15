@@ -92,6 +92,7 @@ const ChannelsFilters = ({
               placeholder={t('渠道ID，名称，密钥，API地址')}
               showClear
               pure
+              autoComplete='on'
             />
           </div>
           <div className='w-full md:w-48'>
@@ -102,6 +103,7 @@ const ChannelsFilters = ({
               placeholder={t('模型关键字')}
               showClear
               pure
+              autoComplete='on'
             />
           </div>
           <div className='w-full md:w-32'>
