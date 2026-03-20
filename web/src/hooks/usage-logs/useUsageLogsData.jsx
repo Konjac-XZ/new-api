@@ -39,6 +39,7 @@ import {
 } from '../../helpers';
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
+import ParamOverrideEntry from '../../components/table/usage-logs/components/ParamOverrideEntry';
 
 export const useLogsData = () => {
   const { t } = useTranslation();
@@ -181,6 +182,8 @@ export const useLogsData = () => {
   ] = useState(false);
   const [channelAffinityUsageCacheTarget, setChannelAffinityUsageCacheTarget] =
     useState(null);
+  const [showParamOverrideModal, setShowParamOverrideModal] = useState(false);
+  const [paramOverrideTarget, setParamOverrideTarget] = useState(null);
 
   // Initialize default column visibility
   const initDefaultColumns = () => {
@@ -345,6 +348,20 @@ export const useLogsData = () => {
     setShowChannelAffinityUsageCacheModal(true);
   };
 
+  const openParamOverrideModal = (log, other) => {
+    const lines = Array.isArray(other?.po) ? other.po.filter(Boolean) : [];
+    if (lines.length === 0) {
+      return;
+    }
+    setParamOverrideTarget({
+      lines,
+      modelName: log?.model_name || '',
+      requestId: log?.request_id || '',
+      requestPath: other?.request_path || '',
+    });
+    setShowParamOverrideModal(true);
+  };
+
   // Format logs data
   const setLogsFormat = (logs) => {
     const requestConversionDisplayValue = (conversionChain) => {
@@ -411,38 +428,38 @@ export const useLogsData = () => {
           key: t('日志详情'),
           value: other?.claude
             ? renderClaudeLogContent(
-                other?.model_ratio,
-                other.completion_ratio,
-                other.model_price,
-                other.group_ratio,
-                other?.user_group_ratio,
-                other.cache_ratio || 1.0,
-                other.cache_creation_ratio || 1.0,
-                other.cache_creation_tokens_5m || 0,
-                other.cache_creation_ratio_5m ||
-                  other.cache_creation_ratio ||
-                  1.0,
-                other.cache_creation_tokens_1h || 0,
-                other.cache_creation_ratio_1h ||
-                  other.cache_creation_ratio ||
-                  1.0,
-                billingDisplayMode,
-              )
+              other?.model_ratio,
+              other.completion_ratio,
+              other.model_price,
+              other.group_ratio,
+              other?.user_group_ratio,
+              other.cache_ratio || 1.0,
+              other.cache_creation_ratio || 1.0,
+              other.cache_creation_tokens_5m || 0,
+              other.cache_creation_ratio_5m ||
+              other.cache_creation_ratio ||
+              1.0,
+              other.cache_creation_tokens_1h || 0,
+              other.cache_creation_ratio_1h ||
+              other.cache_creation_ratio ||
+              1.0,
+              billingDisplayMode,
+            )
             : renderLogContent(
-                other?.model_ratio,
-                other.completion_ratio,
-                other.model_price,
-                other.group_ratio,
-                other?.user_group_ratio,
-                other.cache_ratio || 1.0,
-                false,
-                1.0,
-                other.web_search || false,
-                other.web_search_call_count || 0,
-                other.file_search || false,
-                other.file_search_call_count || 0,
-                billingDisplayMode,
-              ),
+              other?.model_ratio,
+              other.completion_ratio,
+              other.model_price,
+              other.group_ratio,
+              other?.user_group_ratio,
+              other.cache_ratio || 1.0,
+              false,
+              1.0,
+              other.web_search || false,
+              other.web_search_call_count || 0,
+              other.file_search || false,
+              other.file_search_call_count || 0,
+              billingDisplayMode,
+            ),
         });
         if (logs[i]?.content) {
           expandDataLocal.push({
@@ -512,12 +529,12 @@ export const useLogsData = () => {
               other.cache_creation_ratio || 1.0,
               other.cache_creation_tokens_5m || 0,
               other.cache_creation_ratio_5m ||
-                other.cache_creation_ratio ||
-                1.0,
+              other.cache_creation_ratio ||
+              1.0,
               other.cache_creation_tokens_1h || 0,
               other.cache_creation_ratio_1h ||
-                other.cache_creation_ratio ||
-                1.0,
+              other.cache_creation_ratio ||
+              1.0,
               billingDisplayMode,
             );
           } else {
@@ -582,6 +599,21 @@ export const useLogsData = () => {
         expandDataLocal.push({
           key: t('请求路径'),
           value: other.request_path,
+        });
+      }
+      if (Array.isArray(other?.po) && other.po.length > 0) {
+        expandDataLocal.push({
+          key: t('参数覆盖'),
+          value: (
+            <ParamOverrideEntry
+              count={other.po.length}
+              t={t}
+              onOpen={(event) => {
+                event.stopPropagation();
+                openParamOverrideModal(logs[i], other);
+              }}
+            />
+          ),
         });
       }
       if (other?.billing_source === 'subscription') {
@@ -708,7 +740,7 @@ export const useLogsData = () => {
   // Page handlers
   const handlePageChange = (page) => {
     setActivePage(page);
-    loadLogs(page, pageSize).then((r) => {});
+    loadLogs(page, pageSize).then((r) => { });
   };
 
   const handlePageSizeChange = async (size) => {
@@ -811,6 +843,9 @@ export const useLogsData = () => {
     setShowChannelAffinityUsageCacheModal,
     channelAffinityUsageCacheTarget,
     openChannelAffinityUsageCacheModal,
+    showParamOverrideModal,
+    setShowParamOverrideModal,
+    paramOverrideTarget,
 
     // Functions
     loadLogs,
@@ -822,6 +857,7 @@ export const useLogsData = () => {
     setLogsFormat,
     hasExpandableRows,
     setLogType,
+    openParamOverrideModal,
 
     // Translation
     t,
