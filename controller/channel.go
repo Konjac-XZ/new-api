@@ -246,6 +246,19 @@ func FixChannelsAbilities(c *gin.Context) {
 	})
 }
 
+func ResetDynamicChannelBreakers(c *gin.Context) {
+	success, fails, err := service.ResetAllDynamicChannelBreakers()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"success": success,
+		"fails":   fails,
+	})
+}
+
 func SearchChannels(c *gin.Context) {
 	keyword := c.Query("keyword")
 	group := c.Query("group")

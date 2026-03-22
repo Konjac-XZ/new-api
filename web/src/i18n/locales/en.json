@@ -3346,6 +3346,11 @@
     "容错系数": "Tolerance Coefficient",
     "近期失败率": "Recent Failure Rate",
     "近期超时率": "Recent Timeout Rate",
-    "动态熔断容错系数，范围 0.1 - 10.0，默认 1.0。值越大允许更多失败次数才触发冷却，值越小则更灵敏。": "Tolerance coefficient for the dynamic circuit breaker, range 0.1-10.0, default 1.0. Higher values tolerate more failures before triggering cooldown; lower values are more sensitive."
+    "动态熔断容错系数，范围 0.1 - 10.0，默认 1.0。值越大允许更多失败次数才触发冷却，值越小则更灵敏。": "Tolerance coefficient for the dynamic circuit breaker, range 0.1-10.0, default 1.0. Higher values tolerate more failures before triggering cooldown; lower values are more sensitive.",
+    "确定重置熔断状态？": "Reset circuit breaker status?",
+    "这会清空所有启用动态熔断通道的冷却和失败记录，并将 HP 恢复为满值。": "This will clear cooldown and failure history for all channels with dynamic circuit breaker enabled, and fully restore their HP.",
+    "重置熔断状态": "Reset Circuit Breaker Status",
+    "已重置 ${count} 个动态熔断通道的状态。": "Reset the status of ${count} dynamic circuit breaker channels.",
+    "重置熔断状态失败": "Failed to reset circuit breaker status"
   }
 }

@@ -3262,6 +3262,11 @@
     "5m缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m缓存创建倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}": "Création du cache 5m : {{tokens}} / 1M * ratio du modèle {{modelRatio}} * ratio de création du cache 5m {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}",
     "1h缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h缓存创建倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}": "Création du cache 1h : {{tokens}} / 1M * ratio du modèle {{modelRatio}} * ratio de création du cache 1h {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}",
     "输出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 输出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}": "Sortie : {{tokens}} / 1M * ratio du modèle {{modelRatio}} * ratio de sortie {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}",
-    "空": "Vide"
+    "空": "Vide",
+    "确定重置熔断状态？": "Réinitialiser l'état du coupe-circuit ?",
+    "这会清空所有启用动态熔断通道的冷却和失败记录，并将 HP 恢复为满值。": "Cela effacera le délai de refroidissement et l'historique des échecs de tous les canaux avec coupe-circuit dynamique activé, et restaurera entièrement leurs HP.",
+    "重置熔断状态": "Réinitialiser l'état du coupe-circuit",
+    "已重置 ${count} 个动态熔断通道的状态。": "L'état de ${count} canaux avec coupe-circuit dynamique a été réinitialisé.",
+    "重置熔断状态失败": "Échec de la réinitialisation de l'état du coupe-circuit"
   }
 }

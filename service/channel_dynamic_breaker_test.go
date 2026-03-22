@@ -715,3 +715,102 @@ func TestProbationSuccess_DoesNotReduceHigherHP(t *testing.T) {
 		t.Fatalf("expected HP to remain at 9.0 (above refill target=%f), got %f", refillTarget, channel.BreakerHP)
 	}
 }
+
+func TestResetAllDynamicChannelBreakers(t *testing.T) {
+	now := time.Now().Unix()
+	dynamicChannel := seedDynamicBreakerChannelForProbeTest(t, now+300, now-60, 5)
+	if err := model.DB.Model(&model.Channel{}).Where("id = ?", dynamicChannel.Id).Updates(map[string]any{
+		"breaker_pressure":        4.5,
+		"breaker_fail_streak":     6,
+		"breaker_cooldown_at":     now + 300,
+		"breaker_last_failure":    "timeout",
+		"breaker_hp":              1.5,
+		"breaker_trip_count":      3,
+		"breaker_recent_requests": 12.0,
+		"breaker_recent_failures": 8.0,
+		"breaker_recent_timeouts": 4.0,
+		"breaker_updated_at":      now,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed dynamic breaker state: %v", err)
+	}
+
+	autoBan := 1
+	weight := uint(0)
+	priority := int64(0)
+	plainChannel := &model.Channel{
+		Type:               0,
+		Key:                "sk-reset-plain",
+		Name:               fmt.Sprintf("plain-reset-%d", time.Now().UnixNano()),
+		Status:             common.ChannelStatusEnabled,
+		Group:              "default",
+		Models:             "gpt-4o-mini",
+		AutoBan:            &autoBan,
+		Weight:             &weight,
+		Priority:           &priority,
+		BreakerPressure:    9.0,
+		BreakerUpdatedAt:   now,
+		BreakerFailStreak:  2,
+		BreakerCooldownAt:  now + 500,
+		BreakerLastFailure: "bad_response",
+		BreakerHP:          2.0,
+		BreakerTripCount:   4,
+	}
+	if err := model.DB.Create(plainChannel).Error; err != nil {
+		t.Fatalf("failed to seed plain channel: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = model.DB.Delete(&model.Channel{}, plainChannel.Id).Error
+	})
+
+	successCount, failCount, err := ResetAllDynamicChannelBreakers()
+	if err != nil {
+		t.Fatalf("reset failed: %v", err)
+	}
+	if successCount < 1 {
+		t.Fatalf("expected at least one dynamic breaker channel to reset, got %d", successCount)
+	}
+	if failCount != 0 {
+		t.Fatalf("expected no reset failures, got %d", failCount)
+	}
+
+	var resetDynamic model.Channel
+	if err := model.DB.Where("id = ?", dynamicChannel.Id).First(&resetDynamic).Error; err != nil {
+		t.Fatalf("failed to reload dynamic channel: %v", err)
+	}
+	if resetDynamic.BreakerPressure != 0 {
+		t.Fatalf("expected dynamic breaker pressure reset to 0, got %f", resetDynamic.BreakerPressure)
+	}
+	if resetDynamic.BreakerFailStreak != 0 {
+		t.Fatalf("expected dynamic breaker fail streak reset to 0, got %d", resetDynamic.BreakerFailStreak)
+	}
+	if resetDynamic.BreakerCooldownAt != 0 {
+		t.Fatalf("expected dynamic breaker cooldown reset to 0, got %d", resetDynamic.BreakerCooldownAt)
+	}
+	if resetDynamic.BreakerLastFailure != "" {
+		t.Fatalf("expected dynamic breaker last failure cleared, got %q", resetDynamic.BreakerLastFailure)
+	}
+	if resetDynamic.BreakerTripCount != 0 {
+		t.Fatalf("expected dynamic breaker trip count reset to 0, got %d", resetDynamic.BreakerTripCount)
+	}
+	if resetDynamic.BreakerRecentRequests != 0 || resetDynamic.BreakerRecentFailures != 0 || resetDynamic.BreakerRecentTimeouts != 0 {
+		t.Fatalf("expected dynamic breaker EWMA counters reset, got requests=%f failures=%f timeouts=%f", resetDynamic.BreakerRecentRequests, resetDynamic.BreakerRecentFailures, resetDynamic.BreakerRecentTimeouts)
+	}
+	if resetDynamic.BreakerUpdatedAt != 0 {
+		t.Fatalf("expected dynamic breaker updated_at reset to 0, got %d", resetDynamic.BreakerUpdatedAt)
+	}
+	expectedHP := computeMaxHP(&resetDynamic)
+	if math.Abs(resetDynamic.BreakerHP-expectedHP) > 0.0001 {
+		t.Fatalf("expected dynamic breaker HP restored to %f, got %f", expectedHP, resetDynamic.BreakerHP)
+	}
+
+	var unchangedPlain model.Channel
+	if err := model.DB.Where("id = ?", plainChannel.Id).First(&unchangedPlain).Error; err != nil {
+		t.Fatalf("failed to reload plain channel: %v", err)
+	}
+	if unchangedPlain.BreakerPressure != plainChannel.BreakerPressure {
+		t.Fatalf("expected non-dynamic channel pressure unchanged, got %f want %f", unchangedPlain.BreakerPressure, plainChannel.BreakerPressure)
+	}
+	if unchangedPlain.BreakerCooldownAt != plainChannel.BreakerCooldownAt {
+		t.Fatalf("expected non-dynamic channel cooldown unchanged, got %d want %d", unchangedPlain.BreakerCooldownAt, plainChannel.BreakerCooldownAt)
+	}
+}

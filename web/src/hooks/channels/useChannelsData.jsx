@@ -53,6 +53,8 @@ export const useChannelsData = () => {
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [channelCount, setChannelCount] = useState(0);
   const [groupOptions, setGroupOptions] = useState([]);
+  const [resetDynamicBreakersLoading, setResetDynamicBreakersLoading] =
+    useState(false);
 
   // UI states
   const [showEdit, setShowEdit] = useState(false);
@@ -807,6 +809,37 @@ export const useChannelsData = () => {
     }
   };
 
+  const resetDynamicCircuitBreakerStatus = async () => {
+    if (resetDynamicBreakersLoading) {
+      return;
+    }
+
+    setResetDynamicBreakersLoading(true);
+    try {
+      const res = await API.post(`/api/channel/breaker/reset`);
+      const { success, message, data } = res.data;
+      if (success) {
+        showSuccess(
+          t('已重置 ${count} 个动态熔断通道的状态。').replace(
+            '${count}',
+            data.success,
+          ),
+        );
+        await refresh();
+      } else {
+        showError(message || t('重置熔断状态失败'));
+      }
+    } catch (error) {
+      showError(
+        error?.response?.data?.message ||
+          error?.message ||
+          t('重置熔断状态失败'),
+      );
+    } finally {
+      setResetDynamicBreakersLoading(false);
+    }
+  };
+
   const checkOllamaVersion = async (record) => {
     try {
       const res = await API.get(`/api/channel/ollama/version/${record.id}`);
@@ -1353,6 +1386,8 @@ export const useChannelsData = () => {
     updateAllChannelsBalance,
     updateChannelBalance,
     fixChannelsAbilities,
+    resetDynamicCircuitBreakerStatus,
+    resetDynamicBreakersLoading,
     checkOllamaVersion,
     testChannel,
     testChannelStream,

@@ -71,23 +71,23 @@ const (
 
 // HP system constants — controls whether cooldown triggers
 const (
-	hpBase                          = 10.0      // base max HP before coefficient
-	hpMinCoefficient                = 0.1       // minimum tolerance coefficient
-	hpMaxCoefficient                = 10.0      // maximum tolerance coefficient
-	hpDefaultCoefficient            = 1.0       // default when not configured
-	hpMinimum                       = 1.0       // minimum maxHP floor
-	hpPassiveRecoveryPerHour        = 0.5       // HP recovered per hour passively
-	hpSuccessRecovery               = 1.0       // HP recovered per successful request
-	hpProbationSuccessRecovery      = 0.8       // HP recovered per success during observation
-	hpProbationDamageMultiplier     = 1.5       // damage multiplier during observation
-	hpAwaitingProbeDamageMultiplier = 2.0       // damage multiplier when awaiting probe
-	hpProbeSuccessRefillFraction     = 0.50     // probe success: refill to 50% of maxHP (not full)
-	hpProbationSuccessRefillFraction = 0.70     // probation success: refill to 70% of maxHP
-	hpEWMADecayWindow               = time.Hour // EWMA decay time constant
-	hpEWMAMinValue                  = 0.01      // minimum EWMA value before zeroing
-	hpSuccessRewardConfidence       = 16.0      // recent successful requests needed to unlock the full bonus
-	hpSuccessRewardMinSuccessRate   = 0.90      // minimum success rate required to start earning the bonus
-	hpSuccessRewardMaxBonus         = 1.0       // maximum additive multiplier for sustained success
+	hpBase                           = 10.0      // base max HP before coefficient
+	hpMinCoefficient                 = 0.1       // minimum tolerance coefficient
+	hpMaxCoefficient                 = 10.0      // maximum tolerance coefficient
+	hpDefaultCoefficient             = 1.0       // default when not configured
+	hpMinimum                        = 1.0       // minimum maxHP floor
+	hpPassiveRecoveryPerHour         = 0.5       // HP recovered per hour passively
+	hpSuccessRecovery                = 1.0       // HP recovered per successful request
+	hpProbationSuccessRecovery       = 0.8       // HP recovered per success during observation
+	hpProbationDamageMultiplier      = 1.5       // damage multiplier during observation
+	hpAwaitingProbeDamageMultiplier  = 2.0       // damage multiplier when awaiting probe
+	hpProbeSuccessRefillFraction     = 0.50      // probe success: refill to 50% of maxHP (not full)
+	hpProbationSuccessRefillFraction = 0.70      // probation success: refill to 70% of maxHP
+	hpEWMADecayWindow                = time.Hour // EWMA decay time constant
+	hpEWMAMinValue                   = 0.01      // minimum EWMA value before zeroing
+	hpSuccessRewardConfidence        = 16.0      // recent successful requests needed to unlock the full bonus
+	hpSuccessRewardMinSuccessRate    = 0.90      // minimum success rate required to start earning the bonus
+	hpSuccessRewardMaxBonus          = 1.0       // maximum additive multiplier for sustained success
 )
 
 var channelBreakerStateLock sync.Mutex
@@ -594,6 +594,46 @@ type ChannelBreakerHPInfo struct {
 	ToleranceCoefficient float64
 	FailureRate          float64
 	TimeoutRate          float64
+}
+
+// ResetAllDynamicChannelBreakers clears breaker cooldown/history for every
+// channel with dynamic circuit breaker enabled and restores HP to full.
+func ResetAllDynamicChannelBreakers() (int, int, error) {
+	channelBreakerStateLock.Lock()
+	defer channelBreakerStateLock.Unlock()
+
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	successCount := 0
+	failCount := 0
+	for _, channel := range channels {
+		if channel == nil || !channel.IsDynamicCircuitBreakerEnabled() {
+			continue
+		}
+
+		channel.BreakerPressure = 0
+		channel.BreakerUpdatedAt = 0
+		channel.BreakerFailStreak = 0
+		channel.BreakerCooldownAt = 0
+		channel.BreakerLastFailure = ""
+		channel.BreakerTripCount = 0
+		channel.BreakerRecentRequests = 0
+		channel.BreakerRecentFailures = 0
+		channel.BreakerRecentTimeouts = 0
+		channel.BreakerHP = computeMaxHP(channel)
+
+		if updateErr := model.UpdateChannelBreakerState(channel); updateErr != nil {
+			failCount++
+			common.SysLog(fmt.Sprintf("failed to reset channel breaker state: channel_id=%d, error=%v", channel.Id, updateErr))
+			continue
+		}
+		successCount++
+	}
+
+	return successCount, failCount, nil
 }
 
 // GetChannelBreakerHPInfo returns the current HP state for a channel.

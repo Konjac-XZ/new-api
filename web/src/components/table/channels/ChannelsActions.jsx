@@ -36,6 +36,8 @@ const ChannelsActions = ({
   fixChannelsAbilities,
   updateAllChannelsBalance,
   deleteAllDisabledChannels,
+  resetDynamicCircuitBreakerStatus,
+  resetDynamicBreakersLoading,
   applyAllUpstreamUpdates,
   detectAllUpstreamUpdates,
   detectAllUpstreamUpdatesLoading,
@@ -192,6 +194,28 @@ const ChannelsActions = ({
                     }}
                   >
                     {t('处理全部渠道上游更新')}
+                  </Button>
+                </Dropdown.Item>
+                <Dropdown.Item>
+                  <Button
+                    size='small'
+                    type='warning'
+                    className='w-full'
+                    loading={resetDynamicBreakersLoading}
+                    disabled={resetDynamicBreakersLoading}
+                    onClick={() => {
+                      Modal.confirm({
+                        title: t('确定重置熔断状态？'),
+                        content: t(
+                          '这会清空所有启用动态熔断通道的冷却和失败记录，并将 HP 恢复为满值。',
+                        ),
+                        onOk: () => resetDynamicCircuitBreakerStatus(),
+                        size: 'sm',
+                        centered: true,
+                      });
+                    }}
+                  >
+                    {t('重置熔断状态')}
                   </Button>
                 </Dropdown.Item>
                 <Dropdown.Item>

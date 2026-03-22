@@ -2920,6 +2920,11 @@
     "5m缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m缓存创建倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}": "5m快取建立：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m快取建立倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}",
     "1h缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h缓存创建倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}": "1h快取建立：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h快取建立倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}",
     "输出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 输出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}": "輸出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 輸出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}",
-    "空": "空"
+    "空": "空",
+    "确定重置熔断状态？": "確定重置熔斷狀態？",
+    "这会清空所有启用动态熔断通道的冷却和失败记录，并将 HP 恢复为满值。": "這會清空所有啟用動態熔斷通道的冷卻和失敗記錄，並將 HP 恢復為滿值。",
+    "重置熔断状态": "重置熔斷狀態",
+    "已重置 ${count} 个动态熔断通道的状态。": "已重置 ${count} 個動態熔斷通道的狀態。",
+    "重置熔断状态失败": "重置熔斷狀態失敗"
   }
 }
