@@ -38,7 +38,7 @@ const (
 	breakerProbeObservationPenalty        = 5.0
 	breakerMinPressure                    = 0.05
 	breakerMaxPressureContribution        = 100.0
-	breakerSlowSuccessThreshold           = 15 * time.Second
+	breakerSlowSuccessThreshold           = 6 * time.Second
 	breakerPressureCooldownWeight         = 0.7
 	breakerFailStreakCooldownWeight       = 1.1
 	breakerFailStreakCooldownExponent     = 0.9
