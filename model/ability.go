@@ -147,6 +147,10 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 // excluding any channels listed in `exclude`. It retries within the same
 // priority (weighted) until all channels of that priority are exhausted,
 // then falls back to the next lower priority.
+//
+// Soft priority fallback: when more than half the channels at a priority tier
+// are excluded, channels from the next lower priority are blended in with
+// halved effective weights.
 func GetChannelExclude(group string, model string, exclude map[int]bool) (*Channel, error) {
 	// Collect distinct priorities in descending order
 	var priorities []int
@@ -162,8 +166,13 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 		return nil, errors.New("数据库一致性被破坏")
 	}
 
+	type candidate struct {
+		channelId int
+		weight    int
+	}
+
 	// Iterate priorities from highest to lowest
-	for _, p := range priorities {
+	for idx, p := range priorities {
 		var abilities []Ability
 		q := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, p)
 		if common.UsingSQLite || common.UsingPostgreSQL {
@@ -180,47 +189,76 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 		}
 
 		// Filter out excluded channels at this priority
-		filtered := make([]Ability, 0, len(abilities))
+		totalAtPriority := len(abilities)
+		candidates := make([]candidate, 0, len(abilities))
 		sumWeight := 0
 		for _, a := range abilities {
 			if exclude != nil && exclude[a.ChannelId] {
 				continue
 			}
-			filtered = append(filtered, a)
-			sumWeight += int(a.Weight)
+			w := int(a.Weight)
+			candidates = append(candidates, candidate{channelId: a.ChannelId, weight: w})
+			sumWeight += w
 		}
-		if len(filtered) == 0 {
+		if len(candidates) == 0 {
 			// all channels at this priority have been used
 			continue
+		}
+
+		// Soft priority fallback: when more than half the tier is excluded
+		// and a lower priority tier exists, blend in next-tier channels
+		// with halved weights.
+		if len(candidates)*2 < totalAtPriority && idx+1 < len(priorities) {
+			nextP := priorities[idx+1]
+			var nextAbilities []Ability
+			nq := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, nextP)
+			if common.UsingSQLite || common.UsingPostgreSQL {
+				err = nq.Order("weight DESC").Find(&nextAbilities).Error
+			} else {
+				err = nq.Order("weight DESC").Find(&nextAbilities).Error
+			}
+			if err == nil {
+				for _, a := range nextAbilities {
+					if exclude != nil && exclude[a.ChannelId] {
+						continue
+					}
+					w := int(a.Weight) / 2
+					if w < 1 {
+						w = 1
+					}
+					candidates = append(candidates, candidate{channelId: a.ChannelId, weight: w})
+					sumWeight += w
+				}
+			}
 		}
 
 		// Smoothing same as memory cache path
 		smoothingFactor := 1
 		smoothingAdjustment := 0
 		if sumWeight == 0 {
-			sumWeight = len(filtered) * 100
+			sumWeight = len(candidates) * 100
 			smoothingAdjustment = 100
-		} else if sumWeight/len(filtered) < 10 {
+		} else if sumWeight/len(candidates) < 10 {
 			smoothingFactor = 100
 		}
 
 		totalWeight := sumWeight * smoothingFactor
 		w := common.GetRandomInt(totalWeight)
-		var chosen Ability
-		for _, a := range filtered {
-			w -= int(a.Weight)*smoothingFactor + smoothingAdjustment
+		var chosen candidate
+		for _, c := range candidates {
+			w -= c.weight*smoothingFactor + smoothingAdjustment
 			if w < 0 {
-				chosen = a
+				chosen = c
 				break
 			}
 		}
-		if chosen.ChannelId == 0 {
+		if chosen.channelId == 0 {
 			// fallback to first
-			chosen = filtered[0]
+			chosen = candidates[0]
 		}
 
 		channel := Channel{}
-		err = DB.First(&channel, "id = ?", chosen.ChannelId).Error
+		err = DB.First(&channel, "id = ?", chosen.channelId).Error
 		return &channel, err
 	}
 

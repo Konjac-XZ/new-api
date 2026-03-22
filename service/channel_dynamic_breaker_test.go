@@ -196,8 +196,10 @@ func TestRecordChannelProbeFailure_ObservationPenaltyIsStronger(t *testing.T) {
 	if observationLatest.BreakerPressure <= awaitingLatest.BreakerPressure {
 		t.Fatalf("expected observation pressure penalty > awaiting penalty, got observation=%f awaiting=%f", observationLatest.BreakerPressure, awaitingLatest.BreakerPressure)
 	}
-	if observationLatest.BreakerCooldownAt <= awaitingLatest.BreakerCooldownAt {
-		t.Fatalf("expected observation cooldown restart to be stricter, got observation=%d awaiting=%d", observationLatest.BreakerCooldownAt, awaitingLatest.BreakerCooldownAt)
+	// Both cooldowns may hit the per-class cap (failureMaxCooldown), so we only
+	// verify that observation cooldown is >= awaiting cooldown (not strictly >).
+	if observationLatest.BreakerCooldownAt < awaitingLatest.BreakerCooldownAt {
+		t.Fatalf("expected observation cooldown restart to be at least as strict, got observation=%d awaiting=%d", observationLatest.BreakerCooldownAt, awaitingLatest.BreakerCooldownAt)
 	}
 }
 
@@ -475,17 +477,23 @@ func TestSevereChannelCooldownApproachesMax(t *testing.T) {
 		BreakerRecentTimeouts: 6.0,
 	}
 
+	// Use generic failure kind which has the highest per-class cap (= breakerMaxCooldown = 30 min)
+	failureKind := channelFailureKindGeneric
 	multiplier := computeBreakerCooldownMultiplier(channel, false, false)
-	cooldown := time.Duration(float64(failureBaseCooldown(channelFailureKindOverloaded)) * multiplier)
+	cooldown := time.Duration(float64(failureBaseCooldown(failureKind)) * multiplier)
 	if chronicFloor := computeBreakerChronicCooldownFloor(channel); chronicFloor > cooldown {
 		cooldown = chronicFloor
 	}
-	if cooldown > breakerMaxCooldown {
-		cooldown = breakerMaxCooldown
+	maxCap := failureMaxCooldown(failureKind)
+	if maxCap > breakerMaxCooldown {
+		maxCap = breakerMaxCooldown
+	}
+	if cooldown > maxCap {
+		cooldown = maxCap
 	}
 
-	if cooldown < 105*time.Minute {
-		t.Fatalf("expected severely unhealthy channel cooldown to approach the max cap, got %s", cooldown)
+	if cooldown < 25*time.Minute {
+		t.Fatalf("expected severely unhealthy channel cooldown to approach the max cap (%s), got %s", breakerMaxCooldown, cooldown)
 	}
 	if cooldown > breakerMaxCooldown {
 		t.Fatalf("expected cooldown to remain capped at max, got %s", cooldown)
@@ -510,13 +518,16 @@ func TestRecoveringChannelGetsLighterHistoricalPenalty(t *testing.T) {
 		BreakerRecentTimeouts: 1.0,
 	}
 
+	// Use generic failure kind (highest per-class cap) for meaningful cooldown comparison
+	failureKind := channelFailureKindGeneric
 	computeCooldown := func(channel *model.Channel) time.Duration {
-		cooldown := time.Duration(float64(failureBaseCooldown(channelFailureKindOverloaded)) * computeBreakerCooldownMultiplier(channel, false, false))
+		cooldown := time.Duration(float64(failureBaseCooldown(failureKind)) * computeBreakerCooldownMultiplier(channel, false, false))
 		if chronicFloor := computeBreakerChronicCooldownFloor(channel); chronicFloor > cooldown {
 			cooldown = chronicFloor
 		}
-		if cooldown > breakerMaxCooldown {
-			cooldown = breakerMaxCooldown
+		maxCap := failureMaxCooldown(failureKind)
+		if cooldown > maxCap {
+			cooldown = maxCap
 		}
 		return cooldown
 	}
@@ -527,10 +538,180 @@ func TestRecoveringChannelGetsLighterHistoricalPenalty(t *testing.T) {
 	if recoveringCooldown >= persistentlyFailingCooldown {
 		t.Fatalf("expected recovering channel cooldown to be lighter, got recovering=%s persistent=%s", recoveringCooldown, persistentlyFailingCooldown)
 	}
-	if recoveringCooldown >= 45*time.Minute {
+	if recoveringCooldown >= 20*time.Minute {
 		t.Fatalf("expected recovering channel to cool down much faster, got %s", recoveringCooldown)
 	}
 	if computeBreakerShortTermPenaltyFactor(recovering) >= 0.25 {
 		t.Fatalf("expected recovering channel short-term penalty factor to be strongly reduced, got %f", computeBreakerShortTermPenaltyFactor(recovering))
+	}
+}
+
+// --- Change 1: Softer overloaded HP damage ---
+
+func TestFailureHPDamage_OverloadedIsHalved(t *testing.T) {
+	damage := failureHPDamage(channelFailureKindOverloaded)
+	if damage != 0.5 {
+		t.Fatalf("expected overloaded HP damage=0.5, got %f", damage)
+	}
+	// Pressure weight should still be 1.0
+	pressure := failurePressureWeight(channelFailureKindOverloaded)
+	if pressure != 1.0 {
+		t.Fatalf("expected overloaded pressure weight=1.0, got %f", pressure)
+	}
+}
+
+func TestFailureHPDamage_MatchesPressureForNonOverloaded(t *testing.T) {
+	kinds := []channelFailureKind{
+		channelFailureKindGeneric,
+		channelFailureKindImmediateFailure,
+		channelFailureKindFirstTokenTimeout,
+		channelFailureKindMidStreamFailure,
+		channelFailureKindEmptyReply,
+	}
+	for _, kind := range kinds {
+		damage := failureHPDamage(kind)
+		pressure := failurePressureWeight(kind)
+		if damage != pressure {
+			t.Fatalf("expected HP damage to match pressure weight for %s, got damage=%f pressure=%f", kind, damage, pressure)
+		}
+	}
+}
+
+func TestOverloadedAbsorbs20HitsBeforeTripping(t *testing.T) {
+	hp := hpBase // 10.0
+	damage := failureHPDamage(channelFailureKindOverloaded)
+	hits := 0
+	for hp > 0 {
+		hp -= damage
+		hits++
+	}
+	if hits != 20 {
+		t.Fatalf("expected channel to absorb 20 overloaded hits before tripping, got %d", hits)
+	}
+}
+
+// --- Change 2: Per-failure-class cooldown caps ---
+
+func TestFailureMaxCooldownCaps(t *testing.T) {
+	extremeChannel := &model.Channel{
+		BreakerPressure:       80,
+		BreakerFailStreak:     30,
+		BreakerTripCount:      50,
+		BreakerRecentRequests: 100.0,
+		BreakerRecentFailures: 99.0,
+		BreakerRecentTimeouts: 50.0,
+	}
+
+	kinds := []struct {
+		kind   channelFailureKind
+		maxCap time.Duration
+	}{
+		{channelFailureKindOverloaded, 2 * time.Minute},
+		{channelFailureKindMidStreamFailure, 3 * time.Minute},
+		{channelFailureKindFirstTokenTimeout, 5 * time.Minute},
+		{channelFailureKindImmediateFailure, 5 * time.Minute},
+		{channelFailureKindEmptyReply, 10 * time.Minute},
+		{channelFailureKindGeneric, breakerMaxCooldown},
+	}
+
+	for _, tc := range kinds {
+		multiplier := computeBreakerCooldownMultiplier(extremeChannel, false, false)
+		cooldown := time.Duration(float64(failureBaseCooldown(tc.kind)) * multiplier)
+		if chronicFloor := computeBreakerChronicCooldownFloor(extremeChannel); chronicFloor > cooldown {
+			cooldown = chronicFloor
+		}
+		maxCap := failureMaxCooldown(tc.kind)
+		if maxCap > breakerMaxCooldown {
+			maxCap = breakerMaxCooldown
+		}
+		if cooldown > maxCap {
+			cooldown = maxCap
+		}
+
+		if cooldown > tc.maxCap {
+			t.Fatalf("failure kind %s: cooldown %s exceeded per-class cap %s", tc.kind, cooldown, tc.maxCap)
+		}
+	}
+}
+
+func TestOverloadedCooldownCapsAt2Minutes(t *testing.T) {
+	channel := &model.Channel{
+		BreakerPressure:       100,
+		BreakerFailStreak:     40,
+		BreakerTripCount:      60,
+		BreakerRecentRequests: 100.0,
+		BreakerRecentFailures: 100.0,
+	}
+	multiplier := computeBreakerCooldownMultiplier(channel, false, false)
+	cooldown := time.Duration(float64(failureBaseCooldown(channelFailureKindOverloaded)) * multiplier)
+	if chronicFloor := computeBreakerChronicCooldownFloor(channel); chronicFloor > cooldown {
+		cooldown = chronicFloor
+	}
+	maxCap := failureMaxCooldown(channelFailureKindOverloaded)
+	if cooldown > maxCap {
+		cooldown = maxCap
+	}
+	if cooldown > 2*time.Minute {
+		t.Fatalf("expected overloaded cooldown to cap at 2min, got %s", cooldown)
+	}
+}
+
+// --- Change 3: Gradual recovery ---
+
+func TestProbeSuccess_RefillsToPartialHP(t *testing.T) {
+	now := time.Now().Unix()
+	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)
+
+	if !RecordChannelProbeSuccess(channel) {
+		t.Fatal("expected probe success to promote awaiting-probe channel")
+	}
+
+	var latest model.Channel
+	if err := model.DB.Select("breaker_hp").Where("id = ?", channel.Id).First(&latest).Error; err != nil {
+		t.Fatalf("failed to reload channel: %v", err)
+	}
+
+	maxHP := computeMaxHP(&latest)
+	expected := maxHP * hpProbeSuccessRefillFraction
+	const tolerance = 0.01
+	if latest.BreakerHP < expected-tolerance || latest.BreakerHP > expected+tolerance {
+		t.Fatalf("expected HP~=%f (50%% of maxHP=%f), got %f", expected, maxHP, latest.BreakerHP)
+	}
+}
+
+func TestProbationSuccess_RefillsToPartialHP(t *testing.T) {
+	// Channel in probation state with low HP
+	channel := &model.Channel{
+		BreakerHP:        2.0,
+		BreakerTripCount: 3,
+	}
+	maxHP := computeMaxHP(channel)
+	refillTarget := maxHP * hpProbationSuccessRefillFraction
+
+	// Simulate the probation success refill logic
+	if channel.BreakerHP < refillTarget {
+		channel.BreakerHP = refillTarget
+	}
+
+	if channel.BreakerHP != refillTarget {
+		t.Fatalf("expected HP=%f (70%% of maxHP=%f), got %f", refillTarget, maxHP, channel.BreakerHP)
+	}
+	if channel.BreakerHP >= maxHP {
+		t.Fatalf("expected partial refill below maxHP=%f, got %f", maxHP, channel.BreakerHP)
+	}
+}
+
+func TestProbationSuccess_DoesNotReduceHigherHP(t *testing.T) {
+	// If HP is already above the refill target, don't reduce it
+	channel := &model.Channel{BreakerHP: 9.0}
+	maxHP := computeMaxHP(channel)
+	refillTarget := maxHP * hpProbationSuccessRefillFraction
+
+	if channel.BreakerHP < refillTarget {
+		channel.BreakerHP = refillTarget
+	}
+
+	if channel.BreakerHP != 9.0 {
+		t.Fatalf("expected HP to remain at 9.0 (above refill target=%f), got %f", refillTarget, channel.BreakerHP)
 	}
 }

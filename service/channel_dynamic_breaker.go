@@ -27,7 +27,7 @@ const (
 // Pressure system constants (unchanged — controls cooldown duration)
 const (
 	breakerDecayWindow                    = 4 * time.Hour
-	breakerMaxCooldown                    = 120 * time.Minute
+	breakerMaxCooldown                    = 30 * time.Minute
 	breakerMinimumCooldown                = 30 * time.Second
 	breakerNormalRecoveryFactor           = 0.7
 	breakerProbationRecoveryFactor        = 0.45
@@ -81,6 +81,8 @@ const (
 	hpProbationSuccessRecovery      = 0.8       // HP recovered per success during observation
 	hpProbationDamageMultiplier     = 1.5       // damage multiplier during observation
 	hpAwaitingProbeDamageMultiplier = 2.0       // damage multiplier when awaiting probe
+	hpProbeSuccessRefillFraction     = 0.50     // probe success: refill to 50% of maxHP (not full)
+	hpProbationSuccessRefillFraction = 0.70     // probation success: refill to 70% of maxHP
 	hpEWMADecayWindow               = time.Hour // EWMA decay time constant
 	hpEWMAMinValue                  = 0.01      // minimum EWMA value before zeroing
 	hpSuccessRewardConfidence       = 16.0      // recent successful requests needed to unlock the full bonus
@@ -104,7 +106,11 @@ func GetDynamicSuppressedChannelIDs(group string, modelName string) (map[int]boo
 		if channel == nil {
 			continue
 		}
-		if !channel.IsBreakerCoolingAt(now) && !channel.IsBreakerAwaitingProbeAt(now) {
+		// Only suppress channels that are actively cooling.
+		// Awaiting-probe channels are allowed into routing as live canaries:
+		// a success promotes them to probation, enabling faster recovery
+		// without requiring a dedicated scheduled probe.
+		if !channel.IsBreakerCoolingAt(now) {
 			continue
 		}
 		exclude[channel.Id] = true
@@ -133,18 +139,23 @@ func RecordChannelRelaySuccess(channel *model.Channel, info *relaycommon.RelayIn
 
 	now := time.Now()
 	wasInProbation := current.IsBreakerProbationAt(now.Unix())
+	wasAwaitingProbe := current.IsBreakerAwaitingProbeAt(now.Unix())
 
 	// Pressure system (unchanged)
 	applyBreakerDecay(current, now)
 	current.BreakerFailStreak = 0
-	current.BreakerCooldownAt = 0
 	current.BreakerLastFailure = ""
+	// Only zero CooldownAt when NOT transitioning from awaiting-probe.
+	// Awaiting-probe channels are promoted to probation instead.
+	if !wasAwaitingProbe {
+		current.BreakerCooldownAt = 0
+	}
 
 	if isSlowSuccessfulRequest(current, info) {
 		current.BreakerPressure += breakerSlowSuccessPressure
 	} else {
 		recoveryFactor := breakerNormalRecoveryFactor
-		if wasInProbation {
+		if wasInProbation || wasAwaitingProbe {
 			recoveryFactor = breakerProbationRecoveryFactor
 		}
 		current.BreakerPressure *= recoveryFactor
@@ -162,12 +173,26 @@ func RecordChannelRelaySuccess(channel *model.Channel, info *relaycommon.RelayIn
 	applyHPPassiveRecovery(current, now)
 
 	if wasInProbation {
-		// Transitioning out of observation: refill HP to maxHP
+		// Transitioning out of observation: partial HP refill.
+		// Sustained success will gradually bring HP to full via normal recovery.
 		maxHP := computeMaxHP(current)
-		current.BreakerHP = maxHP
+		refillTarget := maxHP * hpProbationSuccessRefillFraction
+		if current.BreakerHP < refillTarget {
+			current.BreakerHP = refillTarget
+		}
 		if current.BreakerTripCount > 0 {
 			current.BreakerTripCount--
 		}
+	} else if wasAwaitingProbe {
+		// Organic success during awaiting-probe: promote to probation.
+		// Partial HP refill (same as probe success), then sustained success
+		// during probation will bring HP to full.
+		maxHP := computeMaxHP(current)
+		current.BreakerHP = maxHP * hpProbeSuccessRefillFraction
+		if current.BreakerTripCount > 0 {
+			current.BreakerTripCount--
+		}
+		current.BreakerCooldownAt = now.Unix()
 	} else {
 		recovery := hpSuccessRecovery
 		maxHP := computeMaxHP(current)
@@ -222,11 +247,12 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 		current.BreakerRecentTimeouts += 1.0
 	}
 
-	// HP system: apply damage
+	// HP system: apply damage (uses failureHPDamage, not failurePressureWeight,
+	// so overloaded failures deal reduced damage)
 	ensureHPInitialized(current)
 	applyHPPassiveRecovery(current, now)
 
-	damage := failurePressureWeight(failureKind)
+	damage := failureHPDamage(failureKind)
 	if wasInProbation {
 		damage *= hpProbationDamageMultiplier
 	}
@@ -246,11 +272,15 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 		if chronicFloor := computeBreakerChronicCooldownFloor(current); chronicFloor > cooldown {
 			cooldown = chronicFloor
 		}
+		maxCap := failureMaxCooldown(failureKind)
+		if maxCap > breakerMaxCooldown {
+			maxCap = breakerMaxCooldown
+		}
 		if cooldown < breakerMinimumCooldown {
 			cooldown = breakerMinimumCooldown
 		}
-		if cooldown > breakerMaxCooldown {
-			cooldown = breakerMaxCooldown
+		if cooldown > maxCap {
+			cooldown = maxCap
 		}
 
 		current.BreakerCooldownAt = now.Add(cooldown).Unix()
@@ -317,11 +347,11 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 		current.BreakerRecentTimeouts += 1.0
 	}
 
-	// HP system: apply damage
+	// HP system: apply damage (uses failureHPDamage for softer overloaded handling)
 	ensureHPInitialized(current)
 	applyHPPassiveRecovery(current, now)
 
-	damage := failurePressureWeight(failureKind)
+	damage := failureHPDamage(failureKind)
 	if wasInProbation {
 		damage *= hpProbationDamageMultiplier
 	}
@@ -345,11 +375,15 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 		if chronicFloor := computeBreakerChronicCooldownFloor(current); chronicFloor > cooldown {
 			cooldown = chronicFloor
 		}
+		maxCap := failureMaxCooldown(failureKind)
+		if maxCap > breakerMaxCooldown {
+			maxCap = breakerMaxCooldown
+		}
 		if cooldown < breakerMinimumCooldown {
 			cooldown = breakerMinimumCooldown
 		}
-		if cooldown > breakerMaxCooldown {
-			cooldown = breakerMaxCooldown
+		if cooldown > maxCap {
+			cooldown = maxCap
 		}
 
 		current.BreakerCooldownAt = now.Add(cooldown).Unix()
@@ -394,10 +428,12 @@ func RecordChannelProbeSuccess(channel *model.Channel) bool {
 	}
 	applyBreakerDecay(current, now)
 
-	// HP system: refill on entering observation phase
+	// HP system: partial refill on entering observation phase.
+	// Probe success restores HP to a fraction of maxHP, not full.
+	// Sustained success during probation will gradually bring HP to full.
 	ensureHPInitialized(current)
 	maxHP := computeMaxHP(current)
-	current.BreakerHP = maxHP
+	current.BreakerHP = maxHP * hpProbeSuccessRefillFraction
 	if current.BreakerTripCount > 0 {
 		current.BreakerTripCount--
 	}
@@ -793,6 +829,19 @@ func failurePressureWeight(kind channelFailureKind) float64 {
 	}
 }
 
+// failureHPDamage returns the HP damage for a given failure kind.
+// Decoupled from pressure weight to allow softer treatment of transient failures.
+// Overloaded (429/502/503) deals half damage: a channel can absorb ~20 consecutive
+// rate-limit responses before tripping, vs ~10 with pressure weight.
+func failureHPDamage(kind channelFailureKind) float64 {
+	switch kind {
+	case channelFailureKindOverloaded:
+		return 0.5
+	default:
+		return failurePressureWeight(kind)
+	}
+}
+
 func failureBaseCooldown(kind channelFailureKind) time.Duration {
 	switch kind {
 	case channelFailureKindFirstTokenTimeout:
@@ -807,6 +856,25 @@ func failureBaseCooldown(kind channelFailureKind) time.Duration {
 		return 35 * time.Second
 	default:
 		return 45 * time.Second
+	}
+}
+
+// failureMaxCooldown returns a per-failure-class ceiling for cooldown duration.
+// Transient/capacity failures get much shorter caps than persistent failures.
+func failureMaxCooldown(kind channelFailureKind) time.Duration {
+	switch kind {
+	case channelFailureKindOverloaded:
+		return 2 * time.Minute
+	case channelFailureKindMidStreamFailure:
+		return 3 * time.Minute
+	case channelFailureKindFirstTokenTimeout:
+		return 5 * time.Minute
+	case channelFailureKindImmediateFailure:
+		return 5 * time.Minute
+	case channelFailureKindEmptyReply:
+		return 10 * time.Minute
+	default:
+		return breakerMaxCooldown
 	}
 }
 
