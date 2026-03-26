@@ -904,15 +904,15 @@ func failureBaseCooldown(kind channelFailureKind) time.Duration {
 func failureMaxCooldown(kind channelFailureKind) time.Duration {
 	switch kind {
 	case channelFailureKindOverloaded:
-		return 2 * time.Minute
-	case channelFailureKindMidStreamFailure:
-		return 3 * time.Minute
-	case channelFailureKindFirstTokenTimeout:
 		return 5 * time.Minute
-	case channelFailureKindImmediateFailure:
+	case channelFailureKindMidStreamFailure:
 		return 5 * time.Minute
 	case channelFailureKindEmptyReply:
 		return 10 * time.Minute
+	case channelFailureKindImmediateFailure:
+		return 15 * time.Minute
+	case channelFailureKindFirstTokenTimeout:
+		return 30 * time.Minute
 	default:
 		return breakerMaxCooldown
 	}

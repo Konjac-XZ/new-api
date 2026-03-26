@@ -34,6 +34,19 @@ const WS_MESSAGE_TYPES = {
   CHANNEL: 'channel_update',
 };
 
+const getTimestampMs = (msValue, fallbackValue) => {
+  if (Number.isFinite(msValue) && msValue > 0) {
+    return msValue;
+  }
+
+  if (!fallbackValue) {
+    return 0;
+  }
+
+  const parsed = new Date(fallbackValue).getTime();
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
 const useMonitorWs = ({ focusedRequestId } = {}) => {
   const [summaries, setSummaries] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, memory: 0 });
@@ -58,8 +71,8 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
     if (!Array.isArray(list)) return [];
     if (list.length <= MAX_SUMMARY_ITEMS) return list;
     const sortedByTime = [...list].sort((a, b) => {
-      const aTime = a?.start_time ? new Date(a.start_time).getTime() : 0;
-      const bTime = b?.start_time ? new Date(b.start_time).getTime() : 0;
+      const aTime = getTimestampMs(a?.start_time_ms, a?.start_time);
+      const bTime = getTimestampMs(b?.start_time_ms, b?.start_time);
       return aTime - bTime;
     });
     return sortedByTime.slice(sortedByTime.length - MAX_SUMMARY_ITEMS);

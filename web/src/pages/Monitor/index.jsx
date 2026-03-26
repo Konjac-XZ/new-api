@@ -111,6 +111,54 @@ const attemptStatusColors = {
   succeeded: 'green',
 };
 
+const getTimestampMs = (msValue, fallbackValue) => {
+  if (Number.isFinite(msValue) && msValue > 0) {
+    return msValue;
+  }
+
+  if (!fallbackValue) {
+    return 0;
+  }
+
+  const parsed = new Date(fallbackValue).getTime();
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const formatLiveSeconds = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0.0';
+  }
+
+  return (Math.floor(seconds * 10) / 10).toFixed(1);
+};
+
+const getActiveAttempt = (record) => {
+  if (!Array.isArray(record?.channel_attempts) || record.channel_attempts.length === 0) {
+    return null;
+  }
+
+  for (let index = record.channel_attempts.length - 1; index >= 0; index -= 1) {
+    const attempt = record.channel_attempts[index];
+    if (attempt?.status === 'waiting_upstream' || attempt?.status === 'streaming') {
+      return attempt;
+    }
+  }
+
+  return record.channel_attempts[record.channel_attempts.length - 1] || null;
+};
+
+const getActiveElapsedStartMs = (record) => {
+  const activeAttempt = getActiveAttempt(record);
+  if (activeAttempt) {
+    return getTimestampMs(activeAttempt.started_at_ms, activeAttempt.started_at);
+  }
+
+  return getTimestampMs(
+    record?.current_attempt_started_at_ms,
+    record?.current_attempt_started_at,
+  ) || getTimestampMs(record?.start_time_ms, record?.start_time);
+};
+
 const renderDurationTag = (durationMs, t) => {
   if (!durationMs) return <Text type='tertiary'>-</Text>;
   const seconds = Number(durationMs / MS_TO_SECONDS).toFixed(1);
@@ -207,20 +255,20 @@ const DurationCell = ({ record, t }) => {
     () => isActiveStatus(displayStatus),
     [displayStatus],
   );
-  const hasStartTime = Boolean(record.start_time);
+  const activeStartTimeMs = useMemo(() => getActiveElapsedStartMs(record), [record]);
+  const hasStartTime = activeStartTimeMs > 0;
   const now = useDurationNow(isActive && hasStartTime);
 
   const elapsed = useMemo(() => {
-    if (!isActive || !record.start_time) return 0;
-    const startTime = new Date(record.start_time).getTime();
-    const elapsedSeconds = (now - startTime) / MS_TO_SECONDS;
+    if (!isActive || !activeStartTimeMs) return 0;
+    const elapsedSeconds = (now - activeStartTimeMs) / MS_TO_SECONDS;
     return elapsedSeconds > 0 ? elapsedSeconds : 0;
-  }, [isActive, record.start_time, now]);
+  }, [activeStartTimeMs, isActive, now]);
 
   if (isActive) {
     return (
       <Tag color='grey' shape='circle'>
-        {elapsed.toFixed(1)}s
+        {formatLiveSeconds(elapsed)}s
       </Tag>
     );
   }
@@ -1181,17 +1229,18 @@ const RequestDetail = ({
             </MetaPill>
             <MetaPill icon={<Clock3 size={14} />} label={t('开始时间')}>
               <Text size='small'>
-                {record.start_time
+                {getTimestampMs(record.start_time_ms, record.start_time)
                   ? timestamp2string(
                     Math.floor(
-                      new Date(record.start_time).getTime() / MS_TO_SECONDS,
+                      getTimestampMs(record.start_time_ms, record.start_time) /
+                        MS_TO_SECONDS,
                     ),
                   )
                   : '-'}
               </Text>
             </MetaPill>
             <MetaPill icon={<Clock3 size={14} />} label={t('耗时')}>
-              {renderDurationTag(record.duration_ms, t)}
+              <DurationCell record={record} t={t} />
             </MetaPill>
             <MetaPill icon={<User size={14} />} label={t('用户 ID')}>
               <Text size='small'>{record.user_id || '-'}</Text>
@@ -1435,9 +1484,10 @@ const Monitor = () => {
 
   const summariesWithStatus = useMemo(() => {
     return summaries.map((summary) => {
-      const startTimeMs = summary.start_time
-        ? new Date(summary.start_time).getTime()
-        : 0;
+      const startTimeMs = getTimestampMs(
+        summary.start_time_ms,
+        summary.start_time,
+      );
       const displayStatus = deriveDisplayStatus(summary);
       return {
         ...summary,

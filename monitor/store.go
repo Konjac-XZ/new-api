@@ -521,6 +521,7 @@ func (s *Store) MarkComplete(id string, response *ResponseInfo) {
 	s.Update(id, func(r *RequestRecord) {
 		now := time.Now()
 		r.EndTime = &now
+		r.EndTimeMs = timeToUnixMilli(now)
 		r.Duration = now.Sub(r.StartTime).Milliseconds()
 		r.Response = response
 		if response != nil && response.Error != nil {

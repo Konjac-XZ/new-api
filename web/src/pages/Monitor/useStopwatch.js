@@ -20,6 +20,27 @@ For commercial licensing, please contact support@quantumnous.com
 import { useState, useEffect } from 'react';
 import { DURATION_UPDATE_INTERVAL_MS, MS_TO_SECONDS } from './constants';
 
+const getTimestampMs = (msValue, fallbackValue) => {
+  if (Number.isFinite(msValue) && msValue > 0) {
+    return msValue;
+  }
+
+  if (!fallbackValue) {
+    return 0;
+  }
+
+  const parsed = new Date(fallbackValue).getTime();
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const formatLiveSeconds = (seconds) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return '0.0';
+  }
+
+  return (Math.floor(seconds * 10) / 10).toFixed(1);
+};
+
 export const useStopwatch = (requestDetail, t) => {
   const [display, setDisplay] = useState('');
   const [isActive, setIsActive] = useState(false);
@@ -46,24 +67,33 @@ export const useStopwatch = (requestDetail, t) => {
 
     const updateDisplay = () => {
       const now = Date.now();
-      const startedAt = new Date(currentAttempt.started_at).getTime();
+      const startedAt = getTimestampMs(
+        currentAttempt.started_at_ms,
+        currentAttempt.started_at,
+      );
+
+      if (!startedAt) {
+        setDisplay('');
+        return;
+      }
 
       if (status === 'waiting_upstream') {
         const elapsed = (now - startedAt) / MS_TO_SECONDS;
-        setDisplay(`${t('等待')}: ${elapsed.toFixed(1)}s`);
+        setDisplay(`${t('等待')}: ${formatLiveSeconds(elapsed)}s`);
       } else if (status === 'streaming') {
-        const streamingStartedAt = currentAttempt.streaming_started_at
-          ? new Date(currentAttempt.streaming_started_at).getTime()
-          : null;
+        const streamingStartedAt = getTimestampMs(
+          currentAttempt.streaming_started_at_ms,
+          currentAttempt.streaming_started_at,
+        );
 
         if (streamingStartedAt) {
           const waitingTime = (streamingStartedAt - startedAt) / MS_TO_SECONDS;
           const streamingTime = (now - streamingStartedAt) / MS_TO_SECONDS;
-          setDisplay(`${t('等待')}: ${waitingTime.toFixed(1)}s | ${t('流式返回')}: ${streamingTime.toFixed(1)}s`);
+          setDisplay(`${t('等待')}: ${formatLiveSeconds(waitingTime)}s | ${t('流式返回')}: ${formatLiveSeconds(streamingTime)}s`);
         } else {
           // Fallback if streaming_started_at is missing
           const totalTime = (now - startedAt) / MS_TO_SECONDS;
-          setDisplay(`${t('流式返回')}: ${totalTime.toFixed(1)}s`);
+          setDisplay(`${t('流式返回')}: ${formatLiveSeconds(totalTime)}s`);
         }
       }
     };

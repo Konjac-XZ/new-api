@@ -347,5 +347,5 @@ func HasRecentLLMRequest() bool {
 	if lastRequest == 0 {
 		return true
 	}
-	return time.Now().Unix()-lastRequest < 3*60*60
+	return time.Now().Unix()-lastRequest < 60*60
 }

@@ -47,11 +47,13 @@ const (
 
 // RequestRecord represents a single API request being monitored
 type RequestRecord struct {
-	ID        string     `json:"id"`
-	Status    string     `json:"status"`
-	StartTime time.Time  `json:"start_time"`
-	EndTime   *time.Time `json:"end_time,omitempty"`
-	Duration  int64      `json:"duration_ms,omitempty"`
+	ID          string     `json:"id"`
+	Status      string     `json:"status"`
+	StartTime   time.Time  `json:"start_time"`
+	StartTimeMs int64      `json:"start_time_ms"`
+	EndTime     *time.Time `json:"end_time,omitempty"`
+	EndTimeMs   int64      `json:"end_time_ms,omitempty"`
+	Duration    int64      `json:"duration_ms,omitempty"`
 
 	// Downstream (client) request info
 	Downstream DownstreamInfo `json:"downstream"`
@@ -86,16 +88,19 @@ type CurrentChannel struct {
 
 // ChannelAttempt captures a single try against a specific channel
 type ChannelAttempt struct {
-	Attempt            int        `json:"attempt"`
-	ChannelId          int        `json:"channel_id"`
-	ChannelName        string     `json:"channel_name"`
-	StartedAt          time.Time  `json:"started_at"`
-	StreamingStartedAt *time.Time `json:"streaming_started_at,omitempty"`
-	EndedAt            *time.Time `json:"ended_at,omitempty"`
-	Status             string     `json:"status"` // waiting_upstream | streaming | failed | abandoned | succeeded
-	Reason             string     `json:"reason,omitempty"`
-	ErrorCode          string     `json:"error_code,omitempty"`
-	HTTPStatus         int        `json:"http_status,omitempty"`
+	Attempt              int        `json:"attempt"`
+	ChannelId            int        `json:"channel_id"`
+	ChannelName          string     `json:"channel_name"`
+	StartedAt            time.Time  `json:"started_at"`
+	StartedAtMs          int64      `json:"started_at_ms"`
+	StreamingStartedAt   *time.Time `json:"streaming_started_at,omitempty"`
+	StreamingStartedAtMs int64      `json:"streaming_started_at_ms,omitempty"`
+	EndedAt              *time.Time `json:"ended_at,omitempty"`
+	EndedAtMs            int64      `json:"ended_at_ms,omitempty"`
+	Status               string     `json:"status"` // waiting_upstream | streaming | failed | abandoned | succeeded
+	Reason               string     `json:"reason,omitempty"`
+	ErrorCode            string     `json:"error_code,omitempty"`
+	HTTPStatus           int        `json:"http_status,omitempty"`
 }
 
 // DownstreamInfo contains information about the client request
@@ -173,11 +178,13 @@ type MonitorStats struct {
 // RequestSummary is a lightweight version of RequestRecord for WebSocket broadcasts
 // It excludes large body data to reduce bandwidth
 type RequestSummary struct {
-	ID         string     `json:"id"`
-	Status     string     `json:"status"`
-	StartTime  time.Time  `json:"start_time"`
-	EndTime    *time.Time `json:"end_time,omitempty"`
-	DurationMs int64      `json:"duration_ms,omitempty"`
+	ID          string     `json:"id"`
+	Status      string     `json:"status"`
+	StartTime   time.Time  `json:"start_time"`
+	StartTimeMs int64      `json:"start_time_ms"`
+	EndTime     *time.Time `json:"end_time,omitempty"`
+	EndTimeMs   int64      `json:"end_time_ms,omitempty"`
+	DurationMs  int64      `json:"duration_ms,omitempty"`
 
 	// Lightweight downstream info (no body/headers)
 	Method   string `json:"method"`
@@ -185,15 +192,17 @@ type RequestSummary struct {
 	ClientIP string `json:"client_ip"`
 
 	// Metadata
-	UserId         int             `json:"user_id"`
-	TokenId        int             `json:"token_id"`
-	TokenName      string          `json:"token_name"`
-	ChannelId      int             `json:"channel_id"`
-	ChannelName    string          `json:"channel_name"`
-	Model          string          `json:"model"`
-	IsStream       bool            `json:"is_stream"`
-	CurrentPhase   string          `json:"current_phase,omitempty"`
-	CurrentChannel *CurrentChannel `json:"current_channel,omitempty"`
+	UserId                             int             `json:"user_id"`
+	TokenId                            int             `json:"token_id"`
+	TokenName                          string          `json:"token_name"`
+	ChannelId                          int             `json:"channel_id"`
+	ChannelName                        string          `json:"channel_name"`
+	Model                              string          `json:"model"`
+	IsStream                           bool            `json:"is_stream"`
+	CurrentPhase                       string          `json:"current_phase,omitempty"`
+	CurrentChannel                     *CurrentChannel `json:"current_channel,omitempty"`
+	CurrentAttemptStartedAtMs          int64           `json:"current_attempt_started_at_ms,omitempty"`
+	CurrentAttemptStreamingStartedAtMs int64           `json:"current_attempt_streaming_started_at_ms,omitempty"`
 
 	// Response summary (no body/headers)
 	StatusCode       int  `json:"status_code,omitempty"`
@@ -207,22 +216,26 @@ type RequestSummary struct {
 // allocations) so that the actual RequestSummary can be constructed outside
 // the lock.
 type recordSnapshot struct {
-	ID           string
-	Status       string
-	StartTime    time.Time
-	EndTime      *time.Time
-	Duration     int64
-	Method       string
-	Path         string
-	ClientIP     string
-	UserId       int
-	TokenId      int
-	TokenName    string
-	ChannelId    int
-	ChannelName  string
-	Model        string
-	IsStream     bool
-	CurrentPhase string
+	ID                                 string
+	Status                             string
+	StartTime                          time.Time
+	StartTimeMs                        int64
+	EndTime                            *time.Time
+	EndTimeMs                          int64
+	Duration                           int64
+	Method                             string
+	Path                               string
+	ClientIP                           string
+	UserId                             int
+	TokenId                            int
+	TokenName                          string
+	ChannelId                          int
+	ChannelName                        string
+	Model                              string
+	IsStream                           bool
+	CurrentPhase                       string
+	CurrentAttemptStartedAtMs          int64
+	CurrentAttemptStreamingStartedAtMs int64
 
 	// CurrentChannel is copied by value (3 small fields).
 	HasCurrentChannel bool
@@ -245,7 +258,9 @@ func snapshotRecord(r *RequestRecord) recordSnapshot {
 		ID:           r.ID,
 		Status:       r.Status,
 		StartTime:    r.StartTime,
+		StartTimeMs:  r.StartTimeMs,
 		EndTime:      r.EndTime,
+		EndTimeMs:    r.EndTimeMs,
 		Duration:     r.Duration,
 		Method:       r.Downstream.Method,
 		Path:         r.Downstream.Path,
@@ -258,6 +273,11 @@ func snapshotRecord(r *RequestRecord) recordSnapshot {
 		Model:        r.Model,
 		IsStream:     r.IsStream,
 		CurrentPhase: r.CurrentPhase,
+	}
+	if len(r.ChannelAttempts) > 0 {
+		lastAttempt := r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		snap.CurrentAttemptStartedAtMs = lastAttempt.StartedAtMs
+		snap.CurrentAttemptStreamingStartedAtMs = lastAttempt.StreamingStartedAtMs
 	}
 	if r.CurrentChannel != nil {
 		snap.HasCurrentChannel = true
@@ -279,22 +299,26 @@ func snapshotRecord(r *RequestRecord) recordSnapshot {
 // any lock held.
 func (snap *recordSnapshot) toSummary() *RequestSummary {
 	s := &RequestSummary{
-		ID:           snap.ID,
-		Status:       snap.Status,
-		StartTime:    snap.StartTime,
-		EndTime:      snap.EndTime,
-		DurationMs:   snap.Duration,
-		Method:       snap.Method,
-		Path:         snap.Path,
-		ClientIP:     snap.ClientIP,
-		UserId:       snap.UserId,
-		TokenId:      snap.TokenId,
-		TokenName:    snap.TokenName,
-		ChannelId:    snap.ChannelId,
-		ChannelName:  snap.ChannelName,
-		Model:        snap.Model,
-		IsStream:     snap.IsStream,
-		CurrentPhase: snap.CurrentPhase,
+		ID:                                 snap.ID,
+		Status:                             snap.Status,
+		StartTime:                          snap.StartTime,
+		StartTimeMs:                        snap.StartTimeMs,
+		EndTime:                            snap.EndTime,
+		EndTimeMs:                          snap.EndTimeMs,
+		DurationMs:                         snap.Duration,
+		Method:                             snap.Method,
+		Path:                               snap.Path,
+		ClientIP:                           snap.ClientIP,
+		UserId:                             snap.UserId,
+		TokenId:                            snap.TokenId,
+		TokenName:                          snap.TokenName,
+		ChannelId:                          snap.ChannelId,
+		ChannelName:                        snap.ChannelName,
+		Model:                              snap.Model,
+		IsStream:                           snap.IsStream,
+		CurrentPhase:                       snap.CurrentPhase,
+		CurrentAttemptStartedAtMs:          snap.CurrentAttemptStartedAtMs,
+		CurrentAttemptStreamingStartedAtMs: snap.CurrentAttemptStreamingStartedAtMs,
 	}
 	if snap.HasCurrentChannel {
 		s.CurrentChannel = &CurrentChannel{
@@ -318,7 +342,9 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 		ID:             r.ID,
 		Status:         r.Status,
 		StartTime:      r.StartTime,
+		StartTimeMs:    r.StartTimeMs,
 		EndTime:        r.EndTime,
+		EndTimeMs:      r.EndTimeMs,
 		DurationMs:     r.Duration,
 		Method:         r.Downstream.Method,
 		Path:           r.Downstream.Path,
@@ -332,6 +358,11 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 		IsStream:       r.IsStream,
 		CurrentPhase:   r.CurrentPhase,
 		CurrentChannel: cloneCurrentChannel(r.CurrentChannel),
+	}
+	if len(r.ChannelAttempts) > 0 {
+		lastAttempt := r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		summary.CurrentAttemptStartedAtMs = lastAttempt.StartedAtMs
+		summary.CurrentAttemptStreamingStartedAtMs = lastAttempt.StreamingStartedAtMs
 	}
 
 	if r.Response != nil {
@@ -360,6 +391,20 @@ func cloneCurrentChannel(channel *CurrentChannel) *CurrentChannel {
 	}
 	cloned := *channel
 	return &cloned
+}
+
+func timeToUnixMilli(ts time.Time) int64 {
+	if ts.IsZero() {
+		return 0
+	}
+	return ts.UnixMilli()
+}
+
+func timePtrToUnixMilli(ts *time.Time) int64 {
+	if ts == nil || ts.IsZero() {
+		return 0
+	}
+	return ts.UnixMilli()
 }
 
 func cloneChannelAttempts(attempts []ChannelAttempt) []ChannelAttempt {

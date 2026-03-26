@@ -117,6 +117,7 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 		TokenName: tokenName,
 		Model:     model,
 	}
+	record.StartTimeMs = timeToUnixMilli(record.StartTime)
 
 	GetManager().GetStore().Add(record)
 	return requestId
@@ -176,6 +177,7 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 	markComplete := func(r *RequestRecord) {
 		now := time.Now()
 		r.EndTime = &now
+		r.EndTimeMs = timeToUnixMilli(now)
 		r.Duration = now.Sub(r.StartTime).Milliseconds()
 		r.Response = response
 		if response.Error != nil {
@@ -207,11 +209,12 @@ func RecordError(recordID string, err error) {
 	}
 
 	errMsg := err.Error()
+	now := time.Now()
 
 	// Inline the error recording logic
 	markError := func(r *RequestRecord) {
-		now := time.Now()
 		r.EndTime = &now
+		r.EndTimeMs = timeToUnixMilli(now)
 		r.Duration = now.Sub(r.StartTime).Milliseconds()
 		if r.Status != StatusAbandoned {
 			r.Status = StatusError
@@ -231,8 +234,8 @@ func RecordError(recordID string, err error) {
 		if last.EndedAt != nil {
 			return
 		}
-		now := time.Now()
 		last.EndedAt = &now
+		last.EndedAtMs = timeToUnixMilli(now)
 		last.Status = AttemptStatusFailed
 		last.Reason = errMsg
 	}
@@ -245,8 +248,8 @@ func RecordError(recordID string, err error) {
 		}
 		last := &r.ChannelAttempts[len(r.ChannelAttempts)-1]
 		if last.EndedAt == nil {
-			now := time.Now()
 			last.EndedAt = &now
+			last.EndedAtMs = timeToUnixMilli(now)
 		}
 		if last.Status != AttemptStatusSucceeded {
 			last.Status = AttemptStatusFailed
@@ -291,6 +294,7 @@ func StartChannelAttempt(recordID string, channelId int, channelName string, att
 			ChannelId:   channelId,
 			ChannelName: channelName,
 			StartedAt:   now,
+			StartedAtMs: timeToUnixMilli(now),
 			Status:      AttemptStatusWaiting,
 		}
 		r.ChannelAttempts = append(r.ChannelAttempts, attempt)
@@ -338,10 +342,17 @@ func MarkChannelPhase(recordID string, phase string) {
 				last.Status = AttemptStatusStreaming
 				changed = true
 			}
+			if last.StreamingStartedAt == nil {
+				now := time.Now()
+				last.StreamingStartedAt = &now
+				last.StreamingStartedAtMs = timeToUnixMilli(now)
+				changed = true
+			}
 		case PhaseCompleted:
 			if last.EndedAt == nil {
 				now := time.Now()
 				last.EndedAt = &now
+				last.EndedAtMs = timeToUnixMilli(now)
 				changed = true
 			}
 			if last.Status != AttemptStatusSucceeded {
@@ -352,6 +363,7 @@ func MarkChannelPhase(recordID string, phase string) {
 			if last.EndedAt == nil {
 				now := time.Now()
 				last.EndedAt = &now
+				last.EndedAtMs = timeToUnixMilli(now)
 				changed = true
 			}
 			if last.Status != AttemptStatusSucceeded && last.Status != AttemptStatusFailed {
@@ -402,6 +414,7 @@ func FinishChannelAttemptAndMarkPhase(recordID string, status string, phase stri
 		}
 		now := time.Now()
 		last.EndedAt = &now
+		last.EndedAtMs = timeToUnixMilli(now)
 		changed = true
 
 		if last.Status != status {
