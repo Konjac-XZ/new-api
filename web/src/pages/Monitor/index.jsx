@@ -132,31 +132,21 @@ const formatLiveSeconds = (seconds) => {
   return (Math.floor(seconds * 10) / 10).toFixed(1);
 };
 
-const getActiveAttempt = (record) => {
-  if (!Array.isArray(record?.channel_attempts) || record.channel_attempts.length === 0) {
-    return null;
+const getRequestStartMs = (record) =>
+  getTimestampMs(record?.start_time_ms, record?.start_time);
+
+const getSyncedNowMs = (record, clientNowMs) => {
+  const serverNowMs = record?.server_now_ms;
+  const receivedAtMs = record?._receivedAtMs;
+
+  if (
+    Number.isFinite(serverNowMs) && serverNowMs > 0
+    && Number.isFinite(receivedAtMs) && receivedAtMs > 0
+  ) {
+    return serverNowMs + Math.max(0, clientNowMs - receivedAtMs);
   }
 
-  for (let index = record.channel_attempts.length - 1; index >= 0; index -= 1) {
-    const attempt = record.channel_attempts[index];
-    if (attempt?.status === 'waiting_upstream' || attempt?.status === 'streaming') {
-      return attempt;
-    }
-  }
-
-  return record.channel_attempts[record.channel_attempts.length - 1] || null;
-};
-
-const getActiveElapsedStartMs = (record) => {
-  const activeAttempt = getActiveAttempt(record);
-  if (activeAttempt) {
-    return getTimestampMs(activeAttempt.started_at_ms, activeAttempt.started_at);
-  }
-
-  return getTimestampMs(
-    record?.current_attempt_started_at_ms,
-    record?.current_attempt_started_at,
-  ) || getTimestampMs(record?.start_time_ms, record?.start_time);
+  return clientNowMs;
 };
 
 const renderDurationTag = (durationMs, t) => {
@@ -255,15 +245,17 @@ const DurationCell = ({ record, t }) => {
     () => isActiveStatus(displayStatus),
     [displayStatus],
   );
-  const activeStartTimeMs = useMemo(() => getActiveElapsedStartMs(record), [record]);
+  const activeStartTimeMs = useMemo(() => getRequestStartMs(record), [record]);
   const hasStartTime = activeStartTimeMs > 0;
   const now = useDurationNow(isActive && hasStartTime);
 
   const elapsed = useMemo(() => {
     if (!isActive || !activeStartTimeMs) return 0;
-    const elapsedSeconds = (now - activeStartTimeMs) / MS_TO_SECONDS;
+    const elapsedSeconds = (
+      getSyncedNowMs(record, now) - activeStartTimeMs
+    ) / MS_TO_SECONDS;
     return elapsedSeconds > 0 ? elapsedSeconds : 0;
-  }, [activeStartTimeMs, isActive, now]);
+  }, [activeStartTimeMs, isActive, now, record]);
 
   if (isActive) {
     return (
@@ -1233,7 +1225,7 @@ const RequestDetail = ({
                   ? timestamp2string(
                     Math.floor(
                       getTimestampMs(record.start_time_ms, record.start_time) /
-                        MS_TO_SECONDS,
+                      MS_TO_SECONDS,
                     ),
                   )
                   : '-'}

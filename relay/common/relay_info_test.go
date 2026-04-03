@@ -1,7 +1,9 @@
 package common
 
 import (
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/require"
@@ -37,4 +39,27 @@ func TestRelayInfoGetFinalRequestRelayFormatFallsBackToRelayFormat(t *testing.T)
 func TestRelayInfoGetFinalRequestRelayFormatNilReceiver(t *testing.T) {
 	var info *RelayInfo
 	require.Equal(t, types.RelayFormat(""), info.GetFinalRequestRelayFormat())
+}
+
+func TestRelayInfoSetFirstResponseTimeRecordsChannelSuccessOnce(t *testing.T) {
+	info := &RelayInfo{
+		StartTime:       time.Now().Add(-time.Second),
+		isFirstResponse: true,
+	}
+	var callCount int32
+	info.SetChannelSuccessRecorder(func() {
+		atomic.AddInt32(&callCount, 1)
+	})
+
+	info.SetFirstResponseTime()
+	require.True(t, info.HasSendResponse())
+	require.EqualValues(t, 1, atomic.LoadInt32(&callCount))
+
+	info.SetFirstResponseTime()
+	require.EqualValues(t, 1, atomic.LoadInt32(&callCount))
+
+	info.RecordChannelSuccess(func() {
+		atomic.AddInt32(&callCount, 1)
+	})
+	require.EqualValues(t, 1, atomic.LoadInt32(&callCount))
 }

@@ -229,6 +229,7 @@ func (s *Store) UpdateAndBroadcastChannel(id string, updater func(*RequestRecord
 		snap = snapshotRecord(record)
 		chUpdate = &ChannelUpdate{
 			RequestID:       record.ID,
+			ServerNowMs:     time.Now().UnixMilli(),
 			CurrentPhase:    record.CurrentPhase,
 			CurrentChannel:  cloneCurrentChannel(record.CurrentChannel),
 			ChannelAttempts: cloneChannelAttemptsForUpdate(record.ChannelAttempts),
@@ -275,6 +276,7 @@ func (s *Store) UpdateAndBroadcastChannelIfChanged(id string, updater func(*Requ
 		snap = snapshotRecord(record)
 		chUpdate = &ChannelUpdate{
 			RequestID:       record.ID,
+			ServerNowMs:     time.Now().UnixMilli(),
 			CurrentPhase:    record.CurrentPhase,
 			CurrentChannel:  cloneCurrentChannel(record.CurrentChannel),
 			ChannelAttempts: cloneChannelAttemptsForUpdate(record.ChannelAttempts),
@@ -321,6 +323,7 @@ func (s *Store) BatchUpdate(id string, broadcastChannel bool, updaters ...func(*
 	if emitRealtime && broadcastChannel {
 		chUpdate = &ChannelUpdate{
 			RequestID:       record.ID,
+			ServerNowMs:     time.Now().UnixMilli(),
 			CurrentPhase:    record.CurrentPhase,
 			CurrentChannel:  cloneCurrentChannel(record.CurrentChannel),
 			ChannelAttempts: cloneChannelAttemptsForUpdate(record.ChannelAttempts),
@@ -378,6 +381,7 @@ func (s *Store) GetChannelUpdate(id string) *ChannelUpdate {
 	}
 	update := &ChannelUpdate{
 		RequestID:       r.ID,
+		ServerNowMs:     time.Now().UnixMilli(),
 		CurrentPhase:    r.CurrentPhase,
 		CurrentChannel:  cloneCurrentChannel(r.CurrentChannel),
 		ChannelAttempts: cloneChannelAttemptsForUpdate(r.ChannelAttempts),
@@ -562,6 +566,7 @@ func cloneRecord(record *RequestRecord) *RequestRecord {
 
 	cloned.CurrentChannel = cloneCurrentChannel(record.CurrentChannel)
 	cloned.ChannelAttempts = cloneChannelAttempts(record.ChannelAttempts)
+	cloned.ServerNowMs = time.Now().UnixMilli()
 
 	return &cloned
 }

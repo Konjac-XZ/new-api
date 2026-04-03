@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -157,6 +158,10 @@ type RelayInfo struct {
 	ParamOverrideAudit                    []string
 
 	PriceData types.PriceData
+
+	channelSuccessMu       sync.Mutex
+	channelSuccessRecorder func()
+	channelSuccessOnce     sync.Once
 
 	Request dto.Request
 
@@ -654,7 +659,41 @@ func (info *RelayInfo) SetFirstResponseTime() {
 	if info.isFirstResponse {
 		info.FirstResponseTime = time.Now()
 		info.isFirstResponse = false
+		info.RecordChannelSuccess(nil)
 	}
+}
+
+func (info *RelayInfo) SetChannelSuccessRecorder(recorder func()) {
+	if info == nil {
+		return
+	}
+	info.channelSuccessMu.Lock()
+	defer info.channelSuccessMu.Unlock()
+	info.channelSuccessRecorder = recorder
+}
+
+func (info *RelayInfo) RecordChannelSuccess(fallback func()) {
+	if info == nil {
+		if fallback != nil {
+			fallback()
+		}
+		return
+	}
+	info.channelSuccessMu.Lock()
+	recorder := info.channelSuccessRecorder
+	info.channelSuccessMu.Unlock()
+	if recorder == nil && fallback == nil {
+		return
+	}
+	info.channelSuccessOnce.Do(func() {
+		if recorder != nil {
+			recorder()
+			return
+		}
+		if fallback != nil {
+			fallback()
+		}
+	})
 }
 
 func (info *RelayInfo) HasSendResponse() bool {

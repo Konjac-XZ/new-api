@@ -817,6 +817,13 @@ const EditChannelModal = (props) => {
     }
     const { success, message, data } = res.data;
     if (success) {
+      console.debug('[breaker-debug] loadChannel response', {
+        channelId,
+        breakerState: data.breaker_state || null,
+        breakerCooldownAt: data.breaker_cooldown_at,
+        breakerUpdatedAt: data.breaker_updated_at,
+        breakerFailStreak: data.breaker_fail_streak,
+      });
       setBreakerState(data.breaker_state || null);
       if (data.models === '') {
         data.models = [];
@@ -894,6 +901,16 @@ const EditChannelModal = (props) => {
       }
 
       if (data.settings) {
+
+  useEffect(() => {
+    if (!channelId) {
+      return;
+    }
+    console.debug('[breaker-debug] breakerState updated', {
+      channelId,
+      breakerState,
+    });
+  }, [breakerState, channelId]);
         try {
           const parsedSettings = JSON.parse(data.settings);
           data.azure_responses_version =

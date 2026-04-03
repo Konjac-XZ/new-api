@@ -33,6 +33,25 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func breakerDebugPhaseForRelay(channel *model.Channel, now int64) string {
+	if channel == nil {
+		return "nil"
+	}
+	if !channel.IsDynamicCircuitBreakerEnabled() {
+		return "disabled"
+	}
+	if channel.IsBreakerCoolingAt(now) {
+		return "cooling"
+	}
+	if channel.IsBreakerAwaitingProbeAt(now) {
+		return "awaiting_probe"
+	}
+	if channel.IsBreakerProbationAt(now) {
+		return "observation"
+	}
+	return "closed"
+}
+
 func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
 	var err *types.NewAPIError
 	switch info.RelayMode {
@@ -286,6 +305,32 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		stopRetrying := false
 		for attempt := 0; attempt < channelRetryAttempts; attempt++ {
 			attemptCounter++
+			nowUnix := time.Now().Unix()
+			relayInfo.SetChannelSuccessRecorder(nil)
+			shouldRecordOnFirstResponse := service.ShouldRecordChannelRelaySuccessOnFirstResponse(channel, relayInfo, time.Unix(nowUnix, 0))
+			logger.LogInfo(c, fmt.Sprintf("[breaker-debug] attempt setup: channel_id=%d, attempt=%d, retry=%d, is_stream=%t, should_record_on_first_response=%t, dynamic_enabled=%t, phase=%s, cooldown_at=%d, updated_at=%d, fail_streak=%d",
+				channel.Id,
+				attempt+1,
+				relayInfo.RetryIndex,
+				relayInfo.IsStream,
+				shouldRecordOnFirstResponse,
+				channel.IsDynamicCircuitBreakerEnabled(),
+				breakerDebugPhaseForRelay(channel, nowUnix),
+				channel.BreakerCooldownAt,
+				channel.BreakerUpdatedAt,
+				channel.BreakerFailStreak,
+			))
+			if shouldRecordOnFirstResponse {
+				relayInfo.SetChannelSuccessRecorder(func() {
+					logger.LogInfo(c, fmt.Sprintf("[breaker-debug] first-response success recorder invoked: channel_id=%d, attempt=%d, retry=%d, has_send_response=%t",
+						channel.Id,
+						attempt+1,
+						relayInfo.RetryIndex,
+						relayInfo.HasSendResponse(),
+					))
+					service.RecordChannelRelaySuccess(channel, relayInfo)
+				})
+			}
 			if monitorID != "" {
 				monitor.StartChannelAttempt(monitorID, channel.Id, channel.Name, attemptCounter)
 			}
@@ -306,7 +351,42 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 
 			if newAPIError == nil {
-				service.RecordChannelRelaySuccess(channel, relayInfo)
+				logger.LogInfo(c, fmt.Sprintf("[breaker-debug] relay helper returned success: channel_id=%d, attempt=%d, retry=%d, is_stream=%t, has_send_response=%t",
+					channel.Id,
+					attempt+1,
+					relayInfo.RetryIndex,
+					relayInfo.IsStream,
+					relayInfo.HasSendResponse(),
+				))
+				relayInfo.RecordChannelSuccess(func() {
+					logger.LogInfo(c, fmt.Sprintf("[breaker-debug] fallback success recorder invoked after relay completion: channel_id=%d, attempt=%d, retry=%d",
+						channel.Id,
+						attempt+1,
+						relayInfo.RetryIndex,
+					))
+					service.RecordChannelRelaySuccess(channel, relayInfo)
+					latestChannel, loadErr := model.GetChannelById(channel.Id, false)
+					if loadErr != nil {
+						logger.LogInfo(c, fmt.Sprintf("[breaker-debug] failed to reload channel after success: channel_id=%d, attempt=%d, retry=%d, error=%v",
+							channel.Id,
+							attempt+1,
+							relayInfo.RetryIndex,
+							loadErr,
+						))
+						return
+					}
+					nowAfterUnix := time.Now().Unix()
+					logger.LogInfo(c, fmt.Sprintf("[breaker-debug] fresh channel after success: channel_id=%d, attempt=%d, retry=%d, dynamic_enabled=%t, phase=%s, cooldown_at=%d, updated_at=%d, fail_streak=%d",
+						latestChannel.Id,
+						attempt+1,
+						relayInfo.RetryIndex,
+						latestChannel.IsDynamicCircuitBreakerEnabled(),
+						breakerDebugPhaseForRelay(latestChannel, nowAfterUnix),
+						latestChannel.BreakerCooldownAt,
+						latestChannel.BreakerUpdatedAt,
+						latestChannel.BreakerFailStreak,
+					))
+				})
 				if monitorID != "" {
 					monitor.FinishChannelAttemptAndMarkPhase(monitorID, monitor.AttemptStatusSucceeded, monitor.PhaseCompleted, "", "", c.Writer.Status())
 				}
@@ -719,10 +799,40 @@ func RelayTask(c *gin.Context) {
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
+		relayInfo.SetChannelSuccessRecorder(nil)
+		shouldRecordOnFirstResponse := service.ShouldRecordChannelRelaySuccessOnFirstResponse(channel, relayInfo, time.Now())
+		logger.LogInfo(c, fmt.Sprintf("[breaker-debug] task attempt setup: channel_id=%d, retry=%d, is_stream=%t, should_record_on_first_response=%t",
+			channel.Id,
+			relayInfo.RetryIndex,
+			relayInfo.IsStream,
+			shouldRecordOnFirstResponse,
+		))
+		if shouldRecordOnFirstResponse {
+			relayInfo.SetChannelSuccessRecorder(func() {
+				logger.LogInfo(c, fmt.Sprintf("[breaker-debug] task first-response success recorder invoked: channel_id=%d, retry=%d, has_send_response=%t",
+					channel.Id,
+					relayInfo.RetryIndex,
+					relayInfo.HasSendResponse(),
+				))
+				service.RecordChannelRelaySuccess(channel, relayInfo)
+			})
+		}
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
-			service.RecordChannelRelaySuccess(channel, relayInfo)
+			logger.LogInfo(c, fmt.Sprintf("[breaker-debug] task relay returned success: channel_id=%d, retry=%d, is_stream=%t, has_send_response=%t",
+				channel.Id,
+				relayInfo.RetryIndex,
+				relayInfo.IsStream,
+				relayInfo.HasSendResponse(),
+			))
+			relayInfo.RecordChannelSuccess(func() {
+				logger.LogInfo(c, fmt.Sprintf("[breaker-debug] task fallback success recorder invoked after relay completion: channel_id=%d, retry=%d",
+					channel.Id,
+					relayInfo.RetryIndex,
+				))
+				service.RecordChannelRelaySuccess(channel, relayInfo)
+			})
 			break
 		}
 

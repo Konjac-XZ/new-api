@@ -49,6 +49,7 @@ const (
 type RequestRecord struct {
 	ID          string     `json:"id"`
 	Status      string     `json:"status"`
+	ServerNowMs int64      `json:"server_now_ms,omitempty"`
 	StartTime   time.Time  `json:"start_time"`
 	StartTimeMs int64      `json:"start_time_ms"`
 	EndTime     *time.Time `json:"end_time,omitempty"`
@@ -160,6 +161,7 @@ const (
 // ChannelUpdate is sent over websocket when upstream channel/phase changes
 type ChannelUpdate struct {
 	RequestID       string           `json:"request_id"`
+	ServerNowMs     int64            `json:"server_now_ms,omitempty"`
 	CurrentPhase    string           `json:"current_phase,omitempty"`
 	CurrentChannel  *CurrentChannel  `json:"current_channel,omitempty"`
 	ChannelAttempts []ChannelAttempt `json:"channel_attempts,omitempty"`
@@ -180,6 +182,7 @@ type MonitorStats struct {
 type RequestSummary struct {
 	ID          string     `json:"id"`
 	Status      string     `json:"status"`
+	ServerNowMs int64      `json:"server_now_ms,omitempty"`
 	StartTime   time.Time  `json:"start_time"`
 	StartTimeMs int64      `json:"start_time_ms"`
 	EndTime     *time.Time `json:"end_time,omitempty"`
@@ -218,6 +221,7 @@ type RequestSummary struct {
 type recordSnapshot struct {
 	ID                                 string
 	Status                             string
+	ServerNowMs                        int64
 	StartTime                          time.Time
 	StartTimeMs                        int64
 	EndTime                            *time.Time
@@ -257,6 +261,7 @@ func snapshotRecord(r *RequestRecord) recordSnapshot {
 	snap := recordSnapshot{
 		ID:           r.ID,
 		Status:       r.Status,
+		ServerNowMs:  time.Now().UnixMilli(),
 		StartTime:    r.StartTime,
 		StartTimeMs:  r.StartTimeMs,
 		EndTime:      r.EndTime,
@@ -301,6 +306,7 @@ func (snap *recordSnapshot) toSummary() *RequestSummary {
 	s := &RequestSummary{
 		ID:                                 snap.ID,
 		Status:                             snap.Status,
+		ServerNowMs:                        snap.ServerNowMs,
 		StartTime:                          snap.StartTime,
 		StartTimeMs:                        snap.StartTimeMs,
 		EndTime:                            snap.EndTime,
@@ -341,6 +347,7 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 	summary := &RequestSummary{
 		ID:             r.ID,
 		Status:         r.Status,
+		ServerNowMs:    time.Now().UnixMilli(),
 		StartTime:      r.StartTime,
 		StartTimeMs:    r.StartTimeMs,
 		EndTime:        r.EndTime,
@@ -379,6 +386,7 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 func (r *RequestRecord) ToChannelUpdate() *ChannelUpdate {
 	return &ChannelUpdate{
 		RequestID:       r.ID,
+		ServerNowMs:     time.Now().UnixMilli(),
 		CurrentPhase:    r.CurrentPhase,
 		CurrentChannel:  cloneCurrentChannel(r.CurrentChannel),
 		ChannelAttempts: cloneChannelAttempts(r.ChannelAttempts),

@@ -460,6 +460,14 @@ func buildChannelBreakerState(channel *model.Channel) *ChannelBreakerState {
 	}
 
 	state.Phase = "closed"
+	common.SysLog(fmt.Sprintf("[breaker-debug] build channel breaker state: channel_id=%d, dynamic_enabled=%t, phase=%s, cooldown_at=%d, updated_at=%d, fail_streak=%d",
+		channel.Id,
+		state.DynamicEnabled,
+		state.Phase,
+		channel.BreakerCooldownAt,
+		channel.BreakerUpdatedAt,
+		channel.BreakerFailStreak,
+	))
 	return state
 }
 
@@ -484,6 +492,15 @@ func GetChannel(c *gin.Context) {
 	resp := &channelDetailResponse{
 		Channel:      channel,
 		BreakerState: buildChannelBreakerState(channel),
+	}
+	if resp.BreakerState != nil {
+		common.SysLog(fmt.Sprintf("[breaker-debug] get channel detail response: channel_id=%d, phase=%s, cooldown_at=%d, updated_at=%d, fail_streak=%d",
+			channel.Id,
+			resp.BreakerState.Phase,
+			resp.BreakerState.CooldownAt,
+			resp.BreakerState.UpdatedAt,
+			resp.BreakerState.FailStreak,
+		))
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

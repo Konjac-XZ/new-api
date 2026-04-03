@@ -47,6 +47,17 @@ const getTimestampMs = (msValue, fallbackValue) => {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
 
+const normalizeMonitorPayload = (payload, receivedAtMs = Date.now()) => {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    _receivedAtMs: receivedAtMs,
+  };
+};
+
 const useMonitorWs = ({ focusedRequestId } = {}) => {
   const [summaries, setSummaries] = useState([]);
   const [stats, setStats] = useState({ total: 0, active: 0, memory: 0 });
@@ -92,37 +103,42 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
     };
 
     batch.forEach((message) => {
+      const receivedAtMs = Date.now();
       switch (message.type) {
         case WS_MESSAGE_TYPES.SNAPSHOT: {
-          const snapshotData = Array.isArray(message.payload) ? message.payload : [];
+          const snapshotData = Array.isArray(message.payload)
+            ? message.payload.map((item) => normalizeMonitorPayload(item, receivedAtMs))
+            : [];
           nextSummaries = snapshotData;
           changed = true;
           break;
         }
         case WS_MESSAGE_TYPES.NEW: {
           if (!message.payload) break;
-          const existingIndex = nextSummaries.findIndex((item) => item.id === message.payload.id);
+          const normalizedPayload = normalizeMonitorPayload(message.payload, receivedAtMs);
+          const existingIndex = nextSummaries.findIndex((item) => item.id === normalizedPayload.id);
           if (existingIndex === -1) {
             ensureMutable();
-            nextSummaries.push(message.payload);
+            nextSummaries.push(normalizedPayload);
             changed = true;
-          } else if (nextSummaries[existingIndex] !== message.payload) {
+          } else if (nextSummaries[existingIndex] !== normalizedPayload) {
             ensureMutable();
-            nextSummaries[existingIndex] = message.payload;
+            nextSummaries[existingIndex] = normalizedPayload;
             changed = true;
           }
           break;
         }
         case WS_MESSAGE_TYPES.UPDATE: {
           if (!message.payload) break;
-          const existingIndex = nextSummaries.findIndex((item) => item.id === message.payload.id);
+          const normalizedPayload = normalizeMonitorPayload(message.payload, receivedAtMs);
+          const existingIndex = nextSummaries.findIndex((item) => item.id === normalizedPayload.id);
           if (existingIndex !== -1) {
             ensureMutable();
-            nextSummaries[existingIndex] = message.payload;
+            nextSummaries[existingIndex] = normalizedPayload;
             changed = true;
           } else {
             ensureMutable();
-            nextSummaries.push(message.payload);
+            nextSummaries.push(normalizedPayload);
             changed = true;
           }
           break;
@@ -141,7 +157,7 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
           if (message.payload && message.payload.request_id) {
             const focusedId = focusedRequestIdRef.current;
             if (focusedId && message.payload.request_id === focusedId) {
-              latestChannelUpdate = message.payload;
+              latestChannelUpdate = normalizeMonitorPayload(message.payload, receivedAtMs);
             }
           }
           break;

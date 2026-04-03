@@ -22,6 +22,17 @@ import { API } from '../../helpers/api';
 
 const MAX_DETAIL_CACHE_SIZE = 50;
 
+const normalizeMonitorPayload = (payload, receivedAtMs = Date.now()) => {
+  if (!payload || typeof payload !== 'object') {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    _receivedAtMs: receivedAtMs,
+  };
+};
+
 const useRequestDetail = () => {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -73,7 +84,7 @@ const useRequestDetail = () => {
         disableDuplicate: true,
       });
       if (response.data.success) {
-        const detail = response.data.data;
+        const detail = normalizeMonitorPayload(response.data.data);
         cacheRef.current.set(id, detail);
         if (cacheRef.current.size > MAX_DETAIL_CACHE_SIZE) {
           const oldestKey = cacheRef.current.keys().next().value;
@@ -114,7 +125,7 @@ const useRequestDetail = () => {
   const applyLiveUpdate = useCallback((id, patch) => {
     if (!id || !patch) return;
 
-    const normalizedPatch = { ...patch };
+    const normalizedPatch = normalizeMonitorPayload(patch);
     if (patch.request_id && !normalizedPatch.id) {
       normalizedPatch.id = patch.request_id;
     }

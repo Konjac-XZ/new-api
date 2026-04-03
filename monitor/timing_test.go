@@ -43,6 +43,9 @@ func TestRequestSummaryIncludesMillisecondTimingFields(t *testing.T) {
 	}
 
 	summary := record.ToSummary()
+	if summary.ServerNowMs == 0 {
+		t.Fatal("expected server_now_ms to be populated")
+	}
 	if summary.StartTimeMs != startTime.UnixMilli() {
 		t.Fatalf("expected start_time_ms %d, got %d", startTime.UnixMilli(), summary.StartTimeMs)
 	}

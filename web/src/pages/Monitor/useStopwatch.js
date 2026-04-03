@@ -41,6 +41,20 @@ const formatLiveSeconds = (seconds) => {
   return (Math.floor(seconds * 10) / 10).toFixed(1);
 };
 
+const getSyncedNowMs = (recordLike, clientNowMs) => {
+  const serverNowMs = recordLike?.server_now_ms;
+  const receivedAtMs = recordLike?._receivedAtMs;
+
+  if (
+    Number.isFinite(serverNowMs) && serverNowMs > 0
+    && Number.isFinite(receivedAtMs) && receivedAtMs > 0
+  ) {
+    return serverNowMs + Math.max(0, clientNowMs - receivedAtMs);
+  }
+
+  return clientNowMs;
+};
+
 export const useStopwatch = (requestDetail, t) => {
   const [display, setDisplay] = useState('');
   const [isActive, setIsActive] = useState(false);
@@ -66,7 +80,7 @@ export const useStopwatch = (requestDetail, t) => {
     setIsActive(true);
 
     const updateDisplay = () => {
-      const now = Date.now();
+      const now = getSyncedNowMs(requestDetail, Date.now());
       const startedAt = getTimestampMs(
         currentAttempt.started_at_ms,
         currentAttempt.started_at,
