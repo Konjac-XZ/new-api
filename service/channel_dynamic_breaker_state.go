@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/model"
 )
@@ -86,6 +87,31 @@ func persistChannelBreakerState(current *model.Channel) error {
 	}
 	channelBreakerWorkingState.Store(current.Id, snapshotChannelBreakerState(current))
 	return nil
+}
+
+func mutateChannelBreakerState(channel *model.Channel, mutate func(current *model.Channel, now time.Time) bool) (bool, error) {
+	if channel == nil || mutate == nil {
+		return false, nil
+	}
+
+	lock := getChannelBreakerLock(channel.Id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	current := loadChannelBreakerWorkingCopy(channel)
+	if !current.IsDynamicCircuitBreakerEnabled() {
+		return false, nil
+	}
+
+	now := time.Now()
+	if !mutate(current, now) {
+		return false, nil
+	}
+
+	if err := persistChannelBreakerState(current); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func clearChannelBreakerWorkingState(channelID int) {

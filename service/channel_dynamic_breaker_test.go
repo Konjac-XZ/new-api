@@ -75,6 +75,46 @@ func TestClassifySuccessfulRequestLatency(t *testing.T) {
 	}
 }
 
+func TestGetChannelBreakerPhase(t *testing.T) {
+	autoBan := 1
+	settingBytes, err := common.Marshal(dto.ChannelSettings{DynamicCircuitBreaker: true})
+	if err != nil {
+		t.Fatalf("marshal setting failed: %v", err)
+	}
+	setting := string(settingBytes)
+	channel := &model.Channel{
+		AutoBan:           &autoBan,
+		Setting:           &setting,
+		BreakerCooldownAt: 100,
+		BreakerUpdatedAt:  90,
+	}
+
+	if phase := GetChannelBreakerPhase(nil, 120); phase != channelBreakerPhaseNil {
+		t.Fatalf("expected nil phase, got %q", phase)
+	}
+	if phase := GetChannelBreakerPhase(channel, 80); phase != channelBreakerPhaseCooling {
+		t.Fatalf("expected cooling phase, got %q", phase)
+	}
+	interval := 5
+	channel.ScheduledTestInterval = &interval
+	if phase := GetChannelBreakerPhase(channel, 120); phase != channelBreakerPhaseAwaitingProbe {
+		t.Fatalf("expected awaiting_probe phase, got %q", phase)
+	}
+	channel.BreakerUpdatedAt = channel.BreakerCooldownAt
+	if phase := GetChannelBreakerPhase(channel, 120); phase != channelBreakerPhaseObservation {
+		t.Fatalf("expected observation phase, got %q", phase)
+	}
+	channel.BreakerCooldownAt = 0
+	channel.BreakerUpdatedAt = 0
+	if phase := GetChannelBreakerPhase(channel, 120); phase != channelBreakerPhaseClosed {
+		t.Fatalf("expected closed phase, got %q", phase)
+	}
+	channel.Setting = nil
+	if phase := GetChannelBreakerPhase(channel, 120); phase != channelBreakerPhaseDisabled {
+		t.Fatalf("expected disabled phase, got %q", phase)
+	}
+}
+
 func TestLoadChannelBreakerWorkingCopyPrefersCachedState(t *testing.T) {
 	channelID := int(time.Now().UnixNano())
 	channel := &model.Channel{Id: channelID, BreakerFailStreak: 1, BreakerHP: 2}

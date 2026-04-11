@@ -33,25 +33,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func breakerDebugPhaseForRelay(channel *model.Channel, now int64) string {
-	if channel == nil {
-		return "nil"
-	}
-	if !channel.IsDynamicCircuitBreakerEnabled() {
-		return "disabled"
-	}
-	if channel.IsBreakerCoolingAt(now) {
-		return "cooling"
-	}
-	if channel.IsBreakerAwaitingProbeAt(now) {
-		return "awaiting_probe"
-	}
-	if channel.IsBreakerProbationAt(now) {
-		return "observation"
-	}
-	return "closed"
-}
-
 func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
 	var err *types.NewAPIError
 	switch info.RelayMode {
@@ -315,7 +296,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 				relayInfo.IsStream,
 				shouldRecordOnFirstResponse,
 				channel.IsDynamicCircuitBreakerEnabled(),
-				breakerDebugPhaseForRelay(channel, nowUnix),
+				service.GetChannelBreakerPhase(channel, nowUnix),
 				channel.BreakerCooldownAt,
 				channel.BreakerUpdatedAt,
 				channel.BreakerFailStreak,
@@ -381,7 +362,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 						attempt+1,
 						relayInfo.RetryIndex,
 						latestChannel.IsDynamicCircuitBreakerEnabled(),
-						breakerDebugPhaseForRelay(latestChannel, nowAfterUnix),
+						service.GetChannelBreakerPhase(latestChannel, nowAfterUnix),
 						latestChannel.BreakerCooldownAt,
 						latestChannel.BreakerUpdatedAt,
 						latestChannel.BreakerFailStreak,
@@ -545,17 +526,18 @@ func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
 	if info.ChannelMeta == nil {
-		autoBan := c.GetBool("auto_ban")
-		autoBanInt := 1
-		if !autoBan {
-			autoBanInt = 0
+		channelID := c.GetInt("channel_id")
+		if channelID <= 0 {
+			return nil, types.NewError(errors.New("channel id is invalid"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 		}
-		return &model.Channel{
-			Id:      c.GetInt("channel_id"),
-			Type:    c.GetInt("channel_type"),
-			Name:    c.GetString("channel_name"),
-			AutoBan: &autoBanInt,
-		}, nil
+		channel, err := model.CacheGetChannel(channelID)
+		if err != nil {
+			return nil, types.NewError(fmt.Errorf("获取渠道 #%d 失败: %w", channelID, err), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		if channel == nil {
+			return nil, types.NewError(fmt.Errorf("渠道 #%d 不存在", channelID), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		}
+		return channel, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
 
