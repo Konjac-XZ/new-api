@@ -108,6 +108,23 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		return nil
 	}
 
+	// mergeObservedExclude adds observed (awaiting-probe / probation) channels to the
+	// exclusion map, but only when normal (healthy) channels exist in the same pool.
+	// It is called only after an observed channel has already failed once this request
+	// (ContextKeyObservedChannelTriedAndFailed == true), enforcing the single-chance rule.
+	mergeObservedExclude := func(group string) error {
+		observed, err := GetObservedChannelIDsIfNormalExist(group, param.ModelName)
+		if err != nil {
+			return err
+		}
+		for id := range observed {
+			exclude[id] = true
+		}
+		return nil
+	}
+
+	observedTriedAndFailed := common.GetContextKeyBool(param.Ctx, constant.ContextKeyObservedChannelTriedAndFailed)
+
 	if param.TokenGroup == "auto" {
 		if len(setting.GetAutoGroups()) == 0 {
 			return nil, selectGroup, errors.New("auto groups is not enabled")
@@ -129,6 +146,11 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			autoGroup := autoGroups[i]
 			if err := mergeDynamicSuppressed(autoGroup); err != nil {
 				return nil, selectGroup, err
+			}
+			if observedTriedAndFailed {
+				if err := mergeObservedExclude(autoGroup); err != nil {
+					return nil, selectGroup, err
+				}
 			}
 			// Calculate priorityRetry for current group
 			// 计算当前分组的 priorityRetry
@@ -184,6 +206,11 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	} else {
 		if err := mergeDynamicSuppressed(param.TokenGroup); err != nil {
 			return nil, param.TokenGroup, err
+		}
+		if observedTriedAndFailed {
+			if err := mergeObservedExclude(param.TokenGroup); err != nil {
+				return nil, param.TokenGroup, err
+			}
 		}
 		if len(exclude) > 0 {
 			channel, err = model.GetRandomSatisfiedChannelExclude(param.TokenGroup, param.ModelName, exclude)

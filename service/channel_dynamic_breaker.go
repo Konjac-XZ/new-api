@@ -40,6 +40,52 @@ func GetDynamicSuppressedChannelIDs(group string, modelName string) (map[int]boo
 	return exclude, nil
 }
 
+// GetObservedChannelIDsIfNormalExist returns a set of channel IDs that are in an
+// observed state (awaiting_probe or probation) — but only when at least one normal
+// (healthy, non-observed) channel exists in the same group/model pool.
+//
+// This is used to enforce the single-chance rule: once a request has already been
+// through an observed channel and failed, it should fall back exclusively to normal
+// channels rather than burning another retry on a second observed candidate.
+//
+// Returns nil when no normal channels exist (e.g. all channels are observed or in
+// cooldown) so the caller can fall back to the full candidate pool.
+func GetObservedChannelIDsIfNormalExist(group string, modelName string) (map[int]bool, error) {
+	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName)
+	if err != nil {
+		return nil, err
+	}
+	if len(channels) == 0 {
+		return nil, nil
+	}
+	now := time.Now().Unix()
+	observedIDs := make(map[int]bool)
+	hasNormal := false
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		// Cooling channels are already suppressed by GetDynamicSuppressedChannelIDs;
+		// skip them here — they are neither normal nor candidates for selection.
+		if channel.IsBreakerCoolingAt(now) {
+			continue
+		}
+		if IsChannelObserved(channel, now) {
+			observedIDs[channel.Id] = true
+		} else {
+			hasNormal = true
+		}
+	}
+	if !hasNormal {
+		// No normal channel exists — do not restrict; let the caller use observed channels.
+		return nil, nil
+	}
+	if len(observedIDs) == 0 {
+		return nil, nil
+	}
+	return observedIDs, nil
+}
+
 func isImplicitProbationTimeout(channel *model.Channel, info *relaycommon.RelayInfo, now time.Time) bool {
 	if channel == nil || info == nil || !info.IsStream || info.HasSendResponse() || info.StartTime.IsZero() {
 		return false

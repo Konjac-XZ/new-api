@@ -41,6 +41,12 @@ const (
 	ContextKeyFirstTokenLatencyExceeded   ContextKey = "first_token_latency_exceeded"
 	ContextKeyFirstTokenWatchdog         ContextKey = "first_token_watchdog"
 
+	// ContextKeyObservedChannelTriedAndFailed is set to true on the first failure of an
+	// observed (awaiting-probe / probation) channel within a single downstream request.
+	// Subsequent channel selections will skip all remaining observed channels and route
+	// only to normal (healthy) channels, provided normal channels are available.
+	ContextKeyObservedChannelTriedAndFailed ContextKey = "observed_channel_tried_and_failed"
+
 	ContextKeyAutoGroup           ContextKey = "auto_group"
 	ContextKeyAutoGroupIndex      ContextKey = "auto_group_index"
 	ContextKeyAutoGroupRetryIndex ContextKey = "auto_group_retry_index"

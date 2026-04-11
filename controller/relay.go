@@ -282,6 +282,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			monitor.UpdateMetadata(monitorID, channel.Id, channel.Name, relayInfo.IsStream)
 		}
 		channelRetryAttempts := getChannelRetryAttempts(c, channel)
+		channelWasObserved := service.IsChannelObserved(channel, time.Now().Unix())
 
 		stopRetrying := false
 		for attempt := 0; attempt < channelRetryAttempts; attempt++ {
@@ -440,6 +441,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if newAPIError == nil {
 			relayInfo.LastError = nil
 			return
+		}
+		// If the channel that just failed was in an observed state (awaiting-probe /
+		// probation), record that so future channel selections in this request skip
+		// remaining observed channels and route only to normal (healthy) ones.
+		if channelWasObserved {
+			common.SetContextKey(c, constant.ContextKeyObservedChannelTriedAndFailed, true)
 		}
 		if stopRetrying {
 			break
