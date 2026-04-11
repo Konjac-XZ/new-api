@@ -242,9 +242,8 @@ const SkeletonWrapper = ({
       </div>
     );
 
-    const CollapsedRow = ({ keyPrefix, index }) => (
+    const CollapsedRow = () => (
       <div
-        key={`${keyPrefix}-${index}`}
         className='flex items-center justify-center'
         style={{
           width: `${COLLAPSED_WIDTH}px`,
@@ -271,22 +270,22 @@ const SkeletonWrapper = ({
           {Array(2)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-chat' index={i} />
+              <CollapsedRow key={`c-chat-${i}`} />
             ))}
           {Array(5)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-console' index={i} />
+              <CollapsedRow key={`c-console-${i}`} />
             ))}
           {Array(2)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-personal' index={i} />
+              <CollapsedRow key={`c-personal-${i}`} />
             ))}
           {Array(5)
             .fill(null)
             .map((_, i) => (
-              <CollapsedRow keyPrefix='c-admin' index={i} />
+              <CollapsedRow key={`c-admin-${i}`} />
             ))}
         </div>
       );

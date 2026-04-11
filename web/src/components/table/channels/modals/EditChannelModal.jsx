@@ -901,16 +901,6 @@ const EditChannelModal = (props) => {
       }
 
       if (data.settings) {
-
-  useEffect(() => {
-    if (!channelId) {
-      return;
-    }
-    console.debug('[breaker-debug] breakerState updated', {
-      channelId,
-      breakerState,
-    });
-  }, [breakerState, channelId]);
         try {
           const parsedSettings = JSON.parse(data.settings);
           data.azure_responses_version =
