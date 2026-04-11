@@ -45,6 +45,40 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+func scheduledTestFirstTokenLatencyMs(c *gin.Context) (int, bool) {
+	if c == nil {
+		return 0, false
+	}
+	value, exists := c.Get("first_token_latency_ms")
+	if !exists {
+		return 0, false
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, true
+	case int8:
+		return int(typed), true
+	case int16:
+		return int(typed), true
+	case int32:
+		return int(typed), true
+	case int64:
+		return int(typed), true
+	case uint:
+		return int(typed), true
+	case uint8:
+		return int(typed), true
+	case uint16:
+		return int(typed), true
+	case uint32:
+		return int(typed), true
+	case uint64:
+		return int(typed), true
+	default:
+		return 0, false
+	}
+}
+
 var unsupportedTestChannelTypes = []int{
 	constant.ChannelTypeMidjourney,
 	constant.ChannelTypeMidjourneyPlus,
@@ -1227,8 +1261,7 @@ func testScheduledChannel(channel *model.Channel) {
 
 	// 检查首Token延迟
 	if result.context != nil {
-		firstTokenLatencyMs := result.context.GetInt("first_token_latency_ms")
-		if firstTokenLatencyMs > 0 {
+		if firstTokenLatencyMs, hasFirstTokenLatency := scheduledTestFirstTokenLatencyMs(result.context); hasFirstTokenLatency {
 			// record first token latency to keep channel response_time in sync with latest scheduled test
 			channel.UpdateResponseTime(int64(firstTokenLatencyMs))
 
@@ -1326,20 +1359,49 @@ func testScheduledChannel(channel *model.Channel) {
 				}
 			}
 		} else {
-			// 如果无法测量首Token延迟，记录警告
-			resultTag = "warning"
 			resultDetail = "first_token_latency_not_measured"
 			params := baseParams
-			params.Result = "warning"
-			params.Message = "Scheduled test could not measure first token latency"
+			if dynamicBreakerEnabled {
+				resultTag = "failure"
+				autoAction := "breaker_penalized"
+				breakerErr := types.NewErrorWithStatusCode(
+					fmt.Errorf("scheduled probe failed: first token latency not measured"),
+					types.ErrorCodeBadResponseBody,
+					http.StatusBadGateway,
+				)
+				service.RecordChannelProbeFailure(channel, breakerErr)
+				params.Result = "failure"
+				params.Message = "Scheduled probe failed: first token latency not measured"
+				params.Error = breakerErr.Error()
+				params.AutoAction = autoAction
+			} else {
+				resultTag = "warning"
+				params.Result = "warning"
+				params.Message = "Scheduled test could not measure first token latency"
+			}
 			// model.RecordScheduledTestLog(params)
 		}
 	} else {
-		resultTag = "warning"
 		resultDetail = "scheduled_test_context_missing"
 		params := baseParams
-		params.Result = "warning"
-		params.Message = "Scheduled test completed without context information"
+		if dynamicBreakerEnabled {
+			resultTag = "failure"
+			autoAction := "breaker_penalized"
+			breakerErr := types.NewErrorWithStatusCode(
+				fmt.Errorf("scheduled probe failed: context missing"),
+				types.ErrorCodeBadResponseBody,
+				http.StatusBadGateway,
+			)
+			service.RecordChannelProbeFailure(channel, breakerErr)
+			params.Result = "failure"
+			params.Message = "Scheduled probe failed: context missing"
+			params.Error = breakerErr.Error()
+			params.AutoAction = autoAction
+		} else {
+			resultTag = "warning"
+			params.Result = "warning"
+			params.Message = "Scheduled test completed without context information"
+		}
 		// model.RecordScheduledTestLog(params)
 	}
 }
