@@ -123,7 +123,7 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 			return newApiErr
 		}
 
-		service.PostClaudeConsumeQuota(c, info, usage)
+		service.PostTextConsumeQuota(c, info, usage, nil)
 		return nil
 	}
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -171,6 +172,8 @@ type RelayInfo struct {
 	// 最终请求到上游的格式。可由 adaptor 显式设置；
 	// 若为空，调用 GetFinalRequestRelayFormat 会回退到 RequestConversionChain 的最后一项或 RelayFormat。
 	FinalRequestRelayFormat types.RelayFormat
+
+	StreamStatus *StreamStatus
 
 	ThinkingContentInfo
 	TokenCountMeta
@@ -350,13 +353,8 @@ func GenRelayInfoClaude(c *gin.Context, request dto.Request) *RelayInfo {
 	info.ClaudeConvertInfo = &ClaudeConvertInfo{
 		LastMessagesType: LastMessageTypeNone,
 	}
-	info.IsClaudeBetaQuery = c.Query("beta") == "true" || isClaudeBetaForced(c)
+	info.IsClaudeBetaQuery = c.Query("beta") == "true"
 	return info
-}
-
-func isClaudeBetaForced(c *gin.Context) bool {
-	channelOtherSettings, ok := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)
-	return ok && channelOtherSettings.ClaudeBetaQuery
 }
 
 func GenRelayInfoRerank(c *gin.Context, request *dto.RerankRequest) *RelayInfo {
@@ -452,6 +450,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 	if request != nil {
 		isStream = request.IsStream(c)
 	}
+	c.Set(string(constant.ContextKeyIsStream), isStream)
 
 	// firstResponseTime = time.Now() - 1 second
 
@@ -740,6 +739,7 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 	type Alias TaskSubmitReq
 	aux := &struct {
 		Metadata json.RawMessage `json:"metadata,omitempty"`
+		Duration json.RawMessage `json:"duration,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(t),
@@ -747,6 +747,20 @@ func (t *TaskSubmitReq) UnmarshalJSON(data []byte) error {
 
 	if err := common.Unmarshal(data, &aux); err != nil {
 		return err
+	}
+
+	if len(aux.Duration) > 0 {
+		var durationInt int
+		if err := common.Unmarshal(aux.Duration, &durationInt); err == nil {
+			t.Duration = durationInt
+		} else {
+			var durationStr string
+			if err := common.Unmarshal(aux.Duration, &durationStr); err == nil && durationStr != "" {
+				if v, err := strconv.Atoi(durationStr); err == nil {
+					t.Duration = v
+				}
+			}
+		}
 	}
 
 	if len(aux.Metadata) > 0 {
