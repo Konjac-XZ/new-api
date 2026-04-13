@@ -259,6 +259,23 @@ func ResetDynamicChannelBreakers(c *gin.Context) {
 	})
 }
 
+func ResetDynamicChannelBreaker(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, fmt.Errorf("invalid channel id: %w", err))
+		return
+	}
+
+	if err := service.ResetDynamicChannelBreakerByID(id); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"channel_id": id,
+	})
+}
+
 func SearchChannels(c *gin.Context) {
 	keyword := c.Query("keyword")
 	group := c.Query("group")

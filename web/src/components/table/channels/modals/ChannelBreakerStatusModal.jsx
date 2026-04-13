@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Modal, Typography } from '@douyinfe/semi-ui';
+import { Button, Modal, Typography } from '@douyinfe/semi-ui';
 import ChannelBreakerStatusCard from './ChannelBreakerStatusCard';
 
 const { Text } = Typography;
@@ -27,9 +27,12 @@ const ChannelBreakerStatusModal = ({
     visible,
     onCancel,
     channel,
+    onReset,
+    resetLoading,
     t,
 }) => {
     const breakerState = channel?.breaker_state;
+    const canReset = channel?.id && breakerState?.dynamic_enabled;
 
     return (
         <Modal
@@ -45,7 +48,29 @@ const ChannelBreakerStatusModal = ({
             }
             visible={visible}
             onCancel={onCancel}
-            footer={null}
+            footer={
+                <div className='flex justify-end gap-2'>
+                    <Button onClick={onCancel}>{t('关闭')}</Button>
+                    <Button
+                        type='warning'
+                        theme='solid'
+                        loading={resetLoading}
+                        disabled={!canReset || resetLoading}
+                        onClick={() => {
+                            Modal.confirm({
+                                title: t('确定重置当前通道熔断状态？'),
+                                content: t(
+                                    '这会清空该通道的压力、失败计数、冷却状态与历史失败率，并恢复 HP。',
+                                ),
+                                centered: true,
+                                onOk: () => onReset?.(channel),
+                            });
+                        }}
+                    >
+                        {t('重置当前通道熔断状态')}
+                    </Button>
+                </div>
+            }
             width={480}
         >
             {breakerState ? (

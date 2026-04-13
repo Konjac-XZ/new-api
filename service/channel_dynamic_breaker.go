@@ -25,11 +25,10 @@ func GetDynamicSuppressedChannelIDs(group string, modelName string) (map[int]boo
 		if channel == nil {
 			continue
 		}
-		// Only suppress channels that are actively cooling.
-		// Awaiting-probe channels are allowed into routing as live canaries:
-		// a success promotes them to probation, enabling faster recovery
-		// without requiring a dedicated scheduled probe.
-		if !channel.IsBreakerCoolingAt(now) {
+		// Suppress channels that are either actively cooling or awaiting scheduled
+		// probe validation. Awaiting-probe channels should be validated by probes,
+		// not by live user traffic.
+		if !channel.IsBreakerCoolingAt(now) && !channel.IsBreakerAwaitingProbeAt(now) {
 			continue
 		}
 		exclude[channel.Id] = true

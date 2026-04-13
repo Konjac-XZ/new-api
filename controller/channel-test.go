@@ -1036,12 +1036,51 @@ func AutomaticallyTestChannels() {
 
 // ScheduledTestChannels 独立定时测试渠道
 var scheduledTestChannelsOnce sync.Once
+var hasRecentLLMRequestForScheduledTest = common.HasRecentLLMRequest
+var scheduledTestDispatchFunc = func(channel *model.Channel) {
+	gopool.Go(func() {
+		testScheduledChannel(channel)
+	})
+}
+
+func dispatchScheduledTestsCycle(channels []*model.Channel, nextTestTimes map[int]int64, now int64) {
+	if len(channels) == 0 {
+		return
+	}
+
+	if !hasRecentLLMRequestForScheduledTest() {
+		common.SysLog(fmt.Sprintf("scheduled tests skipped: system idle (>1 hour), channels_count=%d", len(channels)))
+		return
+	}
+
+	for _, channel := range channels {
+		interval := channel.GetScheduledTestInterval()
+		if interval <= 0 {
+			continue
+		}
+
+		nextTestTime, exists := nextTestTimes[channel.Id]
+
+		// 如果是第一次或者到了测试时间
+		if !exists || now >= nextTestTime {
+			common.SysLog(fmt.Sprintf(
+				"scheduled test dispatch: channel_id=%d, channel_name=%s, interval_min=%d",
+				channel.Id,
+				channel.Name,
+				interval,
+			))
+			scheduledTestDispatchFunc(channel)
+
+			// 更新下次测试时间
+			nextTestTimes[channel.Id] = now + int64(interval*60)
+		}
+	}
+}
 
 func ScheduledTestChannels() {
 	scheduledTestChannelsOnce.Do(func() {
 		// 存储每个渠道的下次测试时间
 		nextTestTimes := make(map[int]int64)
-		var mu sync.Mutex
 
 		for {
 			// 每分钟检查一次
@@ -1057,41 +1096,7 @@ func ScheduledTestChannels() {
 				continue
 			}
 
-			if len(channels) == 0 {
-				continue
-			}
-
-			now := time.Now().Unix()
-
-			for _, channel := range channels {
-				interval := channel.GetScheduledTestInterval()
-				if interval <= 0 {
-					continue
-				}
-
-				mu.Lock()
-				nextTestTime, exists := nextTestTimes[channel.Id]
-				mu.Unlock()
-
-				// 如果是第一次或者到了测试时间
-				if !exists || now >= nextTestTime {
-					common.SysLog(fmt.Sprintf(
-						"scheduled test dispatch: channel_id=%d, channel_name=%s, interval_min=%d",
-						channel.Id,
-						channel.Name,
-						interval,
-					))
-					// 异步测试渠道
-					gopool.Go(func() {
-						testScheduledChannel(channel)
-					})
-
-					// 更新下次测试时间
-					mu.Lock()
-					nextTestTimes[channel.Id] = now + int64(interval*60)
-					mu.Unlock()
-				}
-			}
+			dispatchScheduledTestsCycle(channels, nextTestTimes, time.Now().Unix())
 		}
 	})
 }

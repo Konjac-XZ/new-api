@@ -528,8 +528,7 @@ func TestRecordChannelRelaySuccess_ObservationReturnsToClosed(t *testing.T) {
 	RecordChannelRelaySuccess(channel, info)
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_cooldown_at", "breaker_updated_at", "breaker_fail_streak", "breaker_last_failure", "breaker_trip_count", "breaker_hp").
-		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
+	if err := model.DB.Where("id = ?", channel.Id).First(&latest).Error; err != nil {
 		t.Fatalf("failed to reload observation success state: %v", err)
 	}
 	if latest.BreakerCooldownAt != 0 {
@@ -1137,5 +1136,69 @@ func TestResetAllDynamicChannelBreakers(t *testing.T) {
 	}
 	if unchangedPlain.BreakerCooldownAt != plainChannel.BreakerCooldownAt {
 		t.Fatalf("expected non-dynamic channel cooldown unchanged, got %d want %d", unchangedPlain.BreakerCooldownAt, plainChannel.BreakerCooldownAt)
+	}
+}
+
+func TestResetDynamicChannelBreakerByID(t *testing.T) {
+	now := time.Now().Unix()
+	dynamicChannel := seedDynamicBreakerChannelForProbeTest(t, now+300, now-60, 5)
+	if err := model.DB.Model(&model.Channel{}).Where("id = ?", dynamicChannel.Id).Updates(map[string]any{
+		"breaker_pressure":        3.5,
+		"breaker_fail_streak":     5,
+		"breaker_cooldown_at":     now + 300,
+		"breaker_last_failure":    "timeout",
+		"breaker_hp":              2.2,
+		"breaker_trip_count":      2,
+		"breaker_recent_requests": 12.0,
+		"breaker_recent_failures": 7.0,
+		"breaker_recent_timeouts": 4.0,
+		"breaker_updated_at":      now,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed dynamic breaker state: %v", err)
+	}
+
+	if err := ResetDynamicChannelBreakerByID(dynamicChannel.Id); err != nil {
+		t.Fatalf("reset single breaker failed: %v", err)
+	}
+
+	var latest model.Channel
+	if err := model.DB.Where("id = ?", dynamicChannel.Id).First(&latest).Error; err != nil {
+		t.Fatalf("failed to reload channel: %v", err)
+	}
+	if latest.BreakerPressure != 0 || latest.BreakerFailStreak != 0 || latest.BreakerCooldownAt != 0 {
+		t.Fatalf("expected core breaker state reset, got pressure=%f fail_streak=%d cooldown_at=%d", latest.BreakerPressure, latest.BreakerFailStreak, latest.BreakerCooldownAt)
+	}
+	if latest.BreakerLastFailure != "" || latest.BreakerTripCount != 0 {
+		t.Fatalf("expected failure history reset, got last_failure=%q trip_count=%d", latest.BreakerLastFailure, latest.BreakerTripCount)
+	}
+	if latest.BreakerRecentRequests != 0 || latest.BreakerRecentFailures != 0 || latest.BreakerRecentTimeouts != 0 {
+		t.Fatalf("expected EWMA counters reset, got requests=%f failures=%f timeouts=%f", latest.BreakerRecentRequests, latest.BreakerRecentFailures, latest.BreakerRecentTimeouts)
+	}
+}
+
+func TestResetDynamicChannelBreakerByID_RejectsNonDynamic(t *testing.T) {
+	autoBan := 1
+	weight := uint(0)
+	priority := int64(0)
+	plainChannel := &model.Channel{
+		Type:      0,
+		Key:       fmt.Sprintf("sk-reset-single-plain-%d", time.Now().UnixNano()),
+		Name:      fmt.Sprintf("reset-single-plain-%d", time.Now().UnixNano()),
+		Status:    common.ChannelStatusEnabled,
+		Group:     "default",
+		Models:    "gpt-4o-mini",
+		AutoBan:   &autoBan,
+		Weight:    &weight,
+		Priority:  &priority,
+	}
+	if err := model.DB.Create(plainChannel).Error; err != nil {
+		t.Fatalf("failed to seed plain channel: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = model.DB.Delete(&model.Channel{}, plainChannel.Id).Error
+	})
+
+	if err := ResetDynamicChannelBreakerByID(plainChannel.Id); err == nil {
+		t.Fatal("expected reset to fail for non-dynamic channel")
 	}
 }

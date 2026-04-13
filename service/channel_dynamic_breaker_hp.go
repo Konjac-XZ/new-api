@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -152,6 +153,52 @@ type ChannelBreakerHPInfo struct {
 	TimeoutRate          float64
 }
 
+func resetDynamicChannelBreakerState(channel *model.Channel) {
+	if channel == nil {
+		return
+	}
+	channel.BreakerPressure = 0
+	channel.BreakerUpdatedAt = 0
+	channel.BreakerFailStreak = 0
+	channel.BreakerCooldownAt = 0
+	channel.BreakerLastFailure = ""
+	channel.BreakerTripCount = 0
+	channel.BreakerRecentRequests = 0
+	channel.BreakerRecentFailures = 0
+	channel.BreakerRecentTimeouts = 0
+	channel.BreakerHP = computeMaxHP(channel)
+}
+
+// ResetDynamicChannelBreakerByID clears breaker cooldown/history for a specific
+// channel with dynamic breaker enabled and restores HP to max.
+func ResetDynamicChannelBreakerByID(channelID int) error {
+	channel, err := model.GetChannelById(channelID, true)
+	if err != nil {
+		return err
+	}
+	if channel == nil {
+		return errors.New("channel not found")
+	}
+	if !channel.IsDynamicCircuitBreakerEnabled() {
+		return errors.New("dynamic circuit breaker is not enabled for this channel")
+	}
+
+	lock := getChannelBreakerLock(channel.Id)
+	lock.Lock()
+	defer lock.Unlock()
+
+	current := loadChannelBreakerWorkingCopy(channel)
+	if current == nil {
+		return errors.New("failed to load channel breaker state")
+	}
+	resetDynamicChannelBreakerState(current)
+	if err := model.UpdateChannelBreakerState(current); err != nil {
+		return err
+	}
+	channelBreakerWorkingState.Store(current.Id, snapshotChannelBreakerState(current))
+	return nil
+}
+
 // ResetAllDynamicChannelBreakers clears breaker cooldown/history for every
 // channel with dynamic circuit breaker enabled and restores HP to full.
 func ResetAllDynamicChannelBreakers() (int, int, error) {
@@ -170,16 +217,7 @@ func ResetAllDynamicChannelBreakers() (int, int, error) {
 		lock := getChannelBreakerLock(channel.Id)
 		lock.Lock()
 
-		channel.BreakerPressure = 0
-		channel.BreakerUpdatedAt = 0
-		channel.BreakerFailStreak = 0
-		channel.BreakerCooldownAt = 0
-		channel.BreakerLastFailure = ""
-		channel.BreakerTripCount = 0
-		channel.BreakerRecentRequests = 0
-		channel.BreakerRecentFailures = 0
-		channel.BreakerRecentTimeouts = 0
-		channel.BreakerHP = computeMaxHP(channel)
+		resetDynamicChannelBreakerState(channel)
 
 		if updateErr := model.UpdateChannelBreakerState(channel); updateErr != nil {
 			lock.Unlock()

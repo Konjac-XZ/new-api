@@ -22,8 +22,8 @@ const (
 // Pressure system constants (unchanged — controls cooldown duration)
 const (
 	breakerDecayWindow                    = 4 * time.Hour
-	breakerMaxCooldown                    = 30 * time.Minute
-	breakerMinimumCooldown                = 30 * time.Second
+	breakerMaxCooldown                    = 90 * time.Minute
+	breakerMinimumCooldown                = 2 * time.Minute
 	breakerNormalRecoveryFactor           = 0.7
 	breakerProbationRecoveryFactor        = 0.45
 	breakerSlowSuccessPressure            = 0.35
@@ -41,7 +41,7 @@ const (
 	breakerFailStreakCooldownExponent     = 0.9
 	breakerFailStreakCooldownCap          = 40
 	breakerTripCooldownWeight             = 12.0
-	breakerTripCooldownStart              = 2
+	breakerTripCooldownStart              = 1
 	breakerTripCooldownCap                = 60
 	breakerFailureRateCooldownThreshold   = 0.65
 	breakerFailureRateCooldownWeight      = 25.0
@@ -56,10 +56,10 @@ const (
 	breakerShortTermStreakExponent        = 1.1
 	breakerShortTermRateExponent          = 1.35
 	breakerShortTermHistoryExponent       = 1.35
-	breakerChronicTripFloorStart          = 3
-	breakerChronicTripFloorWeight         = 12.0
+	breakerChronicTripFloorStart          = 2
+	breakerChronicTripFloorWeight         = 25.0
 	breakerChronicFailureFloorThreshold   = 0.8
-	breakerChronicFailureFloorWeight      = 50.0
+	breakerChronicFailureFloorWeight      = 100.0
 	breakerChronicFailureFloorExponent    = 1.4
 	breakerChronicStreakFloorStart        = 10
 	breakerChronicStreakFloorWeight       = 6.5
@@ -77,14 +77,14 @@ const (
 	hpSuccessRecovery                    = 1.0       // HP recovered per successful request
 	hpFastSuccessRecoveryBonus           = 0.5       // additional HP for fast streaming success
 	hpProbationSuccessRecovery           = 0.8       // HP recovered per success during observation
-	hpProbationDamageMultiplier          = 1.5       // damage multiplier during observation
+	hpProbationDamageMultiplier          = 2.5       // damage multiplier during observation
 	hpProbationSilentTimeoutDamageMultiplier = 2.0   // implicit timeout during observation is treated as a severe signal
 	hpAwaitingProbeDamageMultiplier      = 2.0       // damage multiplier when awaiting probe
-	hpProbeSuccessRefillFraction         = 0.50      // probe success: refill to 50% of maxHP (not full)
-	hpFastProbeSuccessRefillFraction     = 0.60      // fast organic recovery: refill a bit more aggressively
+	hpProbeSuccessRefillFraction         = 0.35      // probe success: refill to 35% of maxHP (not full)
+	hpFastProbeSuccessRefillFraction     = 0.45      // fast organic recovery: refill a bit more aggressively
 	hpProbationSuccessRefillFraction     = 0.70      // probation success: refill to 70% of maxHP
 	hpFastProbationSuccessRefillFraction = 0.85      // fast probation success: refill deeper to restore capacity sooner
-	hpEWMADecayWindow                    = time.Hour // EWMA decay time constant
+	hpEWMADecayWindow                    = 6 * time.Hour // EWMA decay time constant
 	hpEWMAMinValue                       = 0.01      // minimum EWMA value before zeroing
 	hpSuccessRewardConfidence            = 16.0      // recent successful requests needed to unlock the full bonus
 	hpSuccessRewardMaxBonus              = 1.0       // maximum additive multiplier for sustained success

@@ -78,6 +78,11 @@ const ChannelsPage = () => {
         visible={channelsData.showBreakerStatusModal}
         onCancel={() => channelsData.setShowBreakerStatusModal(false)}
         channel={channelsData.currentBreakerStatusChannel}
+        onReset={channelsData.resetSingleDynamicCircuitBreakerStatus}
+        resetLoading={
+          channelsData.resetSingleDynamicBreakerChannelId ===
+          channelsData.currentBreakerStatusChannel?.id
+        }
         t={channelsData.t}
       />
 

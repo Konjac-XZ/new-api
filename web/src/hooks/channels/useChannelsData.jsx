@@ -55,6 +55,8 @@ export const useChannelsData = () => {
   const [groupOptions, setGroupOptions] = useState([]);
   const [resetDynamicBreakersLoading, setResetDynamicBreakersLoading] =
     useState(false);
+  const [resetSingleDynamicBreakerChannelId, setResetSingleDynamicBreakerChannelId] =
+    useState(null);
 
   // UI states
   const [showEdit, setShowEdit] = useState(false);
@@ -832,11 +834,43 @@ export const useChannelsData = () => {
     } catch (error) {
       showError(
         error?.response?.data?.message ||
-          error?.message ||
-          t('重置熔断状态失败'),
+        error?.message ||
+        t('重置熔断状态失败'),
       );
     } finally {
       setResetDynamicBreakersLoading(false);
+    }
+  };
+
+  const resetSingleDynamicCircuitBreakerStatus = async (channel) => {
+    const channelId = channel?.id;
+    if (!channelId || resetSingleDynamicBreakerChannelId === channelId) {
+      return;
+    }
+
+    setResetSingleDynamicBreakerChannelId(channelId);
+    try {
+      const res = await API.post(`/api/channel/${channelId}/breaker/reset`);
+      const { success, message } = res.data;
+      if (success) {
+        showSuccess(
+          t('通道 ${name} 的熔断状态已重置。').replace(
+            '${name}',
+            channel?.name || channelId,
+          ),
+        );
+        await refresh();
+      } else {
+        showError(message || t('重置通道熔断状态失败'));
+      }
+    } catch (error) {
+      showError(
+        error?.response?.data?.message ||
+        error?.message ||
+        t('重置通道熔断状态失败'),
+      );
+    } finally {
+      setResetSingleDynamicBreakerChannelId(null);
     }
   };
 
@@ -1388,6 +1422,8 @@ export const useChannelsData = () => {
     fixChannelsAbilities,
     resetDynamicCircuitBreakerStatus,
     resetDynamicBreakersLoading,
+    resetSingleDynamicCircuitBreakerStatus,
+    resetSingleDynamicBreakerChannelId,
     checkOllamaVersion,
     testChannel,
     testChannelStream,
