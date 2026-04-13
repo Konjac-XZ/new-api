@@ -437,6 +437,7 @@ export const getChannelsColumns = ({
   detectChannelUpstreamUpdates,
   setShowBreakerStatusModal,
   setCurrentBreakerStatusChannel,
+  isDashboardMode,
 }) => {
   return [
     {

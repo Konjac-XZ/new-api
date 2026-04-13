@@ -18,8 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Banner } from '@douyinfe/semi-ui';
-import { IconAlertTriangle } from '@douyinfe/semi-icons';
+import { Banner, Button, Tooltip } from '@douyinfe/semi-ui';
+import { IconAlertTriangle, IconHistogram } from '@douyinfe/semi-icons';
 import CardPro from '../../common/ui/CardPro';
 import ChannelsTable from './ChannelsTable';
 import ChannelsActions from './ChannelsActions';
@@ -87,7 +87,7 @@ const ChannelsPage = () => {
       />
 
       {/* Main Content */}
-      {channelsData.globalPassThroughEnabled ? (
+      {!channelsData.isDashboardMode && channelsData.globalPassThroughEnabled ? (
         <Banner
           type='warning'
           closeIcon={null}
@@ -103,20 +103,51 @@ const ChannelsPage = () => {
           style={{ marginBottom: 12 }}
         />
       ) : null}
+      <div className='flex justify-end mb-3'>
+        <Tooltip
+          content={
+            channelsData.isDashboardMode
+              ? channelsData.t('退出渠道看板')
+              : channelsData.t('渠道看板')
+          }
+        >
+          <Button
+            type={channelsData.isDashboardMode ? 'primary' : 'tertiary'}
+            theme={channelsData.isDashboardMode ? 'solid' : 'light'}
+            icon={<IconHistogram />}
+            aria-label={channelsData.t('渠道看板')}
+            onClick={channelsData.toggleDashboardMode}
+          />
+        </Tooltip>
+      </div>
       <CardPro
         type='type3'
-        tabsArea={<ChannelsTabs {...channelsData} />}
-        actionsArea={<ChannelsActions {...channelsData} />}
-        searchArea={<ChannelsFilters {...channelsData} />}
-        paginationArea={createCardProPagination({
-          currentPage: channelsData.activePage,
-          pageSize: channelsData.pageSize,
-          total: channelsData.channelCount,
-          onPageChange: channelsData.handlePageChange,
-          onPageSizeChange: channelsData.handlePageSizeChange,
-          isMobile: isMobile,
-          t: channelsData.t,
-        })}
+        tabsArea={
+          channelsData.isDashboardMode ? null : <ChannelsTabs {...channelsData} />
+        }
+        actionsArea={
+          channelsData.isDashboardMode
+            ? null
+            : <ChannelsActions {...channelsData} />
+        }
+        searchArea={
+          channelsData.isDashboardMode
+            ? null
+            : <ChannelsFilters {...channelsData} />
+        }
+        paginationArea={
+          channelsData.isDashboardMode
+            ? null
+            : createCardProPagination({
+              currentPage: channelsData.activePage,
+              pageSize: channelsData.pageSize,
+              total: channelsData.channelCount,
+              onPageChange: channelsData.handlePageChange,
+              onPageSizeChange: channelsData.handlePageSizeChange,
+              isMobile: isMobile,
+              t: channelsData.t,
+            })
+        }
         t={channelsData.t}
       >
         <ChannelsTable {...channelsData} />

@@ -60,8 +60,19 @@ const ChannelsActions = ({
   activePage,
   pageSize,
   setActivePage,
+  backgroundRefreshing,
+  lastAutoRefreshAt,
   t,
 }) => {
+  const autoRefreshStatusText = backgroundRefreshing
+    ? t('自动刷新中')
+    : lastAutoRefreshAt
+      ? t('上次自动刷新：${time}').replace(
+        '${time}',
+        new Date(lastAutoRefreshAt).toLocaleTimeString(),
+      )
+      : t('自动刷新间隔：10 秒');
+
   return (
     <div className='flex flex-col gap-2'>
       {/* 第一行：批量操作按钮 + 设置开关 */}
@@ -267,6 +278,12 @@ const ChannelsActions = ({
           >
             {t('仅动态熔断')}
           </Button>
+          <Typography.Text
+            type='tertiary'
+            className='hidden md:block whitespace-nowrap'
+          >
+            {autoRefreshStatusText}
+          </Typography.Text>
         </div>
 
         {/* 右侧：设置开关区域 */}

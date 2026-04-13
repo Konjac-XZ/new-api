@@ -40,6 +40,8 @@ import { parseUpstreamUpdateMeta } from './upstreamUpdateUtils';
 import { Modal, Button } from '@douyinfe/semi-ui';
 import { openCodexUsageModal } from '../../components/table/channels/modals/CodexUsageModal';
 
+const CHANNELS_AUTO_REFRESH_INTERVAL_MS = 10000;
+
 export const useChannelsData = () => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
@@ -47,6 +49,8 @@ export const useChannelsData = () => {
   // Basic states
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
+  const [lastAutoRefreshAt, setLastAutoRefreshAt] = useState(null);
   const [activePage, setActivePage] = useState(1);
   const [idSort, setIdSort] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -69,6 +73,7 @@ export const useChannelsData = () => {
   const [showBatchSetTag, setShowBatchSetTag] = useState(false);
   const [batchSetTagValue, setBatchSetTagValue] = useState('');
   const [compactMode, setCompactMode] = useTableCompactMode('channels');
+  const [isDashboardMode, setIsDashboardMode] = useState(false);
 
   // Column visibility states
   const [visibleColumns, setVisibleColumns] = useState({});
@@ -134,6 +139,10 @@ export const useChannelsData = () => {
 
   // Refs
   const requestCounter = useRef(0);
+  const autoRefreshInFlightRef = useRef(false);
+  const foregroundBusyRef = useRef(false);
+  const autoRefreshPausedRef = useRef(false);
+  const refreshRef = useRef(null);
   const allSelectingRef = useRef(false);
   const [formApi, setFormApi] = useState(null);
 
@@ -338,12 +347,13 @@ export const useChannelsData = () => {
     enableTagMode,
     typeKey = activeTypeKey,
     statusF,
+    options = {},
   ) => {
+    const isBackground = options.background === true;
     if (statusF === undefined) statusF = statusFilter;
 
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
     if (searchKeyword !== '' || searchGroup !== '' || searchModel !== '') {
-      setLoading(true);
       await searchChannels(
         enableTagMode,
         typeKey,
@@ -351,13 +361,17 @@ export const useChannelsData = () => {
         page,
         pageSize,
         idSort,
+        options,
       );
-      setLoading(false);
       return;
     }
 
     const reqId = ++requestCounter.current;
-    setLoading(true);
+    if (isBackground) {
+      setBackgroundRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
     const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
     const res = await API.get(
@@ -365,6 +379,9 @@ export const useChannelsData = () => {
     );
 
     if (res === undefined || reqId !== requestCounter.current) {
+      if (isBackground) {
+        setBackgroundRefreshing(false);
+      }
       return;
     }
 
@@ -380,10 +397,17 @@ export const useChannelsData = () => {
       }
       setChannelFormat(items, enableTagMode);
       setChannelCount(total);
+      if (isBackground) {
+        setLastAutoRefreshAt(Date.now());
+      }
     } else {
       showError(message);
     }
-    setLoading(false);
+    if (isBackground) {
+      setBackgroundRefreshing(false);
+    } else {
+      setLoading(false);
+    }
   };
 
   // Search channels
@@ -394,9 +418,10 @@ export const useChannelsData = () => {
     page = 1,
     pageSz = pageSize,
     sortFlag = idSort,
+    options = {},
   ) => {
+    const isBackground = options.background === true;
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
-    setSearching(true);
     try {
       if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
         await loadChannels(
@@ -406,8 +431,15 @@ export const useChannelsData = () => {
           enableTagMode,
           typeKey,
           statusF,
+          options,
         );
         return;
+      }
+
+      if (isBackground) {
+        setBackgroundRefreshing(true);
+      } else {
+        setSearching(true);
       }
 
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
@@ -426,19 +458,26 @@ export const useChannelsData = () => {
         setChannelFormat(items, enableTagMode);
         setChannelCount(total);
         setActivePage(page);
+        if (isBackground) {
+          setLastAutoRefreshAt(Date.now());
+        }
       } else {
         showError(message);
       }
     } finally {
-      setSearching(false);
+      if (isBackground) {
+        setBackgroundRefreshing(false);
+      } else {
+        setSearching(false);
+      }
     }
   };
 
   // Refresh
-  const refresh = async (page = activePage) => {
+  const refresh = async (page = activePage, options = {}) => {
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
     if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
-      await loadChannels(page, pageSize, idSort, enableTagMode);
+      await loadChannels(page, pageSize, idSort, enableTagMode, undefined, undefined, options);
     } else {
       await searchChannels(
         enableTagMode,
@@ -447,9 +486,80 @@ export const useChannelsData = () => {
         page,
         pageSize,
         idSort,
+        options,
       );
     }
   };
+
+  useEffect(() => {
+    foregroundBusyRef.current = loading || searching;
+  }, [loading, searching]);
+
+  useEffect(() => {
+    autoRefreshPausedRef.current =
+      showEdit ||
+      showEditTag ||
+      showBatchSetTag ||
+      showModelTestModal ||
+      showMultiKeyManageModal ||
+      showBreakerStatusModal ||
+      isBatchTesting;
+  }, [
+    showEdit,
+    showEditTag,
+    showBatchSetTag,
+    showModelTestModal,
+    showMultiKeyManageModal,
+    showBreakerStatusModal,
+    isBatchTesting,
+  ]);
+
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+
+  useEffect(() => {
+    const runAutoRefresh = async () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+      if (autoRefreshPausedRef.current) {
+        return;
+      }
+      if (foregroundBusyRef.current || autoRefreshInFlightRef.current) {
+        return;
+      }
+
+      autoRefreshInFlightRef.current = true;
+      try {
+        await refreshRef.current?.(undefined, { background: true });
+      } finally {
+        autoRefreshInFlightRef.current = false;
+      }
+    };
+
+    const timer = window.setInterval(
+      runAutoRefresh,
+      CHANNELS_AUTO_REFRESH_INTERVAL_MS,
+    );
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        runAutoRefresh();
+      }
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      window.clearInterval(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+    };
+  }, []);
 
   const upstreamUpdates = useChannelUpstreamUpdates({ t, refresh });
 
@@ -569,6 +679,18 @@ export const useChannelsData = () => {
         idSort,
       );
     }
+  };
+
+  const closeChannelDashboard = () => {
+    setIsDashboardMode(false);
+  };
+
+  const toggleDashboardMode = () => {
+    if (isDashboardMode) {
+      closeChannelDashboard();
+      return;
+    }
+    setIsDashboardMode(true);
   };
 
   // Fetch groups
@@ -1315,8 +1437,11 @@ export const useChannelsData = () => {
   return {
     // Basic states
     channels: filteredChannels,
+    displayChannels: filteredChannels,
     loading,
     searching,
+    backgroundRefreshing,
+    lastAutoRefreshAt,
     activePage,
     pageSize,
     channelCount,
@@ -1327,6 +1452,7 @@ export const useChannelsData = () => {
     statusFilter,
     dynamicBreakerFilter,
     compactMode,
+    isDashboardMode,
     globalPassThroughEnabled,
 
     // UI states
@@ -1413,6 +1539,8 @@ export const useChannelsData = () => {
     submitTagEdit,
     closeEdit,
     handleRow,
+    closeChannelDashboard,
+    toggleDashboardMode,
     batchSetChannelTag,
     batchDeleteChannels,
     testAllChannels,

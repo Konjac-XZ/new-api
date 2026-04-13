@@ -29,6 +29,7 @@ import { getChannelsColumns } from './ChannelsColumnDefs';
 const ChannelsTable = (channelsData) => {
   const {
     channels,
+    displayChannels,
     loading,
     searching,
     activePage,
@@ -36,6 +37,7 @@ const ChannelsTable = (channelsData) => {
     channelCount,
     enableBatchDelete,
     compactMode,
+    isDashboardMode,
     visibleColumns,
     setSelectedChannels,
     handlePageChange,
@@ -97,91 +99,97 @@ const ChannelsTable = (channelsData) => {
       detectChannelUpstreamUpdates,
       setShowBreakerStatusModal,
       setCurrentBreakerStatusChannel,
+      isDashboardMode,
     });
   }, [
-  t,
-  COLUMN_KEYS,
-  updateChannelBalance,
-  manageChannel,
-  manageTag,
-  submitTagEdit,
-  testChannel,
-  testChannelStream,
-  setCurrentTestChannel,
-  setShowModelTestModal,
-  setEditingChannel,
-  setShowEdit,
-  setShowEditTag,
-  setEditingTag,
-  copySelectedChannel,
-  refresh,
-  activePage,
-  channels,
-  checkOllamaVersion,
-  setShowMultiKeyManageModal,
-  setCurrentMultiKeyChannel,
-  openUpstreamUpdateModal,
-  detectChannelUpstreamUpdates,
-  setShowBreakerStatusModal,
-  setCurrentBreakerStatusChannel,
-]);
+    t,
+    COLUMN_KEYS,
+    updateChannelBalance,
+    manageChannel,
+    manageTag,
+    submitTagEdit,
+    testChannel,
+    testChannelStream,
+    setCurrentTestChannel,
+    setShowModelTestModal,
+    setEditingChannel,
+    setShowEdit,
+    setShowEditTag,
+    setEditingTag,
+    copySelectedChannel,
+    refresh,
+    activePage,
+    channels,
+    checkOllamaVersion,
+    setShowMultiKeyManageModal,
+    setCurrentMultiKeyChannel,
+    openUpstreamUpdateModal,
+    detectChannelUpstreamUpdates,
+    setShowBreakerStatusModal,
+    setCurrentBreakerStatusChannel,
+    isDashboardMode,
+  ]);
 
-// Filter columns based on visibility settings
-const getVisibleColumns = () => {
-  return allColumns.filter((column) => visibleColumns[column.key]);
-};
+  // Filter columns based on visibility settings
+  const getVisibleColumns = () => {
+    return allColumns.filter(
+      (column) =>
+        visibleColumns[column.key] &&
+        (!isDashboardMode || column.key !== COLUMN_KEYS.OPERATE),
+    );
+  };
 
-const visibleColumnsList = useMemo(() => {
-  return getVisibleColumns();
-}, [visibleColumns, allColumns]);
+  const visibleColumnsList = useMemo(() => {
+    return getVisibleColumns();
+  }, [visibleColumns, allColumns, isDashboardMode, COLUMN_KEYS.OPERATE]);
 
-const tableColumns = useMemo(() => {
-  return compactMode
-    ? visibleColumnsList.map(({ fixed, ...rest }) => rest)
-    : visibleColumnsList;
-}, [compactMode, visibleColumnsList]);
+  const tableColumns = useMemo(() => {
+    return compactMode
+      ? visibleColumnsList.map(({ fixed, ...rest }) => rest)
+      : visibleColumnsList;
+  }, [compactMode, visibleColumnsList]);
 
-return (
-  <CardTable
-    columns={tableColumns}
-    dataSource={channels}
-    scroll={compactMode ? undefined : { x: 'max-content' }}
-    pagination={{
-      currentPage: activePage,
-      pageSize: pageSize,
-      total: channelCount,
-      pageSizeOpts: [10, 20, 50, 100],
-      showSizeChanger: true,
-      onPageSizeChange: handlePageSizeChange,
-      onPageChange: handlePageChange,
-    }}
-    hidePagination={true}
-    expandAllRows={false}
-    onRow={handleRow}
-    rowSelection={
-      enableBatchDelete
-        ? {
-          onChange: (selectedRowKeys, selectedRows) => {
-            setSelectedChannels(selectedRows);
-          },
-        }
-        : null
-    }
-    empty={
-      <Empty
-        image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
-        darkModeImage={
-          <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
-        }
-        description={t('搜索无结果')}
-        style={{ padding: 30 }}
-      />
-    }
-    className='rounded-xl overflow-hidden'
-    size='middle'
-    loading={loading || searching}
-  />
-);
+  return (
+    <CardTable
+      columns={tableColumns}
+      dataSource={displayChannels}
+      scroll={compactMode ? undefined : { x: 'max-content' }}
+      pagination={{
+        currentPage: activePage,
+        pageSize: pageSize,
+        total: channelCount,
+        pageSizeOpts: [10, 20, 50, 100],
+        showSizeChanger: true,
+        onPageSizeChange: handlePageSizeChange,
+        onPageChange: handlePageChange,
+      }}
+      hidePagination={true}
+      expandAllRows={false}
+      onRow={handleRow}
+      rowSelection={
+        enableBatchDelete && !isDashboardMode
+          ? {
+            onChange: (selectedRowKeys, selectedRows) => {
+              setSelectedChannels(selectedRows);
+            },
+          }
+          : null
+      }
+      empty={
+        <Empty
+          image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
+          darkModeImage={
+            <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
+          }
+          description={t('搜索无结果')}
+          style={{ padding: 30 }}
+        />
+      }
+      className='rounded-xl overflow-hidden'
+      size='middle'
+      loading={loading || searching}
+    />
+  );
 };
 
 export default ChannelsTable;
