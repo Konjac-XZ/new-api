@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/model"
+	"gorm.io/gorm"
 )
 
 var channelBreakerLocks sync.Map
@@ -79,12 +80,31 @@ func loadChannelBreakerWorkingCopy(channel *model.Channel) *model.Channel {
 }
 
 func persistChannelBreakerState(current *model.Channel) error {
+	return persistChannelBreakerStateWithTrace(current, nil)
+}
+
+func persistChannelBreakerStateWithTrace(current *model.Channel, trace *model.BreakerPenaltyTrace) error {
 	if current == nil {
 		return errors.New("channel breaker state is nil")
 	}
-	if err := model.UpdateChannelBreakerState(current); err != nil {
+	if trace == nil {
+		if err := model.UpdateChannelBreakerState(current); err != nil {
+			return err
+		}
+		channelBreakerWorkingState.Store(current.Id, snapshotChannelBreakerState(current))
+		return nil
+	}
+
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := model.UpdateChannelBreakerStateTx(tx, current); err != nil {
+			return err
+		}
+		return tx.Create(trace).Error
+	})
+	if err != nil {
 		return err
 	}
+	model.CacheUpdateChannelBreakerState(current)
 	channelBreakerWorkingState.Store(current.Id, snapshotChannelBreakerState(current))
 	return nil
 }
@@ -93,6 +113,16 @@ func mutateChannelBreakerState(channel *model.Channel, mutate func(current *mode
 	if channel == nil || mutate == nil {
 		return false, nil
 	}
+	changed, _, err := mutateChannelBreakerStateWithTrace(channel, func(current *model.Channel, now time.Time) (bool, *model.BreakerPenaltyTrace) {
+		return mutate(current, now), nil
+	})
+	return changed, err
+}
+
+func mutateChannelBreakerStateWithTrace(channel *model.Channel, mutate func(current *model.Channel, now time.Time) (bool, *model.BreakerPenaltyTrace)) (bool, *model.BreakerPenaltyTrace, error) {
+	if channel == nil || mutate == nil {
+		return false, nil, nil
+	}
 
 	lock := getChannelBreakerLock(channel.Id)
 	lock.Lock()
@@ -100,18 +130,19 @@ func mutateChannelBreakerState(channel *model.Channel, mutate func(current *mode
 
 	current := loadChannelBreakerWorkingCopy(channel)
 	if !current.IsDynamicCircuitBreakerEnabled() {
-		return false, nil
+		return false, nil, nil
 	}
 
 	now := time.Now()
-	if !mutate(current, now) {
-		return false, nil
+	changed, trace := mutate(current, now)
+	if !changed {
+		return false, nil, nil
 	}
 
-	if err := persistChannelBreakerState(current); err != nil {
-		return false, err
+	if err := persistChannelBreakerStateWithTrace(current, trace); err != nil {
+		return false, nil, err
 	}
-	return true, nil
+	return true, trace, nil
 }
 
 func clearChannelBreakerWorkingState(channelID int) {

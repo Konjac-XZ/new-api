@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -356,6 +357,47 @@ func TestRecordChannelRelayFailure_AccumulatesAcrossStaleHandles(t *testing.T) {
 	}
 }
 
+func TestRecordChannelRelayFailure_PersistsPenaltyTrace(t *testing.T) {
+	now := time.Now().Unix()
+	channel := seedDynamicBreakerChannelForProbeTest(t, 0, now-120, 5)
+	var beforeCount int64
+	if err := model.DB.Model(&model.BreakerPenaltyTrace{}).Where("channel_id = ?", channel.Id).Count(&beforeCount).Error; err != nil {
+		t.Fatalf("failed to count existing breaker penalty traces: %v", err)
+	}
+
+	failure := types.NewErrorWithStatusCode(
+		fmt.Errorf("upstream overloaded"),
+		types.ErrorCodeBadResponse,
+		http.StatusTooManyRequests,
+	)
+	RecordChannelRelayFailure(channel, nil, failure)
+
+	var afterCount int64
+	if err := model.DB.Model(&model.BreakerPenaltyTrace{}).Where("channel_id = ?", channel.Id).Count(&afterCount).Error; err != nil {
+		t.Fatalf("failed to count breaker penalty traces after failure: %v", err)
+	}
+	if afterCount != beforeCount+1 {
+		t.Fatalf("expected breaker trace count to increase by 1, before=%d after=%d", beforeCount, afterCount)
+	}
+
+	var trace model.BreakerPenaltyTrace
+	if err := model.DB.Where("channel_id = ?", channel.Id).Order("id DESC").First(&trace).Error; err != nil {
+		t.Fatalf("failed to load latest breaker penalty trace: %v", err)
+	}
+	if trace.EventType != "relay_failure" {
+		t.Fatalf("expected event_type=relay_failure, got %q", trace.EventType)
+	}
+	if trace.FailureKind == "" {
+		t.Fatal("expected failure_kind to be captured")
+	}
+	if !strings.Contains(trace.CalculationSteps, "Step 1:") || !strings.Contains(trace.CalculationSteps, "Result:") {
+		t.Fatalf("expected calculation steps to contain Step/Result, got %q", trace.CalculationSteps)
+	}
+	if trace.CalculationInputs == "" || trace.CalculationResult == "" {
+		t.Fatal("expected calculation JSON payloads to be stored")
+	}
+}
+
 func TestRecordChannelRelayFailure_ObservationTimeoutAlwaysRestartsCooldown(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-30, 5)
@@ -400,18 +442,56 @@ func TestRecordChannelRelayFailure_ObservationTimeoutAlwaysRestartsCooldown(t *t
 	}
 }
 
+func TestRecordChannelProbeFailure_PersistsPenaltyTrace(t *testing.T) {
+	now := time.Now().Unix()
+	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)
+	var beforeCount int64
+	if err := model.DB.Model(&model.BreakerPenaltyTrace{}).Where("channel_id = ?", channel.Id).Count(&beforeCount).Error; err != nil {
+		t.Fatalf("failed to count existing breaker penalty traces: %v", err)
+	}
+
+	probeErr := types.NewErrorWithStatusCode(
+		fmt.Errorf("probe failed in awaiting probe"),
+		types.ErrorCodeBadResponse,
+		http.StatusBadGateway,
+	)
+	RecordChannelProbeFailure(channel, probeErr)
+
+	var afterCount int64
+	if err := model.DB.Model(&model.BreakerPenaltyTrace{}).Where("channel_id = ?", channel.Id).Count(&afterCount).Error; err != nil {
+		t.Fatalf("failed to count breaker penalty traces after probe failure: %v", err)
+	}
+	if afterCount != beforeCount+1 {
+		t.Fatalf("expected breaker trace count to increase by 1, before=%d after=%d", beforeCount, afterCount)
+	}
+
+	var trace model.BreakerPenaltyTrace
+	if err := model.DB.Where("channel_id = ?", channel.Id).Order("id DESC").First(&trace).Error; err != nil {
+		t.Fatalf("failed to load latest breaker penalty trace: %v", err)
+	}
+	if trace.EventType != "probe_failure" {
+		t.Fatalf("expected event_type=probe_failure, got %q", trace.EventType)
+	}
+	if !trace.TriggeredCooldown {
+		t.Fatal("expected probe failure in awaiting_probe to trigger cooldown in trace")
+	}
+	if trace.FinalCooldownSeconds <= 0 {
+		t.Fatalf("expected final cooldown seconds > 0, got %d", trace.FinalCooldownSeconds)
+	}
+}
+
 func TestRecordChannelRelaySuccess_ObservationImplicitTimeoutBecomesFailure(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-20, now-20, 5)
 
 	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
-		"breaker_hp":               9.5,
-		"breaker_trip_count":       0,
-		"breaker_fail_streak":      0,
-		"breaker_recent_requests":  0.0,
-		"breaker_recent_failures":  0.0,
-		"breaker_recent_timeouts":  0.0,
-		"breaker_last_failure":     "",
+		"breaker_hp":              9.5,
+		"breaker_trip_count":      0,
+		"breaker_fail_streak":     0,
+		"breaker_recent_requests": 0.0,
+		"breaker_recent_failures": 0.0,
+		"breaker_recent_timeouts": 0.0,
+		"breaker_last_failure":    "",
 	}).Error; err != nil {
 		t.Fatalf("failed to seed implicit timeout baseline: %v", err)
 	}
@@ -459,9 +539,9 @@ func TestRecordChannelRelaySuccess_AwaitingProbeReturnsToClosed(t *testing.T) {
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)
 
 	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
-		"breaker_hp":          3.0,
-		"breaker_trip_count":  2,
-		"breaker_fail_streak": 4,
+		"breaker_hp":           3.0,
+		"breaker_trip_count":   2,
+		"breaker_fail_streak":  4,
 		"breaker_last_failure": string(channelFailureKindImmediateFailure),
 	}).Error; err != nil {
 		t.Fatalf("failed to seed awaiting-probe baseline: %v", err)
@@ -508,9 +588,9 @@ func TestRecordChannelRelaySuccess_ObservationReturnsToClosed(t *testing.T) {
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-20, now-20, 5)
 
 	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
-		"breaker_hp":          2.5,
-		"breaker_trip_count":  1,
-		"breaker_fail_streak": 2,
+		"breaker_hp":           2.5,
+		"breaker_trip_count":   1,
+		"breaker_fail_streak":  2,
 		"breaker_last_failure": string(channelFailureKindImmediateFailure),
 	}).Error; err != nil {
 		t.Fatalf("failed to seed observation baseline: %v", err)
@@ -1181,15 +1261,15 @@ func TestResetDynamicChannelBreakerByID_RejectsNonDynamic(t *testing.T) {
 	weight := uint(0)
 	priority := int64(0)
 	plainChannel := &model.Channel{
-		Type:      0,
-		Key:       fmt.Sprintf("sk-reset-single-plain-%d", time.Now().UnixNano()),
-		Name:      fmt.Sprintf("reset-single-plain-%d", time.Now().UnixNano()),
-		Status:    common.ChannelStatusEnabled,
-		Group:     "default",
-		Models:    "gpt-4o-mini",
-		AutoBan:   &autoBan,
-		Weight:    &weight,
-		Priority:  &priority,
+		Type:     0,
+		Key:      fmt.Sprintf("sk-reset-single-plain-%d", time.Now().UnixNano()),
+		Name:     fmt.Sprintf("reset-single-plain-%d", time.Now().UnixNano()),
+		Status:   common.ChannelStatusEnabled,
+		Group:    "default",
+		Models:   "gpt-4o-mini",
+		AutoBan:  &autoBan,
+		Weight:   &weight,
+		Priority: &priority,
 	}
 	if err := model.DB.Create(plainChannel).Error; err != nil {
 		t.Fatalf("failed to seed plain channel: %v", err)

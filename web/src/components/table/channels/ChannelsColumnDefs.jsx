@@ -52,19 +52,11 @@ import {
 } from '@douyinfe/semi-icons';
 import { FaRandom } from 'react-icons/fa';
 
-// Helper
-const formatRemainingSeconds = (seconds) => {
-  if (!seconds || seconds <= 0) return '0s';
-  const day = Math.floor(seconds / 86400);
-  const hour = Math.floor((seconds % 86400) / 3600);
-  const minute = Math.floor((seconds % 3600) / 60);
-  const second = seconds % 60;
-  const parts = [];
-  if (day > 0) parts.push(`${day}d`);
-  if (hour > 0) parts.push(`${hour}h`);
-  if (minute > 0) parts.push(`${minute}m`);
-  if (second > 0 || parts.length === 0) parts.push(`${second}s`);
-  return parts.join(' ');
+const formatMMSS = (seconds) => {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minute = Math.floor(safeSeconds / 60);
+  const second = safeSeconds % 60;
+  return `${minute}:${String(second).padStart(2, '0')}`;
 };
 
 // Render functions
@@ -164,17 +156,26 @@ const renderTagType = (t) => {
   );
 };
 
-const renderBreakerPhaseStatus = (breakerState, t) => {
+const renderBreakerPhaseStatus = (breakerState, t, currentUnixSeconds) => {
   if (!breakerState?.dynamic_enabled) {
     return null;
   }
   switch (breakerState.phase) {
-    case 'cooling':
+    case 'cooling': {
+      const totalPenaltySeconds = Math.max(
+        0,
+        Number(breakerState.cooldown_seconds || 0),
+      );
+      const remaining = Math.max(
+        0,
+        Number(breakerState.cooldown_at || 0) - Number(currentUnixSeconds || 0),
+      );
       return (
         <Tag color='red' shape='circle'>
-          {t('冷却中')}
+          {`${formatMMSS(remaining)}/${formatMMSS(totalPenaltySeconds)}`}
         </Tag>
       );
+    }
     case 'observation':
       return (
         <Tag color='orange' shape='circle'>
@@ -192,36 +193,12 @@ const renderBreakerPhaseStatus = (breakerState, t) => {
   }
 };
 
-const getBreakerPhaseTooltip = (breakerState, t) => {
-  if (!breakerState?.dynamic_enabled) {
-    return '';
-  }
-  switch (breakerState.phase) {
-    case 'cooling': {
-      const totalPenaltySeconds = Math.max(
-        0,
-        Number(breakerState.cooldown_seconds || 0),
-      );
-      const remaining = Math.max(
-        0,
-        (breakerState.cooldown_at || 0) - Math.floor(Date.now() / 1000),
-      );
-      return `${t('总罚时')} ${formatRemainingSeconds(totalPenaltySeconds)} - ${t('剩余')} ${formatRemainingSeconds(remaining)}`;
-    }
-    case 'observation':
-      return t('探测通过，处于观察期');
-    case 'awaiting_probe':
-      return t('冷却已结束，等待最近一次探测成功后进入观察期');
-    default:
-      return '';
-  }
-};
-
 const renderStatus = (
   status,
   channelInfo = undefined,
   breakerState = undefined,
   t,
+  currentUnixSeconds,
 ) => {
   // Always compute the primary status tag first
   let mainTag;
@@ -267,18 +244,13 @@ const renderStatus = (
 
   // If dynamic circuit breaking is enabled, append a badge
   if (breakerState?.dynamic_enabled) {
-    const phaseTag = renderBreakerPhaseStatus(breakerState, t);
-    const phaseTip = getBreakerPhaseTooltip(breakerState, t);
+    const phaseTag = renderBreakerPhaseStatus(
+      breakerState,
+      t,
+      currentUnixSeconds,
+    );
 
-    let breakerBadge;
-    if (phaseTag) {
-      // Active phase (cooling / observation / awaiting_probe)
-      breakerBadge = phaseTip ? (
-        <Tooltip content={phaseTip}>{phaseTag}</Tooltip>
-      ) : (
-        phaseTag
-      );
-    }
+    const breakerBadge = phaseTag || null;
 
     if (!breakerBadge) {
       return mainTag;
@@ -438,6 +410,7 @@ export const getChannelsColumns = ({
   setShowBreakerStatusModal,
   setCurrentBreakerStatusChannel,
   isDashboardMode,
+  currentUnixSeconds,
 }) => {
   return [
     {
@@ -644,6 +617,7 @@ export const getChannelsColumns = ({
                   record.channel_info,
                   record.breaker_state,
                   t,
+                  currentUnixSeconds,
                 )}
               </Tooltip>
             </div>
@@ -654,6 +628,7 @@ export const getChannelsColumns = ({
             record.channel_info,
             record.breaker_state,
             t,
+            currentUnixSeconds,
           );
         }
       },
@@ -825,6 +800,14 @@ export const getChannelsColumns = ({
           const moreMenuItems = [
             {
               node: 'item',
+              name: t('流式测试'),
+              type: 'tertiary',
+              onClick: () => {
+                testChannelStream(record, '');
+              },
+            },
+            {
+              node: 'item',
               name: t('删除'),
               type: 'danger',
               onClick: () => {
@@ -928,14 +911,6 @@ export const getChannelsColumns = ({
                   }}
                 />
               </SplitButtonGroup>
-
-              <Button
-                size='small'
-                type='tertiary'
-                onClick={() => testChannelStream(record, '')}
-              >
-                {t('流式测试')}
-              </Button>
 
               {record.status === 1 ? (
                 <Button

@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -104,6 +105,139 @@ func ShouldRecordChannelRelaySuccessOnFirstResponse(channel *model.Channel, info
 	return channel.IsBreakerAwaitingProbeAt(nowUnix) || channel.IsBreakerProbationAt(nowUnix)
 }
 
+func marshalBreakerTraceJSON(value any) string {
+	data, err := common.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
+}
+
+func buildBreakerPenaltyTrace(
+	current *model.Channel,
+	now time.Time,
+	eventType string,
+	failureKind channelFailureKind,
+	wasInProbation bool,
+	wasAwaitingProbe bool,
+	forceCooldown bool,
+	pressureBefore float64,
+	hpBefore float64,
+	failStreakBefore int,
+	tripCountBefore int,
+	cooldownAtBefore int64,
+	damage float64,
+	triggeredCooldown bool,
+	baseCooldown time.Duration,
+	multiplier float64,
+	multiplierBreakdown breakerCooldownMultiplierBreakdown,
+	chronicFloor time.Duration,
+	chronicBreakdown breakerChronicCooldownFloorBreakdown,
+	finalCooldown time.Duration,
+) *model.BreakerPenaltyTrace {
+	inputs := map[string]any{
+		"failure_kind":                       failureKind,
+		"pressure_before":                    pressureBefore,
+		"pressure_after":                     current.BreakerPressure,
+		"fail_streak_before":                 failStreakBefore,
+		"fail_streak_after":                  current.BreakerFailStreak,
+		"trip_count_before":                  tripCountBefore,
+		"trip_count_after":                   current.BreakerTripCount,
+		"hp_before":                          hpBefore,
+		"hp_damage":                          damage,
+		"hp_after":                           current.BreakerHP,
+		"was_in_probation":                   wasInProbation,
+		"was_awaiting_probe":                 wasAwaitingProbe,
+		"force_cooldown":                     forceCooldown,
+		"cooldown_at_before":                 cooldownAtBefore,
+		"cooldown_at_after":                  current.BreakerCooldownAt,
+		"base_cooldown_seconds":              int64(baseCooldown / time.Second),
+		"cooldown_multiplier":                multiplier,
+		"chronic_floor_seconds":              int64(chronicFloor / time.Second),
+		"final_cooldown_seconds":             int64(finalCooldown / time.Second),
+		"triggered_cooldown":                 triggeredCooldown,
+		"short_term_penalty_factor":          multiplierBreakdown.ShortTermPenaltyFactor,
+		"pressure_penalty_factor":            multiplierBreakdown.PressurePenaltyFactor,
+		"history_penalty_factor":             multiplierBreakdown.HistoryPenaltyFactor,
+		"failure_rate":                       multiplierBreakdown.FailureRate,
+		"timeout_rate":                       multiplierBreakdown.TimeoutRate,
+		"confidence":                         multiplierBreakdown.Confidence,
+		"chronic_trip_floor_seconds":         int64(chronicBreakdown.TripFloor / time.Second),
+		"chronic_failure_rate_floor_seconds": int64(chronicBreakdown.FailureRateFloor / time.Second),
+		"chronic_streak_floor_seconds":       int64(chronicBreakdown.StreakFloor / time.Second),
+	}
+	rawCooldown := time.Duration(float64(baseCooldown) * multiplier)
+
+	steps := []string{
+		fmt.Sprintf("Step 1: HP_after = HP_before - damage = %.6f - %.6f = %.6f", hpBefore, damage, current.BreakerHP),
+	}
+	if triggeredCooldown {
+		steps = append(steps,
+			fmt.Sprintf("Step 2: multiplier = 1 + pressure(%.6f) + streak(%.6f) + trip(%.6f) + failure_rate(%.6f) + timeout_rate(%.6f) + probation(%.6f) + awaiting_probe(%.6f) = %.6f",
+				multiplierBreakdown.PressureContribution,
+				multiplierBreakdown.StreakContribution,
+				multiplierBreakdown.TripContribution,
+				multiplierBreakdown.FailureRateContribution,
+				multiplierBreakdown.TimeoutRateContribution,
+				multiplierBreakdown.ProbationContribution,
+				multiplierBreakdown.AwaitingProbeContribution,
+				multiplier,
+			),
+			fmt.Sprintf("Step 3: cooldown_raw = base_cooldown * multiplier = %ds * %.6f = %.6fs", int64(baseCooldown/time.Second), multiplier, baseCooldown.Seconds()*multiplier),
+			fmt.Sprintf("Step 4: cooldown_with_floor = max(raw=%ds, chronic_floor=%ds) = %ds", int64(rawCooldown/time.Second), int64(chronicFloor/time.Second), int64(maxDuration(rawCooldown, chronicFloor)/time.Second)),
+			fmt.Sprintf("Step 5: cooldown_clamped = clamp(min=%ds, max=%ds) = %ds", int64(breakerMinimumCooldown/time.Second), int64(breakerMaxCooldown/time.Second), int64(finalCooldown/time.Second)),
+			fmt.Sprintf("Result: cooldown_at = now + %ds = %d", int64(finalCooldown/time.Second), current.BreakerCooldownAt),
+		)
+	} else {
+		steps = append(steps, "Step 2: cooldown not triggered because HP remained above zero and no forced cooldown flag was set", "Result: final penalty duration = 0s")
+	}
+
+	result := map[string]any{
+		"triggered_cooldown":     triggeredCooldown,
+		"base_cooldown_seconds":  int64(baseCooldown / time.Second),
+		"cooldown_multiplier":    multiplier,
+		"chronic_floor_seconds":  int64(chronicFloor / time.Second),
+		"final_cooldown_seconds": int64(finalCooldown / time.Second),
+		"cooldown_at":            current.BreakerCooldownAt,
+	}
+
+	return &model.BreakerPenaltyTrace{
+		ChannelId:            current.Id,
+		CreatedAt:            now.Unix(),
+		EventType:            eventType,
+		FailureKind:          string(failureKind),
+		WasInProbation:       wasInProbation,
+		WasAwaitingProbe:     wasAwaitingProbe,
+		ForceCooldown:        forceCooldown,
+		TriggeredCooldown:    triggeredCooldown,
+		CooldownAtBefore:     cooldownAtBefore,
+		CooldownAtAfter:      current.BreakerCooldownAt,
+		PressureBefore:       pressureBefore,
+		PressureAfter:        current.BreakerPressure,
+		FailStreakBefore:     failStreakBefore,
+		FailStreakAfter:      current.BreakerFailStreak,
+		TripCountBefore:      tripCountBefore,
+		TripCountAfter:       current.BreakerTripCount,
+		HPBefore:             hpBefore,
+		HPDamage:             damage,
+		HPAfter:              current.BreakerHP,
+		BaseCooldownSeconds:  int64(baseCooldown / time.Second),
+		CooldownMultiplier:   multiplier,
+		ChronicFloorSeconds:  int64(chronicFloor / time.Second),
+		FinalCooldownSeconds: int64(finalCooldown / time.Second),
+		CalculationInputs:    marshalBreakerTraceJSON(inputs),
+		CalculationSteps:     strings.Join(steps, "\n"),
+		CalculationResult:    marshalBreakerTraceJSON(result),
+	}
+}
+
+func maxDuration(a time.Duration, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func applyRelayFailureStateLocked(
 	current *model.Channel,
 	info *relaycommon.RelayInfo,
@@ -114,10 +248,23 @@ func applyRelayFailureStateLocked(
 	forceCooldown bool,
 	extraPressure float64,
 	extraDamageMultiplier float64,
-) {
+) *model.BreakerPenaltyTrace {
 	if current == nil {
-		return
+		return nil
 	}
+	pressureBefore := current.BreakerPressure
+	hpBefore := current.BreakerHP
+	failStreakBefore := current.BreakerFailStreak
+	tripCountBefore := current.BreakerTripCount
+	cooldownAtBefore := current.BreakerCooldownAt
+
+	multiplier := 1.0
+	var multiplierBreakdown breakerCooldownMultiplierBreakdown
+	baseCooldown := time.Duration(0)
+	chronicFloor := time.Duration(0)
+	var chronicBreakdown breakerChronicCooldownFloorBreakdown
+	finalCooldown := time.Duration(0)
+	triggeredCooldown := false
 
 	// Pressure system (unchanged — still accumulates for cooldown duration calculation)
 	applyBreakerDecay(current, now)
@@ -161,13 +308,15 @@ func applyRelayFailureStateLocked(
 
 	if forceCooldown || current.BreakerHP <= 0 {
 		// HP depleted or explicitly forced: trigger cooldown.
+		triggeredCooldown = true
 		current.BreakerHP = 0
 		current.BreakerTripCount++
 
-		multiplier := computeBreakerCooldownMultiplier(current, wasInProbation, wasAwaitingProbe)
-		baseCooldown := failureBaseCooldown(failureKind)
+		multiplier, multiplierBreakdown = computeBreakerCooldownMultiplierWithBreakdown(current, wasInProbation, wasAwaitingProbe)
+		baseCooldown = failureBaseCooldown(failureKind)
 		cooldown := time.Duration(float64(baseCooldown) * multiplier)
-		if chronicFloor := computeBreakerChronicCooldownFloor(current); chronicFloor > cooldown {
+		chronicFloor, chronicBreakdown = computeBreakerChronicCooldownFloorWithBreakdown(current)
+		if chronicFloor > cooldown {
 			cooldown = chronicFloor
 		}
 		if cooldown < breakerMinimumCooldown {
@@ -176,6 +325,7 @@ func applyRelayFailureStateLocked(
 		if cooldown > breakerMaxCooldown {
 			cooldown = breakerMaxCooldown
 		}
+		finalCooldown = cooldown
 
 		current.BreakerCooldownAt = now.Add(cooldown).Unix()
 	}
@@ -183,6 +333,29 @@ func applyRelayFailureStateLocked(
 
 	current.BreakerLastFailure = string(failureKind)
 	current.BreakerUpdatedAt = now.Unix()
+
+	return buildBreakerPenaltyTrace(
+		current,
+		now,
+		"relay_failure",
+		failureKind,
+		wasInProbation,
+		wasAwaitingProbe,
+		forceCooldown,
+		pressureBefore,
+		hpBefore,
+		failStreakBefore,
+		tripCountBefore,
+		cooldownAtBefore,
+		damage,
+		triggeredCooldown,
+		baseCooldown,
+		multiplier,
+		multiplierBreakdown,
+		chronicFloor,
+		chronicBreakdown,
+		finalCooldown,
+	)
 }
 
 func RecordChannelRelaySuccess(channel *model.Channel, info *relaycommon.RelayInfo) {
@@ -297,13 +470,13 @@ func RecordChannelRelayFailure(channel *model.Channel, info *relaycommon.RelayIn
 	if channel == nil || err == nil {
 		return
 	}
-	_, persistErr := mutateChannelBreakerState(channel, func(current *model.Channel, now time.Time) bool {
+	_, _, persistErr := mutateChannelBreakerStateWithTrace(channel, func(current *model.Channel, now time.Time) (bool, *model.BreakerPenaltyTrace) {
 		wasInProbation := current.IsBreakerProbationAt(now.Unix())
 		wasAwaitingProbe := current.IsBreakerAwaitingProbeAt(now.Unix())
 		failureKind := classifyChannelFailure(info, err)
 		forceCooldown := wasInProbation
-		applyRelayFailureStateLocked(current, info, now, failureKind, wasInProbation, wasAwaitingProbe, forceCooldown, 0, 1.0)
-		return true
+		trace := applyRelayFailureStateLocked(current, info, now, failureKind, wasInProbation, wasAwaitingProbe, forceCooldown, 0, 1.0)
+		return true, trace
 	})
 	if persistErr != nil {
 		common.SysLog(fmt.Sprintf("failed to persist channel breaker failure state: channel_id=%d, error=%v", channel.Id, persistErr))
@@ -318,14 +491,26 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 	if channel == nil || err == nil {
 		return
 	}
-	_, persistErr := mutateChannelBreakerState(channel, func(current *model.Channel, now time.Time) bool {
+	_, _, persistErr := mutateChannelBreakerStateWithTrace(channel, func(current *model.Channel, now time.Time) (bool, *model.BreakerPenaltyTrace) {
 		nowUnix := now.Unix()
 		if current.IsBreakerCoolingAt(nowUnix) {
-			return false
+			return false, nil
 		}
 
 		wasAwaitingProbe := current.IsBreakerAwaitingProbeAt(nowUnix)
 		wasInProbation := current.IsBreakerProbationAt(nowUnix)
+		pressureBefore := current.BreakerPressure
+		hpBefore := current.BreakerHP
+		failStreakBefore := current.BreakerFailStreak
+		tripCountBefore := current.BreakerTripCount
+		cooldownAtBefore := current.BreakerCooldownAt
+		multiplier := 1.0
+		var multiplierBreakdown breakerCooldownMultiplierBreakdown
+		baseCooldown := time.Duration(0)
+		chronicFloor := time.Duration(0)
+		var chronicBreakdown breakerChronicCooldownFloorBreakdown
+		finalCooldown := time.Duration(0)
+		triggeredCooldown := false
 		applyBreakerDecay(current, now)
 
 		failureKind := classifyChannelFailure(nil, err)
@@ -359,16 +544,20 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 		current.BreakerHP -= damage
 
 		if wasAwaitingProbe || wasInProbation || current.BreakerHP <= 0 {
+			triggeredCooldown = true
 			current.BreakerHP = 0
 			current.BreakerTripCount++
 
-			multiplier := computeBreakerCooldownMultiplier(current, wasInProbation, wasAwaitingProbe)
+			multiplier, multiplierBreakdown = computeBreakerCooldownMultiplierWithBreakdown(current, wasInProbation, wasAwaitingProbe)
 			if wasInProbation {
 				multiplier += 1.75
+				multiplierBreakdown.ProbationContribution += 1.75
+				multiplierBreakdown.Multiplier = multiplier
 			}
-			baseCooldown := failureBaseCooldown(failureKind)
+			baseCooldown = failureBaseCooldown(failureKind)
 			cooldown := time.Duration(float64(baseCooldown) * multiplier)
-			if chronicFloor := computeBreakerChronicCooldownFloor(current); chronicFloor > cooldown {
+			chronicFloor, chronicBreakdown = computeBreakerChronicCooldownFloorWithBreakdown(current)
+			if chronicFloor > cooldown {
 				cooldown = chronicFloor
 			}
 			if cooldown < breakerMinimumCooldown {
@@ -377,13 +566,36 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 			if cooldown > breakerMaxCooldown {
 				cooldown = breakerMaxCooldown
 			}
+			finalCooldown = cooldown
 
 			current.BreakerCooldownAt = now.Add(cooldown).Unix()
 		}
 
 		current.BreakerLastFailure = string(failureKind)
 		current.BreakerUpdatedAt = nowUnix
-		return true
+		trace := buildBreakerPenaltyTrace(
+			current,
+			now,
+			"probe_failure",
+			failureKind,
+			wasInProbation,
+			wasAwaitingProbe,
+			wasAwaitingProbe || wasInProbation,
+			pressureBefore,
+			hpBefore,
+			failStreakBefore,
+			tripCountBefore,
+			cooldownAtBefore,
+			damage,
+			triggeredCooldown,
+			baseCooldown,
+			multiplier,
+			multiplierBreakdown,
+			chronicFloor,
+			chronicBreakdown,
+			finalCooldown,
+		)
+		return true, trace
 	})
 	if persistErr != nil {
 		common.SysLog(fmt.Sprintf("failed to persist channel breaker probe failure state: channel_id=%d, error=%v", channel.Id, persistErr))

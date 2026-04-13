@@ -289,6 +289,7 @@ func migrateDB() error {
 
 	err := DB.AutoMigrate(
 		&Channel{},
+		&BreakerPenaltyTrace{},
 		&Token{},
 		&User{},
 		&PasskeyCredential{},
@@ -337,6 +338,7 @@ func migrateDBFast() error {
 		name  string
 	}{
 		{&Channel{}, "Channel"},
+		{&BreakerPenaltyTrace{}, "BreakerPenaltyTrace"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
 		{&PasskeyCredential{}, "PasskeyCredential"},

@@ -76,8 +76,9 @@ const ChannelsPage = () => {
       />
       <ChannelBreakerStatusModal
         visible={channelsData.showBreakerStatusModal}
-        onCancel={() => channelsData.setShowBreakerStatusModal(false)}
+        onCancel={channelsData.closeBreakerStatusModal}
         channel={channelsData.currentBreakerStatusChannel}
+        loading={channelsData.breakerStatusLoading}
         onReset={channelsData.resetSingleDynamicCircuitBreakerStatus}
         resetLoading={
           channelsData.resetSingleDynamicBreakerChannelId ===
@@ -104,21 +105,13 @@ const ChannelsPage = () => {
         />
       ) : null}
       <div className='flex justify-end mb-3'>
-        <Tooltip
-          content={
-            channelsData.isDashboardMode
-              ? channelsData.t('退出渠道看板')
-              : channelsData.t('渠道看板')
-          }
-        >
-          <Button
-            type={channelsData.isDashboardMode ? 'primary' : 'tertiary'}
-            theme={channelsData.isDashboardMode ? 'solid' : 'light'}
-            icon={<IconHistogram />}
-            aria-label={channelsData.t('渠道看板')}
-            onClick={channelsData.toggleDashboardMode}
-          />
-        </Tooltip>
+        <Button
+          type={channelsData.isDashboardMode ? 'primary' : 'tertiary'}
+          theme={channelsData.isDashboardMode ? 'solid' : 'light'}
+          icon={<IconHistogram />}
+          aria-label={channelsData.t('渠道看板')}
+          onClick={channelsData.toggleDashboardMode}
+        />
       </div>
       <CardPro
         type='type3'

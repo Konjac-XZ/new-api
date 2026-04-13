@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Empty } from '@douyinfe/semi-ui';
 import CardTable from '../../common/ui/CardTable';
 import {
@@ -71,6 +71,21 @@ const ChannelsTable = (channelsData) => {
     setCurrentBreakerStatusChannel,
   } = channelsData;
 
+  const [currentUnixSeconds, setCurrentUnixSeconds] = useState(
+    Math.floor(Date.now() / 1000),
+  );
+
+  useEffect(() => {
+    const tick = () => {
+      setCurrentUnixSeconds(Math.floor(Date.now() / 1000));
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
   // Get all columns
   const allColumns = useMemo(() => {
     return getChannelsColumns({
@@ -100,6 +115,7 @@ const ChannelsTable = (channelsData) => {
       setShowBreakerStatusModal,
       setCurrentBreakerStatusChannel,
       isDashboardMode,
+      currentUnixSeconds,
     });
   }, [
     t,
@@ -128,6 +144,7 @@ const ChannelsTable = (channelsData) => {
     setShowBreakerStatusModal,
     setCurrentBreakerStatusChannel,
     isDashboardMode,
+    currentUnixSeconds,
   ]);
 
   // Filter columns based on visibility settings

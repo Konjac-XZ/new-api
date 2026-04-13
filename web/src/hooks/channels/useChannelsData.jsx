@@ -73,7 +73,7 @@ export const useChannelsData = () => {
   const [showBatchSetTag, setShowBatchSetTag] = useState(false);
   const [batchSetTagValue, setBatchSetTagValue] = useState('');
   const [compactMode, setCompactMode] = useTableCompactMode('channels');
-  const [isDashboardMode, setIsDashboardMode] = useState(false);
+  const [isDashboardMode, setIsDashboardMode] = useState(true);
 
   // Column visibility states
   const [visibleColumns, setVisibleColumns] = useState({});
@@ -136,9 +136,11 @@ export const useChannelsData = () => {
   const [showBreakerStatusModal, setShowBreakerStatusModal] = useState(false);
   const [currentBreakerStatusChannel, setCurrentBreakerStatusChannel] =
     useState(null);
+  const [breakerStatusLoading, setBreakerStatusLoading] = useState(false);
 
   // Refs
   const requestCounter = useRef(0);
+  const breakerDetailRequestCounter = useRef(0);
   const autoRefreshInFlightRef = useRef(false);
   const foregroundBusyRef = useRef(false);
   const autoRefreshPausedRef = useRef(false);
@@ -254,6 +256,48 @@ export const useChannelsData = () => {
     setVisibleColumns(updatedColumns);
   };
 
+  // Keep tiny server/client skew from causing visible countdown jitter.
+  const smoothCooldownTimestamp = (prevChannel, nextChannel) => {
+    if (!prevChannel || !nextChannel) {
+      return;
+    }
+    const prevBreakerState = prevChannel.breaker_state;
+    const nextBreakerState = nextChannel.breaker_state;
+    if (
+      prevBreakerState?.dynamic_enabled !== true ||
+      nextBreakerState?.dynamic_enabled !== true ||
+      prevBreakerState?.phase !== 'cooling' ||
+      nextBreakerState?.phase !== 'cooling'
+    ) {
+      return;
+    }
+
+    const prevCooldownAt = Number(prevBreakerState.cooldown_at || 0);
+    const nextCooldownAt = Number(nextBreakerState.cooldown_at || 0);
+    if (prevCooldownAt <= 0 || nextCooldownAt <= 0) {
+      return;
+    }
+
+    const diff = nextCooldownAt - prevCooldownAt;
+    if (diff >= -2 && diff <= 2) {
+      nextBreakerState.cooldown_at = prevCooldownAt;
+    }
+  };
+
+  const buildChannelMapById = (list = []) => {
+    const map = new Map();
+    list.forEach((channel) => {
+      if (channel.children !== undefined) {
+        channel.children.forEach((child) => {
+          map.set(child.id, child);
+        });
+        return;
+      }
+      map.set(channel.id, channel);
+    });
+    return map;
+  };
+
   // Data formatting
   const setChannelFormat = (channels, enableTagMode) => {
     let channelDates = [];
@@ -326,7 +370,19 @@ export const useChannelsData = () => {
         tagChannelDates.response_time = tagChannelDates.response_time / 2;
       }
     }
-    setChannels(channelDates);
+    setChannels((prevChannels) => {
+      const prevMap = buildChannelMapById(prevChannels);
+      channelDates.forEach((channel) => {
+        if (channel.children !== undefined) {
+          channel.children.forEach((child) => {
+            smoothCooldownTimestamp(prevMap.get(child.id), child);
+          });
+          return;
+        }
+        smoothCooldownTimestamp(prevMap.get(channel.id), channel);
+      });
+      return channelDates;
+    });
   };
 
   // Get form values helper
@@ -517,6 +573,63 @@ export const useChannelsData = () => {
   useEffect(() => {
     refreshRef.current = refresh;
   }, [refresh]);
+
+  const fetchChannelBreakerDetail = async (channelId, options = {}) => {
+    const { silent = false } = options;
+    if (!channelId) {
+      return null;
+    }
+
+    const reqId = ++breakerDetailRequestCounter.current;
+    setBreakerStatusLoading(true);
+    try {
+      const res = await API.get(`/api/channel/${channelId}/breaker/detail`, {
+        disableDuplicate: true,
+        skipErrorHandler: true,
+      });
+      if (reqId !== breakerDetailRequestCounter.current) {
+        return null;
+      }
+
+      const { success, message, data } = res.data;
+      if (success) {
+        setCurrentBreakerStatusChannel(data);
+        return data;
+      }
+
+      if (!silent) {
+        showError(message || t('获取动态熔断详情失败'));
+      }
+      return null;
+    } catch (error) {
+      if (!silent && reqId === breakerDetailRequestCounter.current) {
+        showError(
+          error?.response?.data?.message ||
+          error?.message ||
+          t('获取动态熔断详情失败'),
+        );
+      }
+      return null;
+    } finally {
+      if (reqId === breakerDetailRequestCounter.current) {
+        setBreakerStatusLoading(false);
+      }
+    }
+  };
+
+  const closeBreakerStatusModal = () => {
+    breakerDetailRequestCounter.current += 1;
+    setBreakerStatusLoading(false);
+    setShowBreakerStatusModal(false);
+    setCurrentBreakerStatusChannel(null);
+  };
+
+  useEffect(() => {
+    if (!showBreakerStatusModal || !currentBreakerStatusChannel?.id) {
+      return;
+    }
+    fetchChannelBreakerDetail(currentBreakerStatusChannel.id);
+  }, [showBreakerStatusModal, currentBreakerStatusChannel?.id]);
 
   useEffect(() => {
     const runAutoRefresh = async () => {
@@ -982,6 +1095,7 @@ export const useChannelsData = () => {
           ),
         );
         await refresh();
+        await fetchChannelBreakerDetail(channelId, { silent: true });
       } else {
         showError(message || t('重置通道熔断状态失败'));
       }
@@ -1513,6 +1627,8 @@ export const useChannelsData = () => {
     // Breaker status modal states
     showBreakerStatusModal,
     setShowBreakerStatusModal,
+    breakerStatusLoading,
+    closeBreakerStatusModal,
     currentBreakerStatusChannel,
     setCurrentBreakerStatusChannel,
     ...upstreamUpdates,

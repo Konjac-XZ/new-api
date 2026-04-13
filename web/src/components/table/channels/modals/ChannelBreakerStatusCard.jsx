@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Col, Progress, Row, Tag, Typography } from '@douyinfe/semi-ui';
+import {
+  Card,
+  Col,
+  Collapse,
+  Divider,
+  Empty,
+  Progress,
+  Row,
+  Space,
+  Tag,
+  Typography,
+} from '@douyinfe/semi-ui';
 
 const { Text } = Typography;
 
@@ -11,6 +22,75 @@ const failureLabelMap = {
   overloaded: '上游过载',
   empty_reply: '空回复',
 };
+
+const eventLabelMap = {
+  relay_failure: '请求失败处罚',
+  probe_failure: '探测失败处罚',
+};
+
+const traceFieldLabelMap = {
+  failure_kind: '失败类型',
+  pressure_before: '处罚前压力值',
+  pressure_after: '处罚后压力值',
+  fail_streak_before: '处罚前连续失败',
+  fail_streak_after: '处罚后连续失败',
+  trip_count_before: '处罚前熔断次数',
+  trip_count_after: '处罚后熔断次数',
+  hp_before: '处罚前 HP',
+  hp_damage: 'HP 扣减',
+  hp_after: '处罚后 HP',
+  was_in_probation: '观察期内',
+  was_awaiting_probe: '待探测阶段',
+  force_cooldown: '强制冷却',
+  cooldown_at_before: '处罚前冷却到期',
+  cooldown_at_after: '处罚后冷却到期',
+  base_cooldown_seconds: '基础冷却时长',
+  cooldown_multiplier: '冷却倍数',
+  chronic_floor_seconds: '慢性惩罚下限',
+  final_cooldown_seconds: '最终冷却时长',
+  triggered_cooldown: '是否触发冷却',
+  short_term_penalty_factor: '短期惩罚因子',
+  pressure_penalty_factor: '压力惩罚因子',
+  history_penalty_factor: '历史惩罚因子',
+  failure_rate: '近期失败率',
+  timeout_rate: '近期超时率',
+  confidence: '统计置信度',
+  chronic_trip_floor_seconds: '熔断次数地板',
+  chronic_failure_rate_floor_seconds: '失败率地板',
+  chronic_streak_floor_seconds: '连续失败地板',
+};
+
+const traceFieldOrder = [
+  'failure_kind',
+  'pressure_before',
+  'pressure_after',
+  'fail_streak_before',
+  'fail_streak_after',
+  'trip_count_before',
+  'trip_count_after',
+  'hp_before',
+  'hp_damage',
+  'hp_after',
+  'was_in_probation',
+  'was_awaiting_probe',
+  'force_cooldown',
+  'cooldown_at_before',
+  'cooldown_at_after',
+  'base_cooldown_seconds',
+  'cooldown_multiplier',
+  'chronic_floor_seconds',
+  'final_cooldown_seconds',
+  'triggered_cooldown',
+  'short_term_penalty_factor',
+  'pressure_penalty_factor',
+  'history_penalty_factor',
+  'failure_rate',
+  'timeout_rate',
+  'confidence',
+  'chronic_trip_floor_seconds',
+  'chronic_failure_rate_floor_seconds',
+  'chronic_streak_floor_seconds',
+];
 
 const formatUnixTime = (unixSeconds) => {
   if (!unixSeconds || unixSeconds <= 0) {
@@ -33,6 +113,120 @@ const formatSeconds = (seconds) => {
   if (minute > 0) parts.push(`${minute}m`);
   if (second > 0 || parts.length === 0) parts.push(`${second}s`);
   return parts.join(' ');
+};
+
+const formatTraceNumber = (value) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    return String(value);
+  }
+  if (Number.isInteger(value)) {
+    return String(value);
+  }
+  return value.toFixed(4).replace(/\.0+$|(?<=\.[0-9]*?)0+$/u, '').replace(/\.$/, '');
+};
+
+const normalizeUnixSeconds = (value) => {
+  if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) {
+    return null;
+  }
+  // Accept both seconds and milliseconds; convert ms to seconds.
+  if (value > 1e12) {
+    return Math.floor(value / 1000);
+  }
+  return Math.floor(value);
+};
+
+const isTimestampLikeKey = (key) => {
+  const normalized = String(key || '').toLowerCase().replace(/[\s.-]+/g, '_');
+  if (normalized.endsWith('_at') || normalized.endsWith('_time') || normalized.endsWith('_timestamp')) {
+    return true;
+  }
+  if (normalized.includes('expire') || normalized.includes('expired') || normalized.includes('expiry')) {
+    return true;
+  }
+  if (normalized.includes('deadline') || normalized.includes('until')) {
+    return true;
+  }
+  if (normalized.includes('cooldown') && (normalized.includes('at') || normalized.includes('time'))) {
+    return true;
+  }
+  return false;
+};
+
+const looksLikeUnixTimestamp = (value) => {
+  const seconds = normalizeUnixSeconds(value);
+  if (seconds == null) {
+    return false;
+  }
+  // Roughly between 2001 and year 2286 in seconds.
+  return seconds >= 1e9 && seconds <= 9999999999;
+};
+
+const toReadableFieldLabel = (key) => {
+  const cleaned = String(key || '')
+    .replace(/^[._\s-]+/, '')
+    .replace(/[._-]+/g, ' ')
+    .trim();
+  if (cleaned === '') {
+    return String(key || '');
+  }
+  return cleaned
+    .split(/\s+/)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+};
+
+const formatTraceValue = (key, value, t) => {
+  if (value == null) {
+    return '-';
+  }
+  if (typeof value === 'boolean') {
+    return value ? t('是') : t('否');
+  }
+  if (typeof value === 'number') {
+    if (key.endsWith('_seconds')) {
+      return formatSeconds(value);
+    }
+    if (isTimestampLikeKey(key) && looksLikeUnixTimestamp(value)) {
+      return formatUnixTime(normalizeUnixSeconds(value));
+    }
+    if (key.includes('rate')) {
+      return `${(value * 100).toFixed(1)}%`;
+    }
+    return formatTraceNumber(value);
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (!Number.isNaN(parsed) && isTimestampLikeKey(key) && looksLikeUnixTimestamp(parsed)) {
+      return formatUnixTime(normalizeUnixSeconds(parsed));
+    }
+  }
+  return String(value);
+};
+
+const getTraceFieldLabel = (key, t) => {
+  const mapped = traceFieldLabelMap[key];
+  if (mapped) {
+    return t(mapped);
+  }
+  return toReadableFieldLabel(key);
+};
+
+const sortTraceEntries = (payload) => {
+  return Object.entries(payload || {}).sort(([left], [right]) => {
+    const leftIndex = traceFieldOrder.indexOf(left);
+    const rightIndex = traceFieldOrder.indexOf(right);
+    if (leftIndex === -1 && rightIndex === -1) {
+      return left.localeCompare(right);
+    }
+    if (leftIndex === -1) {
+      return 1;
+    }
+    if (rightIndex === -1) {
+      return -1;
+    }
+    return leftIndex - rightIndex;
+  });
 };
 
 const getPhaseMeta = (phase, t) => {
@@ -70,7 +264,68 @@ const getPhaseMeta = (phase, t) => {
   }
 };
 
-const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
+const TraceFieldGrid = ({ payload, t }) => {
+  const entries = sortTraceEntries(payload);
+  if (entries.length === 0) {
+    return <Text type='tertiary'>{t('暂无数据')}</Text>;
+  }
+
+  return (
+    <div className='grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2'>
+      {entries.map(([key, value]) => (
+        <div key={key}>
+          <Text size='small' type='tertiary'>
+            {getTraceFieldLabel(key, t)}
+          </Text>
+          <div>
+            <Text>{formatTraceValue(key, value, t)}</Text>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const TraceSummaryGrid = ({ trace, t }) => {
+  const summaryItems = [
+    ['处罚前 HP', formatTraceNumber(Number(trace?.hp_before || 0))],
+    ['HP 扣减', formatTraceNumber(Number(trace?.hp_damage || 0))],
+    ['处罚后 HP', formatTraceNumber(Number(trace?.hp_after || 0))],
+    ['处罚前压力值', formatTraceNumber(Number(trace?.pressure_before || 0))],
+    ['处罚后压力值', formatTraceNumber(Number(trace?.pressure_after || 0))],
+    ['处罚前连续失败', trace?.fail_streak_before || 0],
+    ['处罚后连续失败', trace?.fail_streak_after || 0],
+    ['处罚前熔断次数', trace?.trip_count_before || 0],
+    ['处罚后熔断次数', trace?.trip_count_after || 0],
+    ['基础冷却时长', formatSeconds(Number(trace?.base_cooldown_seconds || 0))],
+    ['冷却倍数', formatTraceNumber(Number(trace?.cooldown_multiplier || 0))],
+    ['最终冷却时长', formatSeconds(Number(trace?.final_cooldown_seconds || 0))],
+  ];
+
+  return (
+    <div className='grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2'>
+      {summaryItems.map(([label, value]) => (
+        <div key={label}>
+          <Text size='small' type='tertiary'>
+            {t(label)}
+          </Text>
+          <div>
+            <Text>{value}</Text>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ChannelBreakerStatusCard = ({
+  breakerState,
+  t,
+  visible,
+  traces = [],
+  traceTotal = 0,
+  traceLoading = false,
+}) => {
   const [nowSeconds, setNowSeconds] = useState(Math.floor(Date.now() / 1000));
 
   useEffect(() => {
@@ -269,6 +524,106 @@ const ChannelBreakerStatusCard = ({ breakerState, t, visible }) => {
           </Text>
         </div>
       )}
+
+      <Divider style={{ margin: '16px 0 12px' }} />
+
+      <div>
+        <div className='flex items-center justify-between gap-3'>
+          <Text strong>{t('最近处罚计算记录')}</Text>
+          <Text size='small' type='tertiary'>
+            {t('最近 {{count}} / 共 {{total}} 条', {
+              count: traces.length,
+              total: traceTotal,
+            })}
+          </Text>
+        </div>
+
+        {traceLoading && traces.length === 0 ? (
+          <div style={{ marginTop: 12 }}>
+            <Text type='tertiary'>{t('加载中...')}</Text>
+          </div>
+        ) : traces.length === 0 ? (
+          <div style={{ marginTop: 12 }}>
+            <Empty description={t('暂无处罚计算记录')} />
+          </div>
+        ) : (
+          <div style={{ marginTop: 12 }}>
+            <Collapse accordion>
+              {traces.map((trace) => {
+                const eventLabel = t(eventLabelMap[trace?.event_type] || trace?.event_type || '处罚记录');
+                const failureLabel = trace?.failure_kind
+                  ? t(failureLabelMap[trace.failure_kind] || trace.failure_kind)
+                  : t('无');
+                const finalCooldown = formatSeconds(Number(trace?.final_cooldown_seconds || 0));
+
+                return (
+                  <Collapse.Panel
+                    key={trace.id}
+                    itemKey={String(trace.id)}
+                    header={
+                      <Space wrap spacing={8}>
+                        <Tag color='blue'>{eventLabel}</Tag>
+                        <Tag color={trace?.triggered_cooldown ? 'red' : 'grey'}>
+                          {trace?.triggered_cooldown
+                            ? t('已触发冷却')
+                            : t('未触发冷却')}
+                        </Tag>
+                        <Text strong>{failureLabel}</Text>
+                        <Text type='tertiary' size='small'>
+                          {formatUnixTime(trace?.created_at || 0)}
+                        </Text>
+                        <Text type='tertiary' size='small'>
+                          {t('最终冷却时长')}: {finalCooldown}
+                        </Text>
+                      </Space>
+                    }
+                  >
+                    <div className='flex flex-col gap-4'>
+                      <TraceSummaryGrid trace={trace} t={t} />
+
+                      <div>
+                        <Text strong>{t('计算参数')}</Text>
+                        <div style={{ marginTop: 8 }}>
+                          <TraceFieldGrid payload={trace?.calculation_inputs} t={t} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <Text strong>{t('计算步骤')}</Text>
+                        <div className='mt-2 flex flex-col gap-2'>
+                          {(trace?.calculation_steps || []).length > 0 ? (
+                            trace.calculation_steps.map((step, index) => (
+                              <div
+                                key={`${trace.id}-step-${index}`}
+                                className='rounded-lg px-3 py-2 text-xs leading-5 whitespace-pre-wrap break-all'
+                                style={{
+                                  background: 'var(--semi-color-fill-0)',
+                                  fontFamily: 'var(--semi-font-family-monospace)',
+                                }}
+                              >
+                                {step}
+                              </div>
+                            ))
+                          ) : (
+                            <Text type='tertiary'>{t('暂无数据')}</Text>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <Text strong>{t('计算结果')}</Text>
+                        <div style={{ marginTop: 8 }}>
+                          <TraceFieldGrid payload={trace?.calculation_result} t={t} />
+                        </div>
+                      </div>
+                    </div>
+                  </Collapse.Panel>
+                );
+              })}
+            </Collapse>
+          </div>
+        )}
+      </div>
     </Card>
   );
 };

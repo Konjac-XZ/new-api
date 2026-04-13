@@ -411,6 +411,48 @@ type ChannelBreakerState struct {
 	TimeoutRate          float64 `json:"timeout_rate"`
 }
 
+type BreakerPenaltyTraceDetail struct {
+	Id                   int            `json:"id"`
+	CreatedAt            int64          `json:"created_at"`
+	EventType            string         `json:"event_type"`
+	FailureKind          string         `json:"failure_kind"`
+	WasInProbation       bool           `json:"was_in_probation"`
+	WasAwaitingProbe     bool           `json:"was_awaiting_probe"`
+	ForceCooldown        bool           `json:"force_cooldown"`
+	TriggeredCooldown    bool           `json:"triggered_cooldown"`
+	CooldownAtBefore     int64          `json:"cooldown_at_before"`
+	CooldownAtAfter      int64          `json:"cooldown_at_after"`
+	PressureBefore       float64        `json:"pressure_before"`
+	PressureAfter        float64        `json:"pressure_after"`
+	FailStreakBefore     int            `json:"fail_streak_before"`
+	FailStreakAfter      int            `json:"fail_streak_after"`
+	TripCountBefore      int            `json:"trip_count_before"`
+	TripCountAfter       int            `json:"trip_count_after"`
+	HPBefore             float64        `json:"hp_before"`
+	HPDamage             float64        `json:"hp_damage"`
+	HPAfter              float64        `json:"hp_after"`
+	BaseCooldownSeconds  int64          `json:"base_cooldown_seconds"`
+	CooldownMultiplier   float64        `json:"cooldown_multiplier"`
+	ChronicFloorSeconds  int64          `json:"chronic_floor_seconds"`
+	FinalCooldownSeconds int64          `json:"final_cooldown_seconds"`
+	CalculationInputs    map[string]any `json:"calculation_inputs"`
+	CalculationSteps     []string       `json:"calculation_steps"`
+	CalculationResult    map[string]any `json:"calculation_result"`
+}
+
+type BreakerPenaltyTracePage struct {
+	Items    []*BreakerPenaltyTraceDetail `json:"items"`
+	Total    int64                        `json:"total"`
+	Page     int                          `json:"page"`
+	PageSize int                          `json:"page_size"`
+}
+
+type ChannelBreakerDetailResponse struct {
+	*model.Channel
+	BreakerState *ChannelBreakerState     `json:"breaker_state,omitempty"`
+	TracePage    *BreakerPenaltyTracePage `json:"trace_page"`
+}
+
 type channelListItem struct {
 	*model.Channel
 	BreakerState *ChannelBreakerState `json:"breaker_state,omitempty"`
@@ -488,6 +530,73 @@ func buildChannelBreakerState(channel *model.Channel) *ChannelBreakerState {
 	return state
 }
 
+func decodeBreakerTracePayload(raw string) map[string]any {
+	if strings.TrimSpace(raw) == "" {
+		return map[string]any{}
+	}
+	payload := make(map[string]any)
+	if err := common.UnmarshalJsonStr(raw, &payload); err != nil {
+		return map[string]any{
+			"raw": raw,
+		}
+	}
+	return payload
+}
+
+func splitBreakerTraceSteps(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return []string{}
+	}
+	parts := strings.Split(raw, "\n")
+	steps := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		steps = append(steps, trimmed)
+	}
+	return steps
+}
+
+func buildBreakerPenaltyTraceDetails(traces []*model.BreakerPenaltyTrace) []*BreakerPenaltyTraceDetail {
+	items := make([]*BreakerPenaltyTraceDetail, 0, len(traces))
+	for _, trace := range traces {
+		if trace == nil {
+			continue
+		}
+		items = append(items, &BreakerPenaltyTraceDetail{
+			Id:                   trace.Id,
+			CreatedAt:            trace.CreatedAt,
+			EventType:            trace.EventType,
+			FailureKind:          trace.FailureKind,
+			WasInProbation:       trace.WasInProbation,
+			WasAwaitingProbe:     trace.WasAwaitingProbe,
+			ForceCooldown:        trace.ForceCooldown,
+			TriggeredCooldown:    trace.TriggeredCooldown,
+			CooldownAtBefore:     trace.CooldownAtBefore,
+			CooldownAtAfter:      trace.CooldownAtAfter,
+			PressureBefore:       trace.PressureBefore,
+			PressureAfter:        trace.PressureAfter,
+			FailStreakBefore:     trace.FailStreakBefore,
+			FailStreakAfter:      trace.FailStreakAfter,
+			TripCountBefore:      trace.TripCountBefore,
+			TripCountAfter:       trace.TripCountAfter,
+			HPBefore:             trace.HPBefore,
+			HPDamage:             trace.HPDamage,
+			HPAfter:              trace.HPAfter,
+			BaseCooldownSeconds:  trace.BaseCooldownSeconds,
+			CooldownMultiplier:   trace.CooldownMultiplier,
+			ChronicFloorSeconds:  trace.ChronicFloorSeconds,
+			FinalCooldownSeconds: trace.FinalCooldownSeconds,
+			CalculationInputs:    decodeBreakerTracePayload(trace.CalculationInputs),
+			CalculationSteps:     splitBreakerTraceSteps(trace.CalculationSteps),
+			CalculationResult:    decodeBreakerTracePayload(trace.CalculationResult),
+		})
+	}
+	return items
+}
+
 func GetChannel(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -525,6 +634,41 @@ func GetChannel(c *gin.Context) {
 		"data":    resp,
 	})
 	return
+}
+
+func GetChannelBreakerDetail(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	channel, err := model.GetChannelById(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if channel != nil {
+		clearChannelInfo(channel)
+	}
+
+	pageInfo := common.GetPageQuery(c)
+	traces, total, err := model.GetBreakerPenaltyTracePageByChannelID(id, pageInfo.GetPage(), pageInfo.GetPageSize())
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	common.ApiSuccess(c, &ChannelBreakerDetailResponse{
+		Channel:      channel,
+		BreakerState: buildChannelBreakerState(channel),
+		TracePage: &BreakerPenaltyTracePage{
+			Items:    buildBreakerPenaltyTraceDetails(traces),
+			Total:    total,
+			Page:     pageInfo.GetPage(),
+			PageSize: pageInfo.GetPageSize(),
+		},
+	})
 }
 
 // GetChannelKey 获取渠道密钥（需要通过安全验证中间件）

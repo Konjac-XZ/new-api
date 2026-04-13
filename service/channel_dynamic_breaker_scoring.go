@@ -10,6 +10,43 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
+type breakerShortTermPenaltyBreakdown struct {
+	StreakInstability  float64
+	FailureRate        float64
+	TimeoutRate        float64
+	Confidence         float64
+	BlendedInstability float64
+	Factor             float64
+}
+
+type breakerCooldownMultiplierBreakdown struct {
+	ShortTermPenaltyFactor    float64
+	PressurePenaltyFactor     float64
+	HistoryPenaltyFactor      float64
+	PressureContribution      float64
+	StreakContribution        float64
+	TripContribution          float64
+	FailureRateContribution   float64
+	TimeoutRateContribution   float64
+	ProbationContribution     float64
+	AwaitingProbeContribution float64
+	FailureRate               float64
+	TimeoutRate               float64
+	Confidence                float64
+	Multiplier                float64
+}
+
+type breakerChronicCooldownFloorBreakdown struct {
+	ShortTermPenaltyFactor float64
+	HistoryPenaltyFactor   float64
+	TripFloor              time.Duration
+	FailureRateFloor       time.Duration
+	StreakFloor            time.Duration
+	FailureRate            float64
+	Confidence             float64
+	Floor                  time.Duration
+}
+
 func computeBreakerFailureRates(channel *model.Channel) (float64, float64, float64) {
 	if channel == nil || channel.BreakerRecentRequests <= 0 {
 		return 0, 0, 0
@@ -22,8 +59,13 @@ func computeBreakerFailureRates(channel *model.Channel) (float64, float64, float
 }
 
 func computeBreakerShortTermPenaltyFactor(channel *model.Channel) float64 {
+	factor, _ := computeBreakerShortTermPenaltyFactorWithBreakdown(channel)
+	return factor
+}
+
+func computeBreakerShortTermPenaltyFactorWithBreakdown(channel *model.Channel) (float64, breakerShortTermPenaltyBreakdown) {
 	if channel == nil {
-		return 1.0
+		return 1.0, breakerShortTermPenaltyBreakdown{Factor: 1.0}
 	}
 
 	streakInstability := 0.0
@@ -37,9 +79,24 @@ func computeBreakerShortTermPenaltyFactor(channel *model.Channel) float64 {
 	failureRate, timeoutRate, confidence := computeBreakerFailureRates(channel)
 	if confidence <= 0 {
 		if streakInstability <= 0 {
-			return 1.0
+			return 1.0, breakerShortTermPenaltyBreakdown{
+				StreakInstability:  streakInstability,
+				FailureRate:        failureRate,
+				TimeoutRate:        timeoutRate,
+				Confidence:         confidence,
+				BlendedInstability: 0,
+				Factor:             1.0,
+			}
 		}
-		return breakerShortTermPenaltyMinFactor + (1.0-breakerShortTermPenaltyMinFactor)*streakInstability
+		factor := breakerShortTermPenaltyMinFactor + (1.0-breakerShortTermPenaltyMinFactor)*streakInstability
+		return factor, breakerShortTermPenaltyBreakdown{
+			StreakInstability:  streakInstability,
+			FailureRate:        failureRate,
+			TimeoutRate:        timeoutRate,
+			Confidence:         confidence,
+			BlendedInstability: streakInstability,
+			Factor:             factor,
+		}
 	}
 
 	instability := streakInstability
@@ -53,100 +110,161 @@ func computeBreakerShortTermPenaltyFactor(channel *model.Channel) float64 {
 	blendedInstability := (1.0 - confidence) + confidence*instability
 	factor := breakerShortTermPenaltyMinFactor + (1.0-breakerShortTermPenaltyMinFactor)*blendedInstability
 	if factor < breakerShortTermPenaltyMinFactor {
-		return breakerShortTermPenaltyMinFactor
+		factor = breakerShortTermPenaltyMinFactor
 	}
 	if factor > 1.0 {
-		return 1.0
+		factor = 1.0
 	}
-	return factor
+	return factor, breakerShortTermPenaltyBreakdown{
+		StreakInstability:  streakInstability,
+		FailureRate:        failureRate,
+		TimeoutRate:        timeoutRate,
+		Confidence:         confidence,
+		BlendedInstability: blendedInstability,
+		Factor:             factor,
+	}
 }
 
 func computeBreakerCooldownMultiplier(channel *model.Channel, wasInProbation bool, wasAwaitingProbe bool) float64 {
+	multiplier, _ := computeBreakerCooldownMultiplierWithBreakdown(channel, wasInProbation, wasAwaitingProbe)
+	return multiplier
+}
+
+func computeBreakerCooldownMultiplierWithBreakdown(channel *model.Channel, wasInProbation bool, wasAwaitingProbe bool) (float64, breakerCooldownMultiplierBreakdown) {
 	if channel == nil {
-		return 1.0
+		return 1.0, breakerCooldownMultiplierBreakdown{Multiplier: 1.0}
 	}
 
 	multiplier := 1.0
-	shortTermPenaltyFactor := computeBreakerShortTermPenaltyFactor(channel)
+	shortTermPenaltyFactor, _ := computeBreakerShortTermPenaltyFactorWithBreakdown(channel)
 	pressurePenaltyFactor := breakerShortTermPressureMinFactor + (1.0-breakerShortTermPressureMinFactor)*shortTermPenaltyFactor
 	historyPenaltyFactor := math.Pow(shortTermPenaltyFactor, breakerShortTermHistoryExponent)
-	multiplier += math.Min(channel.BreakerPressure, breakerMaxPressureContribution) * breakerPressureCooldownWeight * pressurePenaltyFactor
+	pressureContribution := math.Min(channel.BreakerPressure, breakerMaxPressureContribution) * breakerPressureCooldownWeight * pressurePenaltyFactor
+	multiplier += pressureContribution
+
+	streakContribution := 0.0
+	tripContribution := 0.0
+	failureRateContribution := 0.0
+	timeoutRateContribution := 0.0
+	probationContribution := 0.0
+	awaitingProbeContribution := 0.0
 
 	if channel.BreakerFailStreak > 1 {
 		streakPenalty := math.Pow(
 			float64(minInt(channel.BreakerFailStreak-1, breakerFailStreakCooldownCap)),
 			breakerFailStreakCooldownExponent,
 		) * breakerFailStreakCooldownWeight
-		multiplier += streakPenalty
+		streakContribution = streakPenalty
+		multiplier += streakContribution
 	}
 
 	if channel.BreakerTripCount > breakerTripCooldownStart {
 		tripPenalty := math.Log1p(float64(minInt(channel.BreakerTripCount-breakerTripCooldownStart, breakerTripCooldownCap))) * breakerTripCooldownWeight * historyPenaltyFactor
-		multiplier += tripPenalty
+		tripContribution = tripPenalty
+		multiplier += tripContribution
 	}
 
 	failureRate, timeoutRate, confidence := computeBreakerFailureRates(channel)
 	if confidence > 0 {
 		if failureRate > breakerFailureRateCooldownThreshold {
 			normalized := (failureRate - breakerFailureRateCooldownThreshold) / (1.0 - breakerFailureRateCooldownThreshold)
-			multiplier += math.Pow(normalized, breakerFailureRateCooldownExponent) * breakerFailureRateCooldownWeight * confidence
+			failureRateContribution = math.Pow(normalized, breakerFailureRateCooldownExponent) * breakerFailureRateCooldownWeight * confidence
+			multiplier += failureRateContribution
 		}
 		if timeoutRate > breakerTimeoutRateCooldownThreshold {
 			normalized := (timeoutRate - breakerTimeoutRateCooldownThreshold) / (1.0 - breakerTimeoutRateCooldownThreshold)
-			multiplier += math.Pow(normalized, breakerTimeoutRateCooldownExponent) * breakerTimeoutRateCooldownWeight * confidence
+			timeoutRateContribution = math.Pow(normalized, breakerTimeoutRateCooldownExponent) * breakerTimeoutRateCooldownWeight * confidence
+			multiplier += timeoutRateContribution
 		}
 	}
 
 	if wasInProbation {
-		multiplier += 0.75
+		probationContribution = 0.75
+		multiplier += probationContribution
 	}
 	if wasAwaitingProbe {
-		multiplier += 1.5
+		awaitingProbeContribution = 1.5
+		multiplier += awaitingProbeContribution
 	}
 	if multiplier < 1.0 {
-		return 1.0
+		multiplier = 1.0
 	}
-	return multiplier
+	return multiplier, breakerCooldownMultiplierBreakdown{
+		ShortTermPenaltyFactor:    shortTermPenaltyFactor,
+		PressurePenaltyFactor:     pressurePenaltyFactor,
+		HistoryPenaltyFactor:      historyPenaltyFactor,
+		PressureContribution:      pressureContribution,
+		StreakContribution:        streakContribution,
+		TripContribution:          tripContribution,
+		FailureRateContribution:   failureRateContribution,
+		TimeoutRateContribution:   timeoutRateContribution,
+		ProbationContribution:     probationContribution,
+		AwaitingProbeContribution: awaitingProbeContribution,
+		FailureRate:               failureRate,
+		TimeoutRate:               timeoutRate,
+		Confidence:                confidence,
+		Multiplier:                multiplier,
+	}
 }
 
 func computeBreakerChronicCooldownFloor(channel *model.Channel) time.Duration {
+	floor, _ := computeBreakerChronicCooldownFloorWithBreakdown(channel)
+	return floor
+}
+
+func computeBreakerChronicCooldownFloorWithBreakdown(channel *model.Channel) (time.Duration, breakerChronicCooldownFloorBreakdown) {
 	if channel == nil {
-		return 0
+		return 0, breakerChronicCooldownFloorBreakdown{}
 	}
 
 	floor := time.Duration(0)
-	shortTermPenaltyFactor := computeBreakerShortTermPenaltyFactor(channel)
+	shortTermPenaltyFactor, _ := computeBreakerShortTermPenaltyFactorWithBreakdown(channel)
 	historyPenaltyFactor := math.Pow(shortTermPenaltyFactor, breakerShortTermHistoryExponent)
+	tripFloor := time.Duration(0)
 	if channel.BreakerTripCount > breakerChronicTripFloorStart {
-		floor += time.Duration(
+		tripFloor = time.Duration(
 			math.Log1p(float64(minInt(channel.BreakerTripCount-breakerChronicTripFloorStart, breakerTripCooldownCap))) *
 				breakerChronicTripFloorWeight * historyPenaltyFactor * float64(time.Minute),
 		)
+		floor += tripFloor
 	}
 
 	failureRate, _, confidence := computeBreakerFailureRates(channel)
+	failureRateFloor := time.Duration(0)
 	if confidence > 0 && failureRate > breakerChronicFailureFloorThreshold {
 		normalized := (failureRate - breakerChronicFailureFloorThreshold) / (1.0 - breakerChronicFailureFloorThreshold)
-		floor += time.Duration(
+		failureRateFloor = time.Duration(
 			math.Pow(normalized, breakerChronicFailureFloorExponent) *
 				breakerChronicFailureFloorWeight *
 				confidence * float64(time.Minute),
 		)
+		floor += failureRateFloor
 	}
 
+	streakFloor := time.Duration(0)
 	if channel.BreakerFailStreak > breakerChronicStreakFloorStart {
-		floor += time.Duration(
+		streakFloor = time.Duration(
 			math.Pow(
 				float64(minInt(channel.BreakerFailStreak-breakerChronicStreakFloorStart, breakerFailStreakCooldownCap)),
 				breakerChronicStreakFloorExponent,
 			) * breakerChronicStreakFloorWeight * float64(time.Minute),
 		)
+		floor += streakFloor
 	}
 
 	if floor > breakerMaxCooldown {
-		return breakerMaxCooldown
+		floor = breakerMaxCooldown
 	}
-	return floor
+	return floor, breakerChronicCooldownFloorBreakdown{
+		ShortTermPenaltyFactor: shortTermPenaltyFactor,
+		HistoryPenaltyFactor:   historyPenaltyFactor,
+		TripFloor:              tripFloor,
+		FailureRateFloor:       failureRateFloor,
+		StreakFloor:            streakFloor,
+		FailureRate:            failureRate,
+		Confidence:             confidence,
+		Floor:                  floor,
+	}
 }
 
 // --- Pressure system helpers (unchanged) ---

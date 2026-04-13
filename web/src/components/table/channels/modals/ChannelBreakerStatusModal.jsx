@@ -27,6 +27,7 @@ const ChannelBreakerStatusModal = ({
     visible,
     onCancel,
     channel,
+    loading,
     onReset,
     resetLoading,
     t,
@@ -48,6 +49,7 @@ const ChannelBreakerStatusModal = ({
             }
             visible={visible}
             onCancel={onCancel}
+            bodyStyle={{ maxHeight: '75vh', overflowY: 'auto' }}
             footer={
                 <div className='flex justify-end gap-2'>
                     <Button onClick={onCancel}>{t('关闭')}</Button>
@@ -71,16 +73,21 @@ const ChannelBreakerStatusModal = ({
                     </Button>
                 </div>
             }
-            width={480}
+            width={860}
         >
             {breakerState ? (
                 <ChannelBreakerStatusCard
                     breakerState={breakerState}
+                    traces={channel?.trace_page?.items || []}
+                    traceTotal={channel?.trace_page?.total || 0}
+                    traceLoading={loading}
                     t={t}
                     visible={visible}
                 />
             ) : (
-                <Text type='tertiary'>{t('暂无熔断状态数据')}</Text>
+                <Text type='tertiary'>
+                    {loading ? t('加载中...') : t('暂无熔断状态数据')}
+                </Text>
             )}
         </Modal>
     );
