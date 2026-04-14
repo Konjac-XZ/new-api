@@ -53,7 +53,7 @@ const CardPro = ({
   searchArea,
   paginationArea, // 新增分页区域
   // 卡片属性
-  shadows = '',
+  shadows = undefined,
   bordered = true,
   // 自定义样式
   style,
@@ -87,7 +87,7 @@ const CardPro = ({
 
         {/* 第一个分隔线 - 在描述信息或统计信息后面 */}
         {((type === 'type1' || type === 'type3') && descriptionArea) ||
-        (type === 'type2' && statsArea) ? (
+          (type === 'type2' && statsArea) ? (
           <Divider margin='12px' />
         ) : null}
 
