@@ -70,7 +70,6 @@ import {
 import {
   renderModelTag,
   stringToColor,
-  timestamp2string,
   escapeHtml,
 } from '../../helpers';
 import { API } from '../../helpers/api';
@@ -122,6 +121,22 @@ const getTimestampMs = (msValue, fallbackValue) => {
 
   const parsed = new Date(fallbackValue).getTime();
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const padTo2Digits = (value) => String(value).padStart(2, '0');
+
+const formatMonthDayTime = (msValue, fallbackValue) => {
+  const timestampMs = getTimestampMs(msValue, fallbackValue);
+  if (!timestampMs) {
+    return '-';
+  }
+
+  const date = new Date(timestampMs);
+  if (!Number.isFinite(date.getTime())) {
+    return '-';
+  }
+
+  return `${padTo2Digits(date.getMonth() + 1)}-${padTo2Digits(date.getDate())} ${padTo2Digits(date.getHours())}:${padTo2Digits(date.getMinutes())}:${padTo2Digits(date.getSeconds())}`;
 };
 
 const formatLiveSeconds = (seconds) => {
@@ -273,9 +288,9 @@ const getStatusLabels = (t) => ({
   processing: t('处理中'),
   waiting_upstream: t('等待响应'),
   streaming: t('流式返回中'),
-  completed: t('已完成'),
+  completed: t('完成'),
   error: t('错误'),
-  abandoned: t('已放弃'),
+  abandoned: t('放弃'),
 });
 
 const getPhaseLabels = (t) => ({
@@ -949,7 +964,7 @@ const RequestDetail = ({
                   color={record.status === 'abandoned' ? 'grey' : (channelPhaseColors[record.current_phase] || 'grey')}
                   size='small'
                 >
-                  {record.status === 'abandoned' ? t('已放弃') : (phaseLabels[record.current_phase] || t('未知状态'))}
+                  {record.status === 'abandoned' ? t('放弃') : (phaseLabels[record.current_phase] || t('未知状态'))}
                 </Tag>
               </MetaPill>
 
@@ -1221,14 +1236,7 @@ const RequestDetail = ({
             </MetaPill>
             <MetaPill icon={<Clock3 size={14} />} label={t('开始时间')}>
               <Text size='small'>
-                {getTimestampMs(record.start_time_ms, record.start_time)
-                  ? timestamp2string(
-                    Math.floor(
-                      getTimestampMs(record.start_time_ms, record.start_time) /
-                      MS_TO_SECONDS,
-                    ),
-                  )
-                  : '-'}
+                {formatMonthDayTime(record.start_time_ms, record.start_time)}
               </Text>
             </MetaPill>
             <MetaPill icon={<Clock3 size={14} />} label={t('耗时')}>
@@ -1451,6 +1459,7 @@ const Monitor = () => {
   const [selectedId, setSelectedId] = useState(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [isCompact, setIsCompact] = useState(false);
   const tableRef = useRef(null);
   const detailScrollContainerRef = useRef(null);
   // Track previous status to detect status changes
@@ -1473,6 +1482,27 @@ const Monitor = () => {
   } = useRequestDetail();
 
   const statusLabels = useMemo(() => getStatusLabels(t), [t]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia('(max-width: 1400px)');
+    const updateCompactMode = (event) => {
+      setIsCompact(event.matches);
+    };
+
+    setIsCompact(mediaQuery.matches);
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', updateCompactMode);
+      return () => mediaQuery.removeEventListener('change', updateCompactMode);
+    }
+
+    mediaQuery.addListener(updateCompactMode);
+    return () => mediaQuery.removeListener(updateCompactMode);
+  }, []);
 
   const summariesWithStatus = useMemo(() => {
     return summaries.map((summary) => {
@@ -1597,19 +1627,16 @@ const Monitor = () => {
       {
         title: t('时间'),
         dataIndex: 'start_time',
-        width: 160,
+        width: isCompact ? 126 : 146,
         render: (time, record) => {
           if (!time) return '-';
-          const seconds = Math.floor(
-            (record?.startTimeMs || 0) / MS_TO_SECONDS,
-          );
-          return timestamp2string(seconds);
+          return formatMonthDayTime(record?.start_time_ms, record?.start_time);
         },
       },
       {
         title: t('状态'),
         dataIndex: 'status',
-        width: 110,
+        width: isCompact ? 86 : 98,
         render: (_, record) => {
           const displayStatus =
             record.displayStatus || deriveDisplayStatus(record);
@@ -1632,7 +1659,7 @@ const Monitor = () => {
       {
         title: t('模型'),
         dataIndex: 'model',
-        width: 180,
+        width: isCompact ? undefined : 180,
         ellipsis: true,
         render: (_, record) =>
           renderModelTag(record.model || t('未知模型'), {
@@ -1642,7 +1669,7 @@ const Monitor = () => {
       {
         title: t('渠道'),
         dataIndex: 'channel_name',
-        width: 160,
+        width: isCompact ? undefined : 160,
         ellipsis: true,
         render: (_, record) => (
           <Tag
@@ -1658,11 +1685,11 @@ const Monitor = () => {
       {
         title: t('耗时'),
         dataIndex: 'duration_ms',
-        width: 90,
+        width: isCompact ? 76 : 90,
         render: (_, record) => <DurationCell record={record} t={t} />,
       },
     ];
-  }, [t, statusLabels]);
+  }, [t, statusLabels, isCompact]);
 
   return (
     <div className='mt-[60px] px-2'>
@@ -1711,9 +1738,9 @@ const Monitor = () => {
             }
             itemKey='processing'
           />
-          <TabPane tab={t('已完成')} itemKey='completed' />
+          <TabPane tab={t('完成')} itemKey='completed' />
           <TabPane tab={t('错误')} itemKey='error' />
-          <TabPane tab={t('已放弃')} itemKey='abandoned' />
+          <TabPane tab={t('放弃')} itemKey='abandoned' />
         </Tabs>
 
         <div style={{ flex: 1, minHeight: 0 }}>
