@@ -370,6 +370,11 @@ const ChannelBreakerStatusCard = ({
   const hpValue = breakerState?.hp != null ? Number(breakerState.hp) : hpMax;
   const hpPercent = hpMax > 0 ? Math.max(0, Math.min(100, (hpValue / hpMax) * 100)) : 100;
   const hpStroke = hpPercent > 60 ? '#22c55e' : hpPercent > 30 ? '#f59e0b' : '#ef4444';
+  const hpRatio = Number(breakerState?.hp_ratio ?? (hpMax > 0 ? hpValue / hpMax : 1));
+  const ratePenaltyFactor = Number(breakerState?.rate_penalty_factor ?? 1);
+  const confidenceMultiplier = Number(breakerState?.confidence_multiplier ?? 1);
+  const baseWeight = Number(breakerState?.base_weight ?? 0);
+  const effectiveWeight = Number(breakerState?.effective_weight ?? baseWeight);
   const isDynamicEnabled = phase !== 'disabled';
 
   return (
@@ -490,6 +495,33 @@ const ChannelBreakerStatusCard = ({
             <div style={{ marginTop: 4 }}>
               <Text strong>{(breakerState?.tolerance_coefficient || 1.0).toFixed(1)}</Text>
             </div>
+          </Col>
+        </Row>
+      )}
+
+      {isDynamicEnabled && (
+        <Row gutter={12} style={{ marginTop: 10 }}>
+          <Col span={12}>
+            <Text size='small' type='tertiary'>
+              {t('健康度权重系数')}
+            </Text>
+            <div style={{ marginTop: 4 }}>
+              <Text strong>{confidenceMultiplier.toFixed(3)}</Text>
+            </div>
+            <Text size='small' type='tertiary'>
+              {t('HP 比例')}: {(Math.max(0, Math.min(1, hpRatio)) * 100).toFixed(1)}%
+            </Text>
+          </Col>
+          <Col span={12}>
+            <Text size='small' type='tertiary'>
+              {t('有效权重')}
+            </Text>
+            <div style={{ marginTop: 4 }}>
+              <Text strong>{effectiveWeight}</Text>
+            </div>
+            <Text size='small' type='tertiary'>
+              {t('基础权重')}: {baseWeight} · {t('速率惩罚因子')}: {ratePenaltyFactor.toFixed(3)}
+            </Text>
           </Col>
         </Row>
       )}

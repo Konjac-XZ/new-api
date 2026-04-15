@@ -409,6 +409,11 @@ type ChannelBreakerState struct {
 	ToleranceCoefficient float64 `json:"tolerance_coefficient"`
 	FailureRate          float64 `json:"failure_rate"`
 	TimeoutRate          float64 `json:"timeout_rate"`
+	HPRatio              float64 `json:"hp_ratio"`
+	RatePenaltyFactor    float64 `json:"rate_penalty_factor"`
+	ConfidenceMultiplier float64 `json:"confidence_multiplier"`
+	BaseWeight           int     `json:"base_weight"`
+	EffectiveWeight      int     `json:"effective_weight"`
 }
 
 type BreakerPenaltyTraceDetail struct {
@@ -496,6 +501,13 @@ func buildChannelBreakerState(channel *model.Channel) *ChannelBreakerState {
 	state.ToleranceCoefficient = hpInfo.ToleranceCoefficient
 	state.FailureRate = hpInfo.FailureRate
 	state.TimeoutRate = hpInfo.TimeoutRate
+
+	weightMetrics := channel.GetDynamicWeightMetrics()
+	state.HPRatio = weightMetrics.HPRatio
+	state.RatePenaltyFactor = weightMetrics.RatePenaltyFactor
+	state.ConfidenceMultiplier = weightMetrics.ConfidenceMultiplier
+	state.BaseWeight = channel.GetWeight()
+	state.EffectiveWeight = channel.GetEffectiveRoutingWeight(state.BaseWeight)
 
 	if !state.DynamicEnabled {
 		return state

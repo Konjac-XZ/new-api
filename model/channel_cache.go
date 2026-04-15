@@ -261,7 +261,7 @@ func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[in
 				if exclude != nil && exclude[ch.Id] {
 					continue
 				}
-				w := ch.GetWeight()
+				w := ch.GetEffectiveRoutingWeight(ch.GetWeight())
 				candidates = append(candidates, candidate{ch: ch, weight: w})
 				sumWeight += w
 			}
@@ -289,6 +289,7 @@ func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[in
 					continue
 				}
 				w := ch.GetWeight() / 2
+				w = ch.GetEffectiveRoutingWeight(w)
 				if w < 1 {
 					w = 1
 				}

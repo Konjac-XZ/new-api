@@ -188,6 +188,15 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 			continue
 		}
 
+		channelIDs := make([]int, 0, len(abilities))
+		for _, a := range abilities {
+			channelIDs = append(channelIDs, a.ChannelId)
+		}
+		channelByID, mapErr := getChannelMapByIDs(channelIDs)
+		if mapErr != nil {
+			return nil, mapErr
+		}
+
 		// Filter out excluded channels at this priority
 		totalAtPriority := len(abilities)
 		candidates := make([]candidate, 0, len(abilities))
@@ -197,6 +206,9 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 				continue
 			}
 			w := int(a.Weight)
+			if ch, ok := channelByID[a.ChannelId]; ok {
+				w = ch.GetEffectiveRoutingWeight(w)
+			}
 			candidates = append(candidates, candidate{channelId: a.ChannelId, weight: w})
 			sumWeight += w
 		}
@@ -218,11 +230,22 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 				err = nq.Order("weight DESC").Find(&nextAbilities).Error
 			}
 			if err == nil {
+				nextChannelIDs := make([]int, 0, len(nextAbilities))
+				for _, a := range nextAbilities {
+					nextChannelIDs = append(nextChannelIDs, a.ChannelId)
+				}
+				nextChannelByID, nextMapErr := getChannelMapByIDs(nextChannelIDs)
+				if nextMapErr != nil {
+					return nil, nextMapErr
+				}
 				for _, a := range nextAbilities {
 					if exclude != nil && exclude[a.ChannelId] {
 						continue
 					}
 					w := int(a.Weight) / 2
+					if ch, ok := nextChannelByID[a.ChannelId]; ok {
+						w = ch.GetEffectiveRoutingWeight(w)
+					}
 					if w < 1 {
 						w = 1
 					}
@@ -264,6 +287,35 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 
 	// nothing available
 	return nil, nil
+}
+
+func getChannelMapByIDs(channelIDs []int) (map[int]*Channel, error) {
+	channelByID := make(map[int]*Channel, len(channelIDs))
+	if len(channelIDs) == 0 {
+		return channelByID, nil
+	}
+
+	uniqueIDs := make([]int, 0, len(channelIDs))
+	seen := make(map[int]struct{}, len(channelIDs))
+	for _, id := range channelIDs {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		uniqueIDs = append(uniqueIDs, id)
+	}
+
+	channels := make([]*Channel, 0, len(uniqueIDs))
+	if err := DB.Where("id IN ?", uniqueIDs).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, ch := range channels {
+		if ch == nil {
+			continue
+		}
+		channelByID[ch.Id] = ch
+	}
+	return channelByID, nil
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
