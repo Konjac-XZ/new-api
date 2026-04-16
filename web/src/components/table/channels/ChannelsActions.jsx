@@ -60,56 +60,51 @@ const ChannelsActions = ({
   activePage,
   pageSize,
   setActivePage,
-  backgroundRefreshing,
-  lastAutoRefreshAt,
+  autoRefreshEnabled,
+  setAutoRefreshEnabled,
   t,
 }) => {
-  const autoRefreshStatusText = backgroundRefreshing
-    ? t('自动刷新中')
-    : lastAutoRefreshAt
-      ? t('上次自动刷新：${time}').replace(
-        '${time}',
-        new Date(lastAutoRefreshAt).toLocaleTimeString(),
-      )
-      : t('自动刷新间隔：10 秒');
-
   return (
     <div className='flex flex-col gap-2'>
       {/* 第一行：批量操作按钮 + 设置开关 */}
       <div className='flex flex-col md:flex-row justify-between gap-2'>
         {/* 左侧：批量操作按钮 */}
         <div className='flex flex-wrap md:flex-nowrap items-center gap-2 w-full md:w-auto order-2 md:order-1'>
-          <Button
-            size='small'
-            disabled={!enableBatchDelete}
-            type='danger'
-            className='w-full md:w-auto'
-            onClick={() => {
-              Modal.confirm({
-                title: t('确定是否要删除所选通道？'),
-                content: t('此修改将不可逆'),
-                onOk: () => batchDeleteChannels(),
-              });
-            }}
-          >
-            {t('删除所选通道')}
-          </Button>
-
-          <Button
-            size='small'
-            disabled={!enableBatchDelete}
-            type='tertiary'
-            onClick={() => setShowBatchSetTag(true)}
-            className='w-full md:w-auto'
-          >
-            {t('批量设置标签')}
-          </Button>
-
           <Dropdown
             size='small'
             trigger='click'
             render={
               <Dropdown.Menu>
+                <Dropdown.Item>
+                  <Button
+                    size='small'
+                    disabled={!enableBatchDelete}
+                    type='danger'
+                    className='w-full'
+                    onClick={() => {
+                      Modal.confirm({
+                        title: t('确定是否要删除所选通道？'),
+                        content: t('此修改将不可逆'),
+                        onOk: () => batchDeleteChannels(),
+                        size: 'sm',
+                        centered: true,
+                      });
+                    }}
+                  >
+                    {t('删除所选通道')}
+                  </Button>
+                </Dropdown.Item>
+                <Dropdown.Item>
+                  <Button
+                    size='small'
+                    disabled={!enableBatchDelete}
+                    type='tertiary'
+                    className='w-full'
+                    onClick={() => setShowBatchSetTag(true)}
+                  >
+                    {t('批量设置标签')}
+                  </Button>
+                </Dropdown.Item>
                 <Dropdown.Item>
                   <Button
                     size='small'
@@ -278,19 +273,13 @@ const ChannelsActions = ({
           >
             {t('仅动态熔断')}
           </Button>
-          <Typography.Text
-            type='tertiary'
-            className='hidden md:block whitespace-nowrap'
-          >
-            {autoRefreshStatusText}
-          </Typography.Text>
         </div>
 
         {/* 右侧：设置开关区域 */}
         <div className='flex flex-col md:flex-row items-start md:items-center gap-2 w-full md:w-auto order-1 md:order-2'>
           <div className='flex items-center justify-between w-full md:w-auto'>
             <Typography.Text strong className='mr-2'>
-              {t('使用ID排序')}
+              {t('ID 排序')}
             </Typography.Text>
             <Switch
               size='small'
@@ -322,7 +311,7 @@ const ChannelsActions = ({
 
           <div className='flex items-center justify-between w-full md:w-auto'>
             <Typography.Text strong className='mr-2'>
-              {t('开启批量操作')}
+              {t('批量操作')}
             </Typography.Text>
             <Switch
               size='small'
@@ -336,7 +325,7 @@ const ChannelsActions = ({
 
           <div className='flex items-center justify-between w-full md:w-auto'>
             <Typography.Text strong className='mr-2'>
-              {t('标签聚合模式')}
+              {t('标签聚合')}
             </Typography.Text>
             <Switch
               size='small'
@@ -346,6 +335,20 @@ const ChannelsActions = ({
                 setEnableTagMode(v);
                 setActivePage(1);
                 loadChannels(1, pageSize, idSort, v);
+              }}
+            />
+          </div>
+
+          <div className='flex items-center justify-between w-full md:w-auto'>
+            <Typography.Text strong className='mr-2'>
+              {t('自动刷新')}
+            </Typography.Text>
+            <Switch
+              size='small'
+              checked={autoRefreshEnabled}
+              onChange={(v) => {
+                localStorage.setItem('channel-auto-refresh-enabled', v + '');
+                setAutoRefreshEnabled(v);
               }}
             />
           </div>

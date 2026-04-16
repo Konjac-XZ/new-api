@@ -51,6 +51,9 @@ export const useChannelsData = () => {
   const [loading, setLoading] = useState(true);
   const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
   const [lastAutoRefreshAt, setLastAutoRefreshAt] = useState(null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(
+    localStorage.getItem('channel-auto-refresh-enabled') !== 'false',
+  );
   const [activePage, setActivePage] = useState(1);
   const [idSort, setIdSort] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -632,6 +635,10 @@ export const useChannelsData = () => {
   }, [showBreakerStatusModal, currentBreakerStatusChannel?.id]);
 
   useEffect(() => {
+    if (!autoRefreshEnabled) {
+      return;
+    }
+
     const runAutoRefresh = async () => {
       if (typeof document !== 'undefined' && document.hidden) {
         return;
@@ -672,7 +679,7 @@ export const useChannelsData = () => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
-  }, []);
+  }, [autoRefreshEnabled]);
 
   const upstreamUpdates = useChannelUpstreamUpdates({ t, refresh });
 
@@ -1558,6 +1565,7 @@ export const useChannelsData = () => {
     searching,
     backgroundRefreshing,
     lastAutoRefreshAt,
+    autoRefreshEnabled,
     activePage,
     pageSize,
     channelCount,
@@ -1687,6 +1695,7 @@ export const useChannelsData = () => {
     setIdSort,
     setEnableTagMode,
     setEnableBatchDelete,
+    setAutoRefreshEnabled,
     setStatusFilter,
     setDynamicBreakerFilter,
     setCompactMode,
