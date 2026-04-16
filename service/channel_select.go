@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"math/rand"
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
@@ -46,6 +47,92 @@ func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
 }
 
+func selectObservedChannel(channels []*model.Channel, exclude map[int]bool) *model.Channel {
+	type candidate struct {
+		channel *model.Channel
+		weight  int
+	}
+
+	now := common.GetTimestamp()
+	hasTopPriority := false
+	var topPriority int64
+
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if exclude != nil && exclude[channel.Id] {
+			continue
+		}
+		if !hasTopPriority || channel.GetPriority() > topPriority {
+			topPriority = channel.GetPriority()
+			hasTopPriority = true
+		}
+	}
+
+	if !hasTopPriority {
+		return nil
+	}
+
+	var topCandidates []candidate
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if exclude != nil && exclude[channel.Id] {
+			continue
+		}
+		if channel.GetPriority() != topPriority {
+			continue
+		}
+		if !IsChannelObserved(channel, now) {
+			continue
+		}
+		weight := channel.GetEffectiveRoutingWeight(channel.GetWeight())
+		if weight < 1 {
+			weight = 1
+		}
+		topCandidates = append(topCandidates, candidate{channel: channel, weight: weight})
+	}
+
+	if len(topCandidates) == 0 {
+		return nil
+	}
+
+	if len(topCandidates) == 1 {
+		return topCandidates[0].channel
+	}
+
+	totalWeight := 0
+	for _, c := range topCandidates {
+		totalWeight += c.weight
+	}
+	if totalWeight <= 0 {
+		return topCandidates[rand.Intn(len(topCandidates))].channel
+	}
+
+	randomWeight := rand.Intn(totalWeight)
+	for _, c := range topCandidates {
+		randomWeight -= c.weight
+		if randomWeight < 0 {
+			return c.channel
+		}
+	}
+
+	return topCandidates[len(topCandidates)-1].channel
+}
+
+func getFirstAttemptObservedChannel(group string, modelName string, exclude map[int]bool) (*model.Channel, error) {
+	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName)
+	if err != nil {
+		return nil, err
+	}
+	if len(channels) == 0 {
+		return nil, nil
+	}
+	return selectObservedChannel(channels, exclude), nil
+}
+
 // CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
 // 尝试获取一个满足要求的随机渠道。
 //
@@ -88,6 +175,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	userGroup := common.GetContextKeyString(param.Ctx, constant.ContextKeyUserGroup)
 
 	used := param.Ctx.GetStringSlice("use_channel")
+	isFirstAttemptOfRequest := len(used) == 0
 	exclude := make(map[int]bool)
 	for _, s := range used {
 		if s == "" {
@@ -152,6 +240,21 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 					return nil, selectGroup, err
 				}
 			}
+			if isFirstAttemptOfRequest {
+				channel, err = getFirstAttemptObservedChannel(autoGroup, param.ModelName, exclude)
+				if err != nil {
+					return nil, selectGroup, err
+				}
+				if channel != nil {
+					common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroup, autoGroup)
+					selectGroup = autoGroup
+					logger.LogDebug(param.Ctx, "Auto selected observation-period channel in group: %s", autoGroup)
+					if crossGroupRetry {
+						common.SetContextKey(param.Ctx, constant.ContextKeyAutoGroupIndex, i)
+					}
+					break
+				}
+			}
 			// Calculate priorityRetry for current group
 			// 计算当前分组的 priorityRetry
 			priorityRetry := param.GetRetry()
@@ -212,10 +315,20 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				return nil, param.TokenGroup, err
 			}
 		}
+		if isFirstAttemptOfRequest {
+			channel, err = getFirstAttemptObservedChannel(param.TokenGroup, param.ModelName, exclude)
+			if err != nil {
+				return nil, param.TokenGroup, err
+			}
+		}
 		if len(exclude) > 0 {
-			channel, err = model.GetRandomSatisfiedChannelExclude(param.TokenGroup, param.ModelName, exclude)
+			if channel == nil {
+				channel, err = model.GetRandomSatisfiedChannelExclude(param.TokenGroup, param.ModelName, exclude)
+			}
 		} else {
-			channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry())
+			if channel == nil {
+				channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry())
+			}
 		}
 		if err != nil {
 			return nil, param.TokenGroup, err

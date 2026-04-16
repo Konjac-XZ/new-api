@@ -1175,12 +1175,18 @@ func testScheduledChannel(channel *model.Channel) {
 
 	// common.SysLog(fmt.Sprintf("scheduled testing channel #%d (%s)", channel.Id, channel.Name))
 
-	// 如果动态熔断已启用且渠道当前处于冷却期，跳过本次测试以节省 token。
-	// 仅当渠道进入"待探测"阶段（awaiting_probe）时才允许执行探测请求。
+	// 如果动态熔断已启用且渠道当前处于冷却期或观察期，跳过本次测试。
+	// 观察期（probation/observation）不再执行独立定时探测，仅等待真实请求流量恢复。
 	if latest, err := model.GetChannelById(channel.Id, true); err == nil && latest != nil {
-		if latest.IsBreakerCoolingAt(time.Now().Unix()) {
+		now := time.Now().Unix()
+		if latest.IsBreakerCoolingAt(now) {
 			resultTag = "skipped"
 			resultDetail = "channel_in_breaker_cooldown"
+			return
+		}
+		if latest.IsBreakerProbationAt(now) {
+			resultTag = "skipped"
+			resultDetail = "channel_in_breaker_observation"
 			return
 		}
 		channel = latest
