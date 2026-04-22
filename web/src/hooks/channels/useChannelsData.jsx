@@ -41,6 +41,7 @@ import { Modal, Button } from '@douyinfe/semi-ui';
 import { openCodexUsageModal } from '../../components/table/channels/modals/CodexUsageModal';
 
 const CHANNELS_AUTO_REFRESH_INTERVAL_MS = 10000;
+const CHANNELS_DASHBOARD_AUTO_SWITCH_WIDTH = 960;
 
 export const useChannelsData = () => {
   const { t } = useTranslation();
@@ -76,7 +77,12 @@ export const useChannelsData = () => {
   const [showBatchSetTag, setShowBatchSetTag] = useState(false);
   const [batchSetTagValue, setBatchSetTagValue] = useState('');
   const [compactMode, setCompactMode] = useTableCompactMode('channels');
-  const [isDashboardMode, setIsDashboardMode] = useState(true);
+  const [isDashboardMode, setIsDashboardMode] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.innerWidth < CHANNELS_DASHBOARD_AUTO_SWITCH_WIDTH;
+  });
 
   // Column visibility states
   const [visibleColumns, setVisibleColumns] = useState({});
