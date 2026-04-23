@@ -214,6 +214,7 @@ func RecordScheduledTestLog(params ScheduledTestLogParams) {
 	}
 	if err := LOG_DB.Create(log).Error; err != nil {
 		common.SysLog("failed to record scheduled test log: " + err.Error())
+	}
 }
 
 // RecordLogWithAdminInfo 记录操作日志，并将管理员相关信息存入 Other.admin_info，
