@@ -1659,7 +1659,7 @@ const Monitor = () => {
       {
         title: t('模型'),
         dataIndex: 'model',
-        width: isCompact ? undefined : 180,
+        width: isCompact ? undefined : 280,
         ellipsis: true,
         render: (_, record) =>
           renderModelTag(record.model || t('未知模型'), {
@@ -1669,7 +1669,7 @@ const Monitor = () => {
       {
         title: t('渠道'),
         dataIndex: 'channel_name',
-        width: isCompact ? undefined : 160,
+        width: isCompact ? 150 : 200,
         ellipsis: true,
         render: (_, record) => (
           <Tag
