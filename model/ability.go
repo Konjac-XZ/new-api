@@ -147,10 +147,6 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 // excluding any channels listed in `exclude`. It retries within the same
 // priority (weighted) until all channels of that priority are exhausted,
 // then falls back to the next lower priority.
-//
-// Soft priority fallback: when more than half the channels at a priority tier
-// are excluded, channels from the next lower priority are blended in with
-// halved effective weights.
 func GetChannelExclude(group string, model string, exclude map[int]bool) (*Channel, error) {
 	// Collect distinct priorities in descending order
 	var priorities []int
@@ -172,7 +168,7 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 	}
 
 	// Iterate priorities from highest to lowest
-	for idx, p := range priorities {
+	for _, p := range priorities {
 		var abilities []Ability
 		q := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, p)
 		if common.UsingSQLite || common.UsingPostgreSQL {
@@ -198,7 +194,6 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 		}
 
 		// Filter out excluded channels at this priority
-		totalAtPriority := len(abilities)
 		candidates := make([]candidate, 0, len(abilities))
 		sumWeight := 0
 		for _, a := range abilities {
@@ -215,44 +210,6 @@ func GetChannelExclude(group string, model string, exclude map[int]bool) (*Chann
 		if len(candidates) == 0 {
 			// all channels at this priority have been used
 			continue
-		}
-
-		// Soft priority fallback: when more than half the tier is excluded
-		// and a lower priority tier exists, blend in next-tier channels
-		// with halved weights.
-		if len(candidates)*2 < totalAtPriority && idx+1 < len(priorities) {
-			nextP := priorities[idx+1]
-			var nextAbilities []Ability
-			nq := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, nextP)
-			if common.UsingSQLite || common.UsingPostgreSQL {
-				err = nq.Order("weight DESC").Find(&nextAbilities).Error
-			} else {
-				err = nq.Order("weight DESC").Find(&nextAbilities).Error
-			}
-			if err == nil {
-				nextChannelIDs := make([]int, 0, len(nextAbilities))
-				for _, a := range nextAbilities {
-					nextChannelIDs = append(nextChannelIDs, a.ChannelId)
-				}
-				nextChannelByID, nextMapErr := getChannelMapByIDs(nextChannelIDs)
-				if nextMapErr != nil {
-					return nil, nextMapErr
-				}
-				for _, a := range nextAbilities {
-					if exclude != nil && exclude[a.ChannelId] {
-						continue
-					}
-					w := int(a.Weight) / 2
-					if ch, ok := nextChannelByID[a.ChannelId]; ok {
-						w = ch.GetEffectiveRoutingWeight(w)
-					}
-					if w < 1 {
-						w = 1
-					}
-					candidates = append(candidates, candidate{channelId: a.ChannelId, weight: w})
-					sumWeight += w
-				}
-			}
 		}
 
 		// Smoothing same as memory cache path

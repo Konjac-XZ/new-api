@@ -197,12 +197,6 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 // available priority and excluding any channel IDs present in `exclude`.
 // It will keep retrying within the same priority (weighted) until all channels
 // at that priority are exhausted, then fall back to the next lower priority.
-//
-// Soft priority fallback: when more than half the channels at a priority tier
-// are excluded, channels from the next lower priority are blended in with
-// halved effective weights. This prevents funnelling all traffic through a
-// single surviving high-priority channel when healthier alternatives exist
-// at a lower priority.
 func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[int]bool) (*Channel, error) {
 	// if memory cache is disabled, defer to DB-based implementation
 	if !common.MemoryCacheEnabled {
@@ -246,9 +240,8 @@ func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[in
 	}
 
 	// Iterate priorities from highest to lowest
-	for idx, p := range sortedPriorities {
+	for _, p := range sortedPriorities {
 		targetPriority := int64(p)
-		totalAtPriority := 0
 		var candidates []candidate
 		sumWeight := 0
 		for _, channelId := range channels {
@@ -257,7 +250,6 @@ func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[in
 				return nil, fmt.Errorf("数据库一致性错误，渠道# %d 不存在，请联系管理员修复", channelId)
 			}
 			if ch.GetPriority() == targetPriority {
-				totalAtPriority++
 				if exclude != nil && exclude[ch.Id] {
 					continue
 				}
@@ -270,32 +262,6 @@ func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[in
 		if len(candidates) == 0 {
 			// nothing left at this priority, go next lower
 			continue
-		}
-
-		// Soft priority fallback: when more than half the tier is excluded
-		// and a lower priority tier exists, blend in next-tier channels
-		// with halved weights.
-		if len(candidates)*2 < totalAtPriority && idx+1 < len(sortedPriorities) {
-			nextPriority := int64(sortedPriorities[idx+1])
-			for _, channelId := range channels {
-				ch, ok := channelsIDM[channelId]
-				if !ok {
-					continue
-				}
-				if ch.GetPriority() != nextPriority {
-					continue
-				}
-				if exclude != nil && exclude[ch.Id] {
-					continue
-				}
-				w := ch.GetWeight() / 2
-				w = ch.GetEffectiveRoutingWeight(w)
-				if w < 1 {
-					w = 1
-				}
-				candidates = append(candidates, candidate{ch: ch, weight: w})
-				sumWeight += w
-			}
 		}
 
 		// smoothing factor and adjustment

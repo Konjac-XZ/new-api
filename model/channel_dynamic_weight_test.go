@@ -16,12 +16,12 @@ func newChannelWithDynamicWeightForTest(dynamicEnabled bool) *Channel {
 	settingBytes, _ := common.Marshal(dto.ChannelSettings{DynamicCircuitBreaker: dynamicEnabled})
 	setting := string(settingBytes)
 	return &Channel{
-		AutoBan:  &autoBan,
-		Setting:  &setting,
-		Weight:   &weight,
-		Group:    "default",
-		Models:   "gpt-4o-mini",
-		Status:   common.ChannelStatusEnabled,
+		AutoBan: &autoBan,
+		Setting: &setting,
+		Weight:  &weight,
+		Group:   "default",
+		Models:  "gpt-4o-mini",
+		Status:  common.ChannelStatusEnabled,
 	}
 }
 
@@ -82,5 +82,69 @@ func TestDynamicWeightMetricsFloorAndEffectiveWeight(t *testing.T) {
 	}
 	if got := ch.GetEffectiveRoutingWeight(0); got != 0 {
 		t.Fatalf("expected zero base weight to remain zero, got %d", got)
+	}
+}
+
+func TestGetRandomSatisfiedChannelExcludeKeepsStrictPriorityWhenTierDegraded(t *testing.T) {
+	const (
+		group = "strict-priority-group"
+		model = "strict-priority-model"
+	)
+
+	oldMemoryCacheEnabled := common.MemoryCacheEnabled
+	oldGroup2Model2Channels := group2model2channels
+	oldChannelsIDM := channelsIDM
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = oldMemoryCacheEnabled
+		group2model2channels = oldGroup2Model2Channels
+		channelsIDM = oldChannelsIDM
+	})
+
+	common.MemoryCacheEnabled = true
+	highPriority := int64(100)
+	lowPriority := int64(10)
+	weight := uint(100)
+
+	channelsIDM = map[int]*Channel{}
+	group2model2channels = map[string]map[string][]int{
+		group: {
+			model: {},
+		},
+	}
+
+	for id := 1; id <= 4; id++ {
+		channelsIDM[id] = &Channel{
+			Id:       id,
+			Priority: &highPriority,
+			Weight:   &weight,
+		}
+		group2model2channels[group][model] = append(group2model2channels[group][model], id)
+	}
+	for id := 101; id <= 110; id++ {
+		channelsIDM[id] = &Channel{
+			Id:       id,
+			Priority: &lowPriority,
+			Weight:   &weight,
+		}
+		group2model2channels[group][model] = append(group2model2channels[group][model], id)
+	}
+
+	exclude := map[int]bool{
+		1: true,
+		2: true,
+		3: true,
+	}
+
+	for i := 0; i < 20; i++ {
+		selected, err := GetRandomSatisfiedChannelExclude(group, model, exclude)
+		if err != nil {
+			t.Fatalf("select channel failed: %v", err)
+		}
+		if selected == nil {
+			t.Fatal("expected a selected channel")
+		}
+		if selected.Id != 4 {
+			t.Fatalf("expected remaining high-priority channel id=4, got id=%d", selected.Id)
+		}
 	}
 }
