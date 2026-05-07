@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-table'
 import { Database } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import {
   Empty,
   EmptyDescription,
@@ -21,6 +22,7 @@ interface MobileCardListProps<TData> {
   emptyTitle?: string
   emptyDescription?: string
   getRowKey?: (row: Row<TData>) => string | number
+  getRowClassName?: (row: Row<TData>) => string | undefined
 }
 
 interface MobileColumnMeta {
@@ -60,7 +62,7 @@ function ListSkeleton() {
             <Skeleton className='h-4 w-32' />
             <Skeleton className='h-5 w-16 rounded-full' />
           </div>
-          <div className='mt-1.5 flex items-start gap-4'>
+          <div className='mt-1.5 grid grid-cols-2 gap-2'>
             <div className='flex-1'>
               <Skeleton className='mb-1 h-2 w-8' />
               <Skeleton className='h-4 w-full' />
@@ -134,9 +136,9 @@ function CompactRow<TData>({ row }: { row: Row<TData> }) {
         )}
       </div>
 
-      {/* Row 2: Key fields side by side */}
+      {/* Row 2: Key fields wrap into compact columns instead of squeezing */}
       {fieldCells.length > 0 && (
-        <div className='mt-1.5 flex items-start gap-4'>
+        <div className='mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5'>
           {fieldCells.map((cell) => {
             const label = getCellLabel(cell)
             return (
@@ -238,6 +240,7 @@ export function MobileCardList<TData>(props: MobileCardListProps<TData>) {
     emptyTitle,
     emptyDescription,
     getRowKey,
+    getRowClassName,
   } = props
   const { t } = useTranslation()
 
@@ -257,7 +260,7 @@ export function MobileCardList<TData>(props: MobileCardListProps<TData>) {
 
   if (!rows || rows.length === 0) {
     return (
-      <div className='rounded-lg border p-8'>
+      <div className='rounded-lg border p-6'>
         <Empty className='border-none p-0'>
           <EmptyHeader>
             <EmptyMedia variant='icon'>
@@ -278,7 +281,10 @@ export function MobileCardList<TData>(props: MobileCardListProps<TData>) {
       {rows.map((row) => {
         const key = getRowKey ? getRowKey(row) : row.id
         return (
-          <div key={key} className='bg-card px-3 py-2.5'>
+          <div
+            key={key}
+            className={cn('bg-card px-3 py-2.5', getRowClassName?.(row))}
+          >
             <RowComponent row={row} />
           </div>
         )

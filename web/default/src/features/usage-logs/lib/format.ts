@@ -1,11 +1,14 @@
 import type { StatusBadgeProps } from '@/components/status-badge'
 import {
   BILLING_PRICING_VARS,
+  normalizeTierLabel,
   parseTiersFromExpr,
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
+
+export { normalizeTierLabel }
 
 const PARAM_OVERRIDE_ACTION_MAP: Record<string, string> = {
   set: 'Set',
@@ -87,10 +90,45 @@ export function parseLogOther(other: string): LogOtherData | null {
 /**
  * Get time color based on duration (in seconds)
  */
-export function getTimeColor(seconds: number): 'success' | 'info' | 'warning' {
-  if (seconds < 3) return 'success'
-  if (seconds < 10) return 'info'
-  return 'warning'
+export function getTimeColor(
+  seconds: number
+): 'success' | 'warning' | 'danger' {
+  if (seconds < 10) return 'success'
+  if (seconds < 30) return 'warning'
+  return 'danger'
+}
+
+/**
+ * Get first-response-token color based on latency (in seconds)
+ */
+export function getFirstResponseTimeColor(
+  seconds: number
+): 'success' | 'warning' | 'danger' {
+  if (seconds < 5) return 'success'
+  if (seconds < 10) return 'warning'
+  return 'danger'
+}
+
+/**
+ * Get throughput color based on generated tokens per second
+ */
+export function getThroughputColor(
+  tokensPerSecond: number
+): 'success' | 'warning' | 'danger' {
+  if (tokensPerSecond >= 30) return 'success'
+  if (tokensPerSecond >= 15) return 'warning'
+  return 'danger'
+}
+
+/**
+ * Get response color using throughput only when enough output tokens exist.
+ */
+export function getResponseTimeColor(
+  seconds: number,
+  completionTokens: number
+): 'success' | 'warning' | 'danger' {
+  if (completionTokens < 100 || seconds <= 0) return getTimeColor(seconds)
+  return getThroughputColor(completionTokens / seconds)
 }
 
 /**
@@ -122,7 +160,25 @@ export function formatModelName(log: UsageLog): {
 export function decodeBillingExprB64(exprB64: string | undefined): string {
   if (!exprB64) return ''
   try {
-    return atob(exprB64)
+    const binaryString =
+      typeof window !== 'undefined'
+        ? window.atob(exprB64)
+        : Buffer.from(exprB64, 'base64').toString('binary')
+    const bytes = new Uint8Array(binaryString.length)
+
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i)
+    }
+
+    if (typeof TextDecoder !== 'undefined') {
+      return new TextDecoder().decode(bytes)
+    }
+
+    return decodeURIComponent(
+      Array.prototype.map
+        .call(bytes, (byte: number) => '%' + byte.toString(16).padStart(2, '0'))
+        .join('')
+    )
   } catch {
     return ''
   }
@@ -130,19 +186,21 @@ export function decodeBillingExprB64(exprB64: string | undefined): string {
 
 /**
  * Resolve which parsed tier corresponds to the matched_tier label in a log
- * entry. Falls back to the first tier when the label is missing or unknown,
- * which mirrors the behaviour of the classic frontend renderer.
+ * entry. Missing or unknown labels do not fall back to another tier because
+ * that would display guessed unit prices.
  */
 export function resolveMatchedTier(
   tiers: ParsedTier[],
   matchedLabel: string | undefined
 ): ParsedTier | null {
   if (tiers.length === 0) return null
-  if (matchedLabel) {
-    const found = tiers.find((tier) => tier.label === matchedLabel)
-    if (found) return found
-  }
-  return tiers[0]
+  if (!matchedLabel) return null
+  const found = tiers.find((tier) => {
+    const l1 = normalizeTierLabel(tier.label)
+    const l2 = normalizeTierLabel(matchedLabel)
+    return l1 === l2 && l1 !== ''
+  })
+  return found || null
 }
 
 /**

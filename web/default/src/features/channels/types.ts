@@ -78,6 +78,15 @@ export interface ChannelOtherSettings {
   allow_service_tier?: boolean
   disable_store?: boolean
   allow_safety_identifier?: boolean
+  allow_include_obfuscation?: boolean
+  allow_inference_geo?: boolean
+  allow_speed?: boolean
+  claude_beta_query?: boolean
+  upstream_model_update_check_enabled?: boolean
+  upstream_model_update_auto_sync_enabled?: boolean
+  upstream_model_update_ignored_models?: string[]
+  upstream_model_update_last_check_time?: number
+  upstream_model_update_last_detected_models?: string[]
 }
 
 // ============================================================================
@@ -185,6 +194,16 @@ export interface MultiKeyStatusResponse {
 // API Request Parameters
 // ============================================================================
 
+export type ChannelSortBy =
+  | 'id'
+  | 'name'
+  | 'priority'
+  | 'balance'
+  | 'response_time'
+  | 'test_time'
+
+export type ChannelSortOrder = 'asc' | 'desc'
+
 export interface GetChannelsParams {
   p?: number
   page_size?: number
@@ -193,6 +212,8 @@ export interface GetChannelsParams {
   group?: string
   id_sort?: boolean
   tag_mode?: boolean
+  sort_by?: ChannelSortBy
+  sort_order?: ChannelSortOrder
 }
 
 export interface SearchChannelsParams {
@@ -203,6 +224,8 @@ export interface SearchChannelsParams {
   type?: number
   id_sort?: boolean
   tag_mode?: boolean
+  sort_by?: ChannelSortBy
+  sort_order?: ChannelSortOrder
   p?: number
   page_size?: number
 }

@@ -1,5 +1,5 @@
-import { getChartColor } from '@/lib/colors'
-import { formatQuotaWithCurrency, getCurrencyDisplay } from '@/lib/currency'
+import { dataScheme as vchartDefaultDataScheme } from '@visactor/vchart/esm/theme/color-scheme/builtin/default'
+import { getCurrencyDisplay } from '@/lib/currency'
 import { formatChartTime, type TimeGranularity } from '@/lib/time'
 import { MAX_CHART_TREND_POINTS } from '@/features/dashboard/constants'
 import type {
@@ -9,6 +9,69 @@ import type {
 } from '@/features/dashboard/types'
 
 type TFunction = (key: string) => string
+type TooltipLineItem = {
+  key: string
+  value: string | number
+  datum?: Record<string, unknown>
+  hasShape?: boolean
+  shapeType?: string
+  shapeFill?: string
+  shapeStroke?: string
+  shapeSize?: number
+}
+
+const THEME_CHART_COLOR_VARIABLES = [
+  '--chart-1',
+  '--chart-2',
+  '--chart-3',
+  '--chart-4',
+  '--chart-5',
+] as const
+
+function getThemeChartColors(themeKey?: string): string[] {
+  if (typeof document === 'undefined') return []
+  void themeKey
+
+  const bodyStyle = window.getComputedStyle(document.body)
+  const rootStyle = window.getComputedStyle(document.documentElement)
+
+  return THEME_CHART_COLOR_VARIABLES.map((name) => {
+    return (
+      bodyStyle.getPropertyValue(name) || rootStyle.getPropertyValue(name)
+    ).trim()
+  }).filter(Boolean)
+}
+
+function getVChartDefaultColors(domainLength: number, themeKey?: string) {
+  const themeColors = getThemeChartColors(themeKey)
+  if (themeColors.length > 0) {
+    return Array.from(
+      { length: Math.max(domainLength, themeColors.length) },
+      (_, index) => themeColors[index % themeColors.length]
+    )
+  }
+
+  const scheme =
+    vchartDefaultDataScheme.find(
+      (item) => !item.maxDomainLength || domainLength <= item.maxDomainLength
+    ) ?? vchartDefaultDataScheme[vchartDefaultDataScheme.length - 1]
+
+  return scheme.scheme
+}
+
+function renderQuotaCompat(rawQuota: number, digits = 4): string {
+  const { config, meta } = getCurrencyDisplay()
+  if (meta.kind === 'tokens') return rawQuota.toLocaleString()
+  const usd = rawQuota / config.quotaPerUnit
+  const rate = 'exchangeRate' in meta ? meta.exchangeRate : 1
+  const symbol = 'symbol' in meta ? meta.symbol : '$'
+  const value = usd * rate
+  const fixed = value.toFixed(digits)
+  if (parseFloat(fixed) === 0 && rawQuota > 0 && value > 0) {
+    return symbol + Math.pow(10, -digits).toFixed(digits)
+  }
+  return symbol + fixed
+}
 
 /**
  * Process and aggregate chart data
@@ -16,12 +79,77 @@ type TFunction = (key: string) => string
 export function processChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
-  t?: TFunction
+  t?: TFunction,
+  themeKey?: string
 ): ProcessedChartData {
   const tt: TFunction = t ?? ((x) => x)
+  const otherLabel = tt('Other')
 
   const formatInt = (value: number) =>
     Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value)
+  const formatQuotaValue = (value: number) => renderQuotaCompat(value, 4)
+  const formatQuotaTotal = (value: number) => renderQuotaCompat(value, 2)
+
+  const MAX_TOOLTIP_MODELS = 15
+  const isOtherTooltipKey = (key: string) =>
+    key === 'Other' || key === otherLabel
+
+  const makeTooltipDimensionUpdateContent = (options?: {
+    collapseOverflow?: boolean
+  }) => {
+    const collapseOverflow = options?.collapseOverflow ?? true
+
+    return (array: TooltipLineItem[]) => {
+      const modelItems = array.filter((item) => !isOtherTooltipKey(item.key))
+      const otherItems = array.filter((item) => isOtherTooltipKey(item.key))
+      modelItems.sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0))
+      array = [...modelItems, ...otherItems]
+
+      let sum = 0
+      for (let i = 0; i < array.length; i++) {
+        const v = Number(array[i].value) || 0
+        if (
+          array[i].datum &&
+          (array[i].datum as Record<string, unknown>)?.TimeSum
+        ) {
+          sum =
+            Number((array[i].datum as Record<string, unknown>)?.TimeSum) || sum
+        }
+        array[i].value = formatQuotaValue(v)
+      }
+
+      if (collapseOverflow && array.length > MAX_TOOLTIP_MODELS) {
+        const visible = modelItems.slice(0, MAX_TOOLTIP_MODELS)
+        const otherSum = [
+          ...modelItems.slice(MAX_TOOLTIP_MODELS),
+          ...otherItems,
+        ].reduce((sum, item) => {
+          const raw = item.datum
+            ? Number((item.datum as Record<string, unknown>)?.rawQuota) || 0
+            : 0
+          return sum + raw
+        }, 0)
+        array = [
+          ...visible,
+          {
+            key: otherLabel,
+            value: formatQuotaValue(otherSum),
+            hasShape: true,
+            shapeType: 'square',
+            shapeFill: otherTooltipColor,
+            shapeStroke: otherTooltipColor,
+            shapeSize: 8,
+          },
+        ]
+      }
+
+      array.unshift({
+        key: tt('Total:'),
+        value: formatQuotaValue(sum),
+      })
+      return array
+    }
+  }
 
   if (!data || data.length === 0) {
     return {
@@ -35,7 +163,7 @@ export function processChartData(
         categoryField: 'type',
         title: {
           visible: true,
-          text: tt('Call Proportion'),
+          text: tt('Call Count Distribution'),
           subtext: tt('No data available'),
         },
         legends: { visible: false },
@@ -54,15 +182,15 @@ export function processChartData(
         seriesField: 'Model',
         stack: true,
         legends: { visible: true, selectMode: 'single' },
-        title: {
-          visible: true,
-          text: tt('Quota Distribution'),
-          subtext: `${tt('Total:')} ${formatQuotaWithCurrency(0, {
-            digitsLarge: 2,
-            digitsSmall: 2,
-            abbreviate: false,
-          })}`,
-        },
+      },
+      spec_area: {
+        type: 'area',
+        data: [{ id: 'areaData', values: [] }],
+        xField: 'Time',
+        yField: 'Usage',
+        seriesField: 'Model',
+        stack: true,
+        legends: { visible: true, selectMode: 'single' },
       },
       spec_model_line: {
         type: 'line',
@@ -74,7 +202,6 @@ export function processChartData(
         title: {
           visible: true,
           text: tt('Call Trend'),
-          subtext: `${tt('Total:')} ${formatInt(0)}`,
         },
       },
       spec_rank_bar: {
@@ -86,10 +213,11 @@ export function processChartData(
         legends: { visible: true, selectMode: 'single' },
         title: {
           visible: true,
-          text: tt('Top Models'),
-          subtext: `${tt('Total:')} ${formatInt(0)}`,
+          text: tt('Call Count Ranking'),
         },
       },
+      totalQuotaDisplay: formatQuotaTotal(0),
+      totalCountDisplay: formatInt(0),
     }
   }
 
@@ -142,6 +270,19 @@ export function processChartData(
   const allModels = Array.from(modelTotalsMap.keys())
   const sortedTimes = Array.from(timeModelMap.keys()).sort()
   const sortedModels = [...allModels].sort()
+  const modelColorDomain = Array.from(new Set([...sortedModels, otherLabel]))
+  const modelColorRange = getVChartDefaultColors(
+    modelColorDomain.length,
+    themeKey
+  )
+  const otherColor = modelColorRange[modelColorDomain.indexOf(otherLabel)]
+  const otherTooltipColor =
+    typeof otherColor === 'string' ? otherColor : '#FF8A00'
+  const modelColor = {
+    type: 'ordinal',
+    domain: modelColorDomain,
+    range: modelColorRange,
+  }
 
   // Pad time points if too few (default 7 points)
   const MAX_TREND_POINTS = MAX_CHART_TREND_POINTS
@@ -165,14 +306,6 @@ export function processChartData(
     return padded
   }
   const chartTimes = fillTimePoints(sortedTimes)
-
-  const modelColorMap = sortedModels.reduce<Record<string, string>>(
-    (acc, model, index) => {
-      acc[model] = getChartColor(index)
-      return acc
-    },
-    {}
-  )
 
   const totalTimes = Array.from(modelTotalsMap.values()).reduce(
     (sum, x) => sum + (Number(x.count) || 0),
@@ -223,14 +356,70 @@ export function processChartData(
   })
   lineValues.sort((a, b) => a.Time.localeCompare(b.Time))
 
-  // Line chart: model call trend
+  // Area chart: top models by quota + "Other" bucket (too many series = unreadable)
+  const MAX_AREA_MODELS = 15
+  const rankedQuotaModels = Array.from(modelTotalsMap.entries())
+    .map(([model, stats]) => ({
+      Model: model,
+      Quota: Number(stats.quota) || 0,
+    }))
+    .sort((a, b) => b.Quota - a.Quota)
+  const topAreaModels = new Set(
+    rankedQuotaModels.slice(0, MAX_AREA_MODELS).map((m) => m.Model)
+  )
+
+  const areaValues: typeof lineValues = []
+  chartTimes.forEach((time) => {
+    const buckets = new Map<string, { rawQuota: number; usage: number }>()
+    const modelMap = timeModelMap.get(time)
+    let timeSum = 0
+    sortedModels.forEach((model) => {
+      const stats = modelMap?.get(model)
+      const rawQuota = Number(stats?.quota) || 0
+      const usd = rawQuota ? rawQuota / quotaPerUnit : 0
+      const usage = usd ? Number(usd.toFixed(4)) : 0
+      timeSum += rawQuota
+      const key = topAreaModels.has(model) ? model : otherLabel
+      const prev = buckets.get(key) || { rawQuota: 0, usage: 0 }
+      buckets.set(key, {
+        rawQuota: prev.rawQuota + rawQuota,
+        usage: Number((prev.usage + usage).toFixed(4)),
+      })
+    })
+    for (const [model, vals] of buckets) {
+      areaValues.push({
+        Time: time,
+        Model: model,
+        rawQuota: vals.rawQuota,
+        Usage: vals.usage,
+        TimeSum: timeSum,
+      })
+    }
+  })
+  areaValues.sort((a, b) => a.Time.localeCompare(b.Time))
+
+  // Line chart: model call trend (top models + "Other" bucket)
+  const MAX_TREND_MODELS = 20
+  const rankedTrendModels = Array.from(modelTotalsMap.entries())
+    .map(([model, stats]) => ({
+      Model: model,
+      Count: Number(stats.count) || 0,
+    }))
+    .sort((a, b) => b.Count - a.Count)
+  const topTrendModels = rankedTrendModels
+    .slice(0, MAX_TREND_MODELS)
+    .map((item) => item.Model)
+  const otherTrendModels = rankedTrendModels
+    .slice(MAX_TREND_MODELS)
+    .map((item) => item.Model)
+
   const modelLineValues: Array<{
     Time: string
     Model: string
     Count: number
   }> = []
   chartTimes.forEach((time) => {
-    const timeData = sortedModels.map((model) => {
+    const timeData = topTrendModels.map((model) => {
       const stats = timeModelMap.get(time)?.get(model)
       return {
         Time: time,
@@ -238,6 +427,17 @@ export function processChartData(
         Count: Number(stats?.count) || 0,
       }
     })
+    if (otherTrendModels.length > 0) {
+      const otherCount = otherTrendModels.reduce((sum, model) => {
+        const stats = timeModelMap.get(time)?.get(model)
+        return sum + (Number(stats?.count) || 0)
+      }, 0)
+      timeData.push({
+        Time: time,
+        Model: otherLabel,
+        Count: otherCount,
+      })
+    }
     modelLineValues.push(...timeData)
   })
   modelLineValues.sort((a, b) => a.Time.localeCompare(b.Time))
@@ -257,7 +457,7 @@ export function processChartData(
     const otherCount = allRankValues
       .slice(MAX_RANK_MODELS)
       .reduce((sum, item) => sum + item.Count, 0)
-    rankValues = [...topModels, { Model: tt('Other'), Count: otherCount }]
+    rankValues = [...topModels, { Model: otherLabel, Count: otherCount }]
   } else {
     rankValues = allRankValues
   }
@@ -280,11 +480,11 @@ export function processChartData(
       },
       title: {
         visible: true,
-        text: tt('Call Proportion'),
-        subtext: `${tt('Total:')} ${formatInt(totalTimes)}`,
+        text: tt('Call Count Distribution'),
       },
       legends: { visible: true, orient: 'left' },
       label: { visible: true },
+      color: modelColor,
       tooltip: {
         mark: {
           content: [
@@ -296,7 +496,6 @@ export function processChartData(
           ],
         },
       },
-      color: { specified: modelColorMap },
       background: { fill: 'transparent' },
       animation: true,
     },
@@ -308,15 +507,7 @@ export function processChartData(
       seriesField: 'Model',
       stack: true,
       legends: { visible: true, selectMode: 'single' },
-      title: {
-        visible: true,
-        text: tt('Quota Distribution'),
-        subtext: `${tt('Total:')} ${formatQuotaWithCurrency(totalQuotaRaw, {
-          digitsLarge: 2,
-          digitsSmall: 2,
-          abbreviate: false,
-        })}`,
-      },
+      color: modelColor,
       bar: {
         state: {
           hover: { stroke: '#000', lineWidth: 1 },
@@ -328,11 +519,7 @@ export function processChartData(
             {
               key: (datum: Record<string, unknown>) => datum?.Model,
               value: (datum: Record<string, unknown>) =>
-                formatQuotaWithCurrency(Number(datum?.rawQuota) || 0, {
-                  digitsLarge: 4,
-                  digitsSmall: 4,
-                  abbreviate: false,
-                }),
+                formatQuotaValue(Number(datum?.rawQuota) || 0),
             },
           ],
         },
@@ -344,62 +531,72 @@ export function processChartData(
                 Number(datum?.rawQuota) || 0,
             },
           ],
-          updateContent: (
-            array: Array<{
-              key: string
-              value: string | number
-              datum?: Record<string, unknown>
-            }>
-          ) => {
-            array.sort(
-              (a, b) => (Number(b.value) || 0) - (Number(a.value) || 0)
-            )
-            let sum = 0
-            for (let i = 0; i < array.length; i++) {
-              if (array[i].key === 'Other') continue
-              const v = Number(array[i].value) || 0
-              if (
-                array[i].datum &&
-                (array[i].datum as Record<string, unknown>)?.TimeSum
-              ) {
-                sum =
-                  Number(
-                    (array[i].datum as Record<string, unknown>)?.TimeSum
-                  ) || sum
-              }
-              array[i].value = formatQuotaWithCurrency(v, {
-                digitsLarge: 4,
-                digitsSmall: 4,
-                abbreviate: false,
-              })
-            }
-            array.unshift({
-              key: tt('Total:'),
-              value: formatQuotaWithCurrency(sum, {
-                digitsLarge: 4,
-                digitsSmall: 4,
-                abbreviate: false,
-              }),
-            })
-            return array
-          },
+          updateContent: makeTooltipDimensionUpdateContent(),
         },
       },
-      color: { specified: modelColorMap },
+      background: { fill: 'transparent' },
+      animation: true,
+    },
+    spec_area: {
+      type: 'area',
+      data: [{ id: 'areaData', values: areaValues }],
+      xField: 'Time',
+      yField: 'Usage',
+      seriesField: 'Model',
+      stack: false,
+      legends: { visible: true, selectMode: 'single' },
+      color: modelColor,
+      tooltip: {
+        mark: {
+          content: [
+            {
+              key: (datum: Record<string, unknown>) => datum?.Model,
+              value: (datum: Record<string, unknown>) =>
+                formatQuotaValue(Number(datum?.rawQuota) || 0),
+            },
+          ],
+        },
+        dimension: {
+          content: [
+            {
+              key: (datum: Record<string, unknown>) => datum?.Model,
+              value: (datum: Record<string, unknown>) =>
+                Number(datum?.rawQuota) || 0,
+            },
+          ],
+          updateContent: makeTooltipDimensionUpdateContent({
+            collapseOverflow: false,
+          }),
+        },
+      },
+      area: {
+        style: {
+          fillOpacity: 0.08,
+          curveType: 'monotone',
+        },
+      },
+      line: {
+        style: {
+          lineWidth: 2,
+          curveType: 'monotone',
+        },
+      },
+      point: { visible: false },
       background: { fill: 'transparent' },
       animation: true,
     },
     spec_model_line: {
-      type: 'line',
+      type: 'area',
       data: [{ id: 'lineData', values: modelLineValues }],
       xField: 'Time',
       yField: 'Count',
       seriesField: 'Model',
+      stack: false,
       legends: { visible: true, selectMode: 'single' },
+      color: modelColor,
       title: {
         visible: true,
         text: tt('Call Trend'),
-        subtext: `${tt('Total:')} ${formatInt(totalTimes)}`,
       },
       tooltip: {
         mark: {
@@ -425,9 +622,17 @@ export function processChartData(
               value: string | number
             }>
           ) => {
-            array.sort(
+            const modelItems = array.filter(
+              (item) => !isOtherTooltipKey(item.key)
+            )
+            const otherItems = array.filter((item) =>
+              isOtherTooltipKey(item.key)
+            )
+            modelItems.sort(
               (a, b) => (Number(b.value) || 0) - (Number(a.value) || 0)
             )
+            array = [...modelItems, ...otherItems]
+
             let sum = 0
             for (let i = 0; i < array.length; i++) {
               const v = Number(array[i].value) || 0
@@ -442,7 +647,18 @@ export function processChartData(
           },
         },
       },
-      color: { specified: modelColorMap },
+      area: {
+        style: {
+          fillOpacity: 0.08,
+          curveType: 'monotone',
+        },
+      },
+      line: {
+        style: {
+          lineWidth: 2,
+          curveType: 'monotone',
+        },
+      },
       point: { visible: false },
       background: { fill: 'transparent' },
       animation: true,
@@ -454,10 +670,10 @@ export function processChartData(
       yField: 'Count',
       seriesField: 'Model',
       legends: { visible: true, selectMode: 'single' },
+      color: modelColor,
       title: {
         visible: true,
-        text: tt('Top Models'),
-        subtext: `${tt('Total:')} ${formatInt(totalTimes)}`,
+        text: tt('Call Count Ranking'),
       },
       bar: {
         state: {
@@ -475,14 +691,15 @@ export function processChartData(
           ],
         },
       },
-      color: { specified: modelColorMap },
       background: { fill: 'transparent' },
       animation: true,
     },
+    totalQuotaDisplay: formatQuotaTotal(totalQuotaRaw),
+    totalCountDisplay: formatInt(totalTimes),
   }
 }
 
-const USER_COLORS = [
+const USER_COLOR_FALLBACKS = [
   '#5B8FF9',
   '#5AD8A6',
   '#F6BD16',
@@ -499,18 +716,22 @@ export function processUserChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  limit = 10
+  limit = 10,
+  themeKey?: string
 ): ProcessedUserChartData {
   const tt: TFunction = t ?? ((x) => x)
   const { config } = getCurrencyDisplay()
   const quotaPerUnit = config.quotaPerUnit
+  const themeUserColors = getThemeChartColors(themeKey)
+  const userColorRange =
+    themeUserColors.length > 0
+      ? Array.from(
+          { length: Math.max(limit, themeUserColors.length) },
+          (_, index) => themeUserColors[index % themeUserColors.length]
+        )
+      : USER_COLOR_FALLBACKS
 
-  const formatVal = (raw: number) =>
-    formatQuotaWithCurrency(raw, {
-      digitsLarge: 2,
-      digitsSmall: 2,
-      abbreviate: false,
-    })
+  const formatVal = (raw: number) => renderQuotaCompat(raw, 2)
 
   const emptyResult: ProcessedUserChartData = {
     spec_user_rank: {
@@ -526,7 +747,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: false },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColorRange },
       background: { fill: 'transparent' },
     },
     spec_user_trend: {
@@ -541,7 +762,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: true, selectMode: 'single' },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColorRange },
       point: { visible: false },
       background: { fill: 'transparent' },
     },
@@ -571,7 +792,7 @@ export function processUserChartData(
 
   const userColorMap = topUsers.reduce<Record<string, string>>(
     (acc, user, i) => {
-      acc[user] = USER_COLORS[i % USER_COLORS.length]
+      acc[user] = userColorRange[i % userColorRange.length]
       return acc
     },
     {}
@@ -647,6 +868,21 @@ export function processUserChartData(
                 formatVal(Number(datum?.rawQuota) || 0),
             },
           ],
+          updateContent: (
+            array: Array<{
+              key: string
+              value: string | number
+              datum?: Record<string, unknown>
+            }>
+          ) => {
+            for (let i = 0; i < array.length; i++) {
+              const rawQuota = array[i].datum?.rawQuota
+              const value =
+                rawQuota === undefined ? array[i].value : Number(rawQuota)
+              array[i].value = formatVal(Number(value) || 0)
+            }
+            return array
+          },
         },
       },
       color: { specified: userColorMap },
@@ -717,8 +953,18 @@ export function processUserChartData(
           },
         },
       },
-      area: { style: { fillOpacity: 0.15 } },
-      line: { style: { lineWidth: 2 } },
+      area: {
+        style: {
+          fillOpacity: 0.15,
+          curveType: 'monotone',
+        },
+      },
+      line: {
+        style: {
+          lineWidth: 2,
+          curveType: 'monotone',
+        },
+      },
       point: { visible: false },
       color: { specified: userColorMap },
       background: { fill: 'transparent' },
