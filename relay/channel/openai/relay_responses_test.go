@@ -67,19 +67,15 @@ func TestOaiResponsesCompactionHandlerNonStreamMonitorBody(t *testing.T) {
 		},
 		Body: io.NopCloser(strings.NewReader(responseBody)),
 	}
-	info := &relaycommon.RelayInfo{
-		MonitorResponseBody: &strings.Builder{},
-	}
-
-	usage, newAPIErr := OaiResponsesCompactionHandler(c, info, resp)
+	usage, newAPIErr := OaiResponsesCompactionHandler(c, resp)
 	if newAPIErr != nil {
 		t.Fatalf("unexpected newAPIErr: %v", newAPIErr)
 	}
 	if usage == nil {
 		t.Fatal("usage is nil")
 	}
-	if got, want := info.MonitorResponseBody.String(), responseBody; got != want {
-		t.Fatalf("monitor response body mismatch, got %q, want %q", got, want)
+	if got, want := recorder.Body.String(), responseBody; got != want {
+		t.Fatalf("downstream response body mismatch, got %q, want %q", got, want)
 	}
 	if got, want := usage.PromptTokens, 5; got != want {
 		t.Fatalf("prompt tokens mismatch, got %d, want %d", got, want)

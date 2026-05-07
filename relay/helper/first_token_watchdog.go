@@ -2,8 +2,8 @@ package helper
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/QuantumNous/new-api/logger"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/channelcache"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 
@@ -242,5 +243,5 @@ func FirstTokenLatencyError(info *relaycommon.RelayInfo) *types.NewAPIError {
 	if limit > 0 {
 		message = fmt.Sprintf("first token latency exceeded (%ds)", limit)
 	}
-	return types.NewErrorWithStatusCode(fmt.Errorf(message), types.ErrorCodeChannelFirstTokenLatencyExceeded, http.StatusGatewayTimeout)
+	return types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodeChannelFirstTokenLatencyExceeded, http.StatusGatewayTimeout)
 }

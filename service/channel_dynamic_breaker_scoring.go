@@ -151,7 +151,7 @@ func computeBreakerCooldownMultiplierWithBreakdown(channel *model.Channel, wasIn
 
 	if channel.BreakerFailStreak > 1 {
 		streakPenalty := math.Pow(
-			float64(minInt(channel.BreakerFailStreak-1, breakerFailStreakCooldownCap)),
+			float64(minBreakerInt(channel.BreakerFailStreak-1, breakerFailStreakCooldownCap)),
 			breakerFailStreakCooldownExponent,
 		) * breakerFailStreakCooldownWeight
 		streakContribution = streakPenalty
@@ -159,7 +159,7 @@ func computeBreakerCooldownMultiplierWithBreakdown(channel *model.Channel, wasIn
 	}
 
 	if channel.BreakerTripCount > breakerTripCooldownStart {
-		tripPenalty := math.Log1p(float64(minInt(channel.BreakerTripCount-breakerTripCooldownStart, breakerTripCooldownCap))) * breakerTripCooldownWeight * historyPenaltyFactor
+		tripPenalty := math.Log1p(float64(minBreakerInt(channel.BreakerTripCount-breakerTripCooldownStart, breakerTripCooldownCap))) * breakerTripCooldownWeight * historyPenaltyFactor
 		tripContribution = tripPenalty
 		multiplier += tripContribution
 	}
@@ -223,7 +223,7 @@ func computeBreakerChronicCooldownFloorWithBreakdown(channel *model.Channel) (ti
 	tripFloor := time.Duration(0)
 	if channel.BreakerTripCount > breakerChronicTripFloorStart {
 		tripFloor = time.Duration(
-			math.Log1p(float64(minInt(channel.BreakerTripCount-breakerChronicTripFloorStart, breakerTripCooldownCap))) *
+			math.Log1p(float64(minBreakerInt(channel.BreakerTripCount-breakerChronicTripFloorStart, breakerTripCooldownCap))) *
 				breakerChronicTripFloorWeight * historyPenaltyFactor * float64(time.Minute),
 		)
 		floor += tripFloor
@@ -245,7 +245,7 @@ func computeBreakerChronicCooldownFloorWithBreakdown(channel *model.Channel) (ti
 	if channel.BreakerFailStreak > breakerChronicStreakFloorStart {
 		streakFloor = time.Duration(
 			math.Pow(
-				float64(minInt(channel.BreakerFailStreak-breakerChronicStreakFloorStart, breakerFailStreakCooldownCap)),
+				float64(minBreakerInt(channel.BreakerFailStreak-breakerChronicStreakFloorStart, breakerFailStreakCooldownCap)),
 				breakerChronicStreakFloorExponent,
 			) * breakerChronicStreakFloorWeight * float64(time.Minute),
 		)
@@ -450,7 +450,7 @@ func isSlowSuccessfulRequest(channel *model.Channel, info *relaycommon.RelayInfo
 	return classifySuccessfulRequestLatency(channel, info) == channelSuccessLatencyNearTimeout
 }
 
-func minInt(a int, b int) int {
+func minBreakerInt(a int, b int) int {
 	if a < b {
 		return a
 	}

@@ -23,7 +23,7 @@ func TestShouldDisableChannel_AbnormalStatusFollowsRetryRule(t *testing.T) {
 	operation_setting.AutomaticRetryStatusCodeRanges = []operation_setting.StatusCodeRange{{Start: 500, End: 599}}
 
 	err := types.NewErrorWithStatusCode(errors.New("upstream status error"), types.ErrorCodeBadResponseStatusCode, http.StatusInternalServerError)
-	require.True(t, ShouldDisableChannel(0, err))
+	require.True(t, ShouldDisableChannel(err))
 }
 
 func TestShouldDisableChannel_NormalStatusNotDisabled(t *testing.T) {
@@ -35,7 +35,7 @@ func TestShouldDisableChannel_NormalStatusNotDisabled(t *testing.T) {
 	common.AutomaticDisableChannelEnabled = true
 
 	err := types.NewErrorWithStatusCode(errors.New("ok"), types.ErrorCodeBadResponseStatusCode, http.StatusOK)
-	require.False(t, ShouldDisableChannel(0, err))
+	require.False(t, ShouldDisableChannel(err))
 }
 
 func TestShouldDisableChannel_SkipRetryErrorNotDisabledByStatus(t *testing.T) {
@@ -52,5 +52,5 @@ func TestShouldDisableChannel_SkipRetryErrorNotDisabledByStatus(t *testing.T) {
 		http.StatusInternalServerError,
 		types.ErrOptionWithSkipRetry(),
 	)
-	require.False(t, ShouldDisableChannel(0, err))
+	require.False(t, ShouldDisableChannel(err))
 }
