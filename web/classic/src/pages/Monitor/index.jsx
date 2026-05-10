@@ -180,7 +180,6 @@ const renderDurationTag = (durationMs, t) => {
     color = 'green';
   }
 
-
   return (
     <Tag color={color} shape='circle'>
       {seconds}s
@@ -325,6 +324,15 @@ const highlightJson = (str) => {
   );
 };
 
+const formatJsonForDownload = (value) => {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return typeof value === 'string' ? value : JSON.stringify(value);
+  }
+};
+
 const JsonViewer = ({
   data,
   t,
@@ -339,7 +347,7 @@ const JsonViewer = ({
 
   // Check if content is too large BEFORE parsing
   // Two thresholds:
-  // 1. Frontend display limit: 20,000 bytes - refuse to display inline
+  // 1. Frontend display limit: 40,000 bytes - refuse to display inline
   // 2. Backend truncation flag: indicates content was truncated at 1MB
   // Use bodySize (from backend) instead of checking actual data length
   const isLengthExceeded = bodyTruncated || bodySize > BODY_DISPLAY_LIMIT_BYTES;
@@ -347,17 +355,7 @@ const JsonViewer = ({
   const { formatted, highlighted } = useMemo(() => {
     if (!data || isLengthExceeded) return { formatted: '', highlighted: '' };
 
-    let formatted;
-    try {
-      if (typeof data === 'string') {
-        const parsed = JSON.parse(data);
-        formatted = JSON.stringify(parsed, null, 2);
-      } else {
-        formatted = JSON.stringify(data, null, 2);
-      }
-    } catch {
-      formatted = typeof data === 'string' ? data : JSON.stringify(data);
-    }
+    const formatted = formatJsonForDownload(data);
 
     const highlighted = highlightJson(formatted);
 
@@ -382,17 +380,18 @@ const JsonViewer = ({
           response.data.data &&
           response.data.data.body
         ) {
-          downloadContent = response.data.data.body;
+          downloadContent = formatJsonForDownload(response.data.data.body);
         } else {
           throw new Error('Invalid response from server');
         }
       } else if (isLengthExceeded && data) {
         // Body is included but too large to display
-        downloadContent =
-          typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        downloadContent = formatJsonForDownload(data);
       }
 
-      const blob = new Blob([downloadContent], { type: 'application/json' });
+      const blob = new Blob([downloadContent], {
+        type: 'application/json;charset=utf-8',
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
