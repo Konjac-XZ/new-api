@@ -195,6 +195,16 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 		return nil
 	}
+	mergeGeminiFreeTierSuppressed := func(group string) error {
+		suppressed, err := GetGeminiFreeTierSuppressedChannelIDs(group, param.ModelName)
+		if err != nil {
+			return err
+		}
+		for id := range suppressed {
+			exclude[id] = true
+		}
+		return nil
+	}
 
 	// mergeObservedExclude adds observed (awaiting-probe / probation) channels to the
 	// exclusion map, but only when normal (healthy) channels exist in the same pool.
@@ -233,6 +243,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		for i := startGroupIndex; i < len(autoGroups); i++ {
 			autoGroup := autoGroups[i]
 			if err := mergeDynamicSuppressed(autoGroup); err != nil {
+				return nil, selectGroup, err
+			}
+			if err := mergeGeminiFreeTierSuppressed(autoGroup); err != nil {
 				return nil, selectGroup, err
 			}
 			if observedTriedAndFailed {
@@ -308,6 +321,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 	} else {
 		if err := mergeDynamicSuppressed(param.TokenGroup); err != nil {
+			return nil, param.TokenGroup, err
+		}
+		if err := mergeGeminiFreeTierSuppressed(param.TokenGroup); err != nil {
 			return nil, param.TokenGroup, err
 		}
 		if observedTriedAndFailed {

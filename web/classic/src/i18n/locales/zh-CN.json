@@ -3801,6 +3801,9 @@
     "5m缓存创建 {{price}}": "5m 缓存创建 {{price}}",
     "1h缓存创建 {{price}}": "1h 缓存创建 {{price}}",
     "图片输入 {{price}}": "图片输入 {{price}}",
-    "补全价格 {{symbol}}{{price}} / 1M tokens": "补全价格 {{symbol}}{{price}} / 1M tokens"
+    "补全价格 {{symbol}}{{price}} / 1M tokens": "补全价格 {{symbol}}{{price}} / 1M tokens",
+    "Gemini 免费层": "Gemini 免费层",
+    "仅当 API 地址为空并使用内置 Google Gemini 地址时生效": "仅当 API 地址为空并使用内置 Google Gemini 地址时生效",
+    "Google 返回每日免费层配额耗尽时，仅屏蔽耗尽的 Gemini 模型直到下一个太平洋时间午夜": "Google 返回每日免费层配额耗尽时，仅屏蔽耗尽的 Gemini 模型直到下一个太平洋时间午夜"
   }
 }

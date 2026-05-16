@@ -3649,6 +3649,9 @@
     "默认用户消息": "Bonjour",
     "默认补全倍率": "Taux de complétion par défaut",
     "阶梯计费（表达式解析失败）": "Facturation par paliers (échec de l'analyse de l'expression)",
-    "阶梯计费（未匹配到对应阶梯）": "Facturation par paliers (aucun palier correspondant)"
+    "阶梯计费（未匹配到对应阶梯）": "Facturation par paliers (aucun palier correspondant)",
+    "Gemini 免费层": "Niveau gratuit Gemini",
+    "仅当 API 地址为空并使用内置 Google Gemini 地址时生效": "Effectif uniquement lorsque l’adresse API est vide et que le point de terminaison Google Gemini intégré est utilisé",
+    "Google 返回每日免费层配额耗尽时，仅屏蔽耗尽的 Gemini 模型直到下一个太平洋时间午夜": "Lorsque Google signale l’épuisement du quota quotidien gratuit, masque uniquement le modèle Gemini épuisé jusqu’au prochain minuit, heure du Pacifique"
   }
 }

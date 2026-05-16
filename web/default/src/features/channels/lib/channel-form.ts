@@ -48,6 +48,7 @@ export const channelFormSchema = z.object({
   vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
   aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
   azure_responses_version: z.string().optional(), // Azure specific
+  gemini_free_tier: z.boolean().optional(), // Gemini official free tier
   // Field passthrough controls (stored in settings JSON)
   allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
   disable_store: z.boolean().optional(), // OpenAI only
@@ -106,6 +107,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
   azure_responses_version: '',
+  gemini_free_tier: false,
   // Field passthrough controls
   allow_service_tier: false,
   disable_store: false,
@@ -161,6 +163,7 @@ export function transformChannelToFormDefaults(
   let azureResponsesVersion = ''
   let isEnterpriseAccount = false
   let awsKeyType: 'ak_sk' | 'api_key' = 'ak_sk'
+  let geminiFreeTier = false
   let allowServiceTier = false
   let disableStore = false
   let allowSafetyIdentifier = false
@@ -179,6 +182,7 @@ export function transformChannelToFormDefaults(
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
       awsKeyType = parsed.aws_key_type || 'ak_sk'
+      geminiFreeTier = parsed.gemini_free_tier === true
       allowServiceTier = parsed.allow_service_tier === true
       disableStore = parsed.disable_store === true
       allowSafetyIdentifier = parsed.allow_safety_identifier === true
@@ -234,6 +238,7 @@ export function transformChannelToFormDefaults(
     vertex_key_type: vertexKeyType,
     azure_responses_version: azureResponsesVersion,
     aws_key_type: awsKeyType,
+    gemini_free_tier: geminiFreeTier,
     allow_service_tier: allowServiceTier,
     disable_store: disableStore,
     allow_include_obfuscation: allowIncludeObfuscation,
@@ -304,6 +309,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     settingsObj.aws_key_type = formData.aws_key_type || 'ak_sk'
   } else if ('aws_key_type' in settingsObj) {
     delete settingsObj.aws_key_type
+  }
+
+  // Add Gemini Free Tier setting for Gemini channels (type 24)
+  if (formData.type === 24) {
+    settingsObj.gemini_free_tier = formData.gemini_free_tier === true
+  } else if ('gemini_free_tier' in settingsObj) {
+    delete settingsObj.gemini_free_tier
   }
 
   // Field passthrough controls:

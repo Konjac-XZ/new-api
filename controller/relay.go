@@ -419,7 +419,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 
 			service.RecordChannelRelayFailure(channel, relayInfo, newAPIError)
-			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
+			geminiFreeTierSuppressed := service.MaybeRecordGeminiFreeTierSuppression(c, channel, relayInfo, newAPIError)
+			processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, geminiFreeTierSuppressed)
 
 			remainingChannelRetries := common.RetryTimes - retryParam.GetRetry()
 			retryBudget := remainingChannelRetries
@@ -550,6 +551,12 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		if channel == nil {
 			return nil, types.NewError(fmt.Errorf("渠道 #%d 不存在", channelID), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 		}
+		if channel.IsEffectiveGeminiFreeTier() {
+			upstreamModel := service.ResolveGeminiFreeTierSuppressionModel(channel, info.OriginModelName)
+			if service.IsGeminiFreeTierSuppressed(channel.Id, upstreamModel) {
+				return nil, types.NewError(fmt.Errorf("channel #%d is suppressed for Gemini model %s until next Pacific midnight", channel.Id, upstreamModel), types.ErrorCodeModelNotFound, types.ErrOptionWithSkipRetry())
+			}
+		}
 		return channel, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
@@ -602,11 +609,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	return operation_setting.ShouldRetryByStatusCode(code)
 }
 
-func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
+func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, suppressAutoDisable ...bool) {
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, err.Error()))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
-	if service.ShouldDisableChannel(err) && channelError.AutoBan {
+	skipAutoDisable := len(suppressAutoDisable) > 0 && suppressAutoDisable[0]
+	if !skipAutoDisable && service.ShouldDisableChannel(err) && channelError.AutoBan {
 		gopool.Go(func() {
 			service.DisableChannel(channelError, err.ErrorWithStatusCode())
 		})

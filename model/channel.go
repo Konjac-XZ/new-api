@@ -568,6 +568,20 @@ func (channel *Channel) GetBaseURL() string {
 	return url
 }
 
+func (channel *Channel) HasRawBaseURL() bool {
+	if channel == nil || channel.BaseURL == nil {
+		return false
+	}
+	return strings.TrimSpace(*channel.BaseURL) != ""
+}
+
+func (channel *Channel) IsEffectiveGeminiFreeTier() bool {
+	if channel == nil || channel.Type != constant.ChannelTypeGemini {
+		return false
+	}
+	return channel.GetOtherSettings().GeminiFreeTier && !channel.HasRawBaseURL()
+}
+
 func (channel *Channel) GetModelMapping() string {
 	if channel.ModelMapping == nil {
 		return ""

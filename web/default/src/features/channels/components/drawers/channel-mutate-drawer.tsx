@@ -403,6 +403,8 @@ export function ChannelMutateDrawer({
   // Helper computed values
   const isBatchMode =
     multiKeyMode === 'batch' || multiKeyMode === 'multi_to_single'
+  const geminiFreeTierEffective =
+    currentType === 24 && !String(currentBaseUrl || '').trim()
 
   // Get all models list
   const allModelsList = useMemo(
@@ -1413,6 +1415,37 @@ export function ChannelMutateDrawer({
                               )}
                         </FormDescription>
                         <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {/* Gemini (type 24) */}
+                {currentType === 24 && (
+                  <FormField
+                    control={form.control}
+                    name='gemini_free_tier'
+                    render={({ field }) => (
+                      <FormItem className='flex items-center justify-between'>
+                        <div className='space-y-0.5'>
+                          <FormLabel>{t('Gemini Free Tier')}</FormLabel>
+                          <FormDescription>
+                            {geminiFreeTierEffective
+                              ? t(
+                                  'Suppress only the exhausted Gemini model until the next Pacific midnight when Google reports daily free-tier quota exhaustion'
+                                )
+                              : t(
+                                  'Only effective when Base URL is empty and the built-in Google Gemini endpoint is used'
+                                )}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            disabled={!geminiFreeTierEffective}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
                       </FormItem>
                     )}
                   />

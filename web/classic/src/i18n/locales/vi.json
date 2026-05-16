@@ -4183,6 +4183,9 @@
     "默认用户消息": "Xin chào",
     "默认补全倍率": "Tỷ lệ hoàn thành mặc định",
     "阶梯计费（表达式解析失败）": "Thanh toán theo bậc (không phân tích được biểu thức)",
-    "阶梯计费（未匹配到对应阶梯）": "Thanh toán theo bậc (không tìm thấy bậc phù hợp)"
+    "阶梯计费（未匹配到对应阶梯）": "Thanh toán theo bậc (không tìm thấy bậc phù hợp)",
+    "Gemini 免费层": "Gói miễn phí Gemini",
+    "仅当 API 地址为空并使用内置 Google Gemini 地址时生效": "Chỉ có hiệu lực khi địa chỉ API để trống và dùng điểm cuối Google Gemini tích hợp",
+    "Google 返回每日免费层配额耗尽时，仅屏蔽耗尽的 Gemini 模型直到下一个太平洋时间午夜": "Khi Google báo hết hạn mức miễn phí hằng ngày, chỉ tạm ẩn mô hình Gemini đã hết hạn mức đến nửa đêm kế tiếp theo giờ Thái Bình Dương"
   }
 }

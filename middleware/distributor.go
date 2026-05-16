@@ -52,6 +52,13 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
 			}
+			if channel.IsEffectiveGeminiFreeTier() {
+				upstreamModel := service.ResolveGeminiFreeTierSuppressionModel(channel, modelRequest.Model)
+				if service.IsGeminiFreeTierSuppressed(channel.Id, upstreamModel) {
+					abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+					return
+				}
+			}
 		} else {
 			// Select a channel for the user
 			// check token model mapping
@@ -106,6 +113,11 @@ func Distribute() func(c *gin.Context) {
 						if preferred.Status != common.ChannelStatusEnabled {
 							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 								abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorAffinityChannelDisabled))
+								return
+							}
+						} else if preferred.IsEffectiveGeminiFreeTier() && service.IsGeminiFreeTierSuppressed(preferred.Id, service.ResolveGeminiFreeTierSuppressionModel(preferred, modelRequest.Model)) {
+							if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
+								abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 								return
 							}
 						} else if usingGroup == "auto" {

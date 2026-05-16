@@ -218,6 +218,7 @@ const EditChannelModal = (props) => {
     allow_inference_geo: false,
     allow_speed: false,
     claude_beta_query: false,
+    gemini_free_tier: false,
     upstream_model_update_check_enabled: false,
     upstream_model_update_auto_sync_enabled: false,
     upstream_model_update_last_check_time: 0,
@@ -988,6 +989,7 @@ const EditChannelModal = (props) => {
             parsedSettings.allow_inference_geo || false;
           data.allow_speed = parsedSettings.allow_speed || false;
           data.claude_beta_query = parsedSettings.claude_beta_query || false;
+          data.gemini_free_tier = parsedSettings.gemini_free_tier === true;
           data.upstream_model_update_check_enabled =
             parsedSettings.upstream_model_update_check_enabled === true;
           data.upstream_model_update_auto_sync_enabled =
@@ -1018,6 +1020,7 @@ const EditChannelModal = (props) => {
           data.allow_inference_geo = false;
           data.allow_speed = false;
           data.claude_beta_query = false;
+          data.gemini_free_tier = false;
           data.upstream_model_update_check_enabled = false;
           data.upstream_model_update_auto_sync_enabled = false;
           data.upstream_model_update_last_check_time = 0;
@@ -1036,6 +1039,7 @@ const EditChannelModal = (props) => {
         data.allow_inference_geo = false;
         data.allow_speed = false;
         data.claude_beta_query = false;
+        data.gemini_free_tier = false;
         data.upstream_model_update_check_enabled = false;
         data.upstream_model_update_auto_sync_enabled = false;
         data.upstream_model_update_last_check_time = 0;
@@ -1858,6 +1862,12 @@ const EditChannelModal = (props) => {
       delete settings.vertex_key_type;
     }
 
+    if (localInputs.type === 24) {
+      settings.gemini_free_tier = localInputs.gemini_free_tier === true;
+    } else if ('gemini_free_tier' in settings) {
+      delete settings.gemini_free_tier;
+    }
+
     // type === 1 (OpenAI) 或 type === 14 (Claude): 设置字段透传控制（显式保存布尔值）
     if (localInputs.type === 1 || localInputs.type === 14) {
       settings.allow_service_tier = localInputs.allow_service_tier === true;
@@ -1938,6 +1948,7 @@ const EditChannelModal = (props) => {
     delete localInputs.allow_inference_geo;
     delete localInputs.allow_speed;
     delete localInputs.claude_beta_query;
+    delete localInputs.gemini_free_tier;
     delete localInputs.upstream_model_update_check_enabled;
     delete localInputs.upstream_model_update_auto_sync_enabled;
     delete localInputs.upstream_model_update_last_check_time;
@@ -3591,6 +3602,37 @@ const EditChannelModal = (props) => {
                                   />
                                 </div>
                               )}
+
+                            {inputs.type === 24 && (
+                              <Form.Switch
+                                field='gemini_free_tier'
+                                label={t('Gemini 免费层')}
+                                checkedText={t('开')}
+                                uncheckedText={t('关')}
+                                disabled={
+                                  !!(
+                                    inputs.base_url &&
+                                    String(inputs.base_url).trim() !== ''
+                                  )
+                                }
+                                onChange={(value) =>
+                                  handleChannelOtherSettingsChange(
+                                    'gemini_free_tier',
+                                    value,
+                                  )
+                                }
+                                extraText={
+                                  inputs.base_url &&
+                                  String(inputs.base_url).trim() !== ''
+                                    ? t(
+                                        '仅当 API 地址为空并使用内置 Google Gemini 地址时生效',
+                                      )
+                                    : t(
+                                        'Google 返回每日免费层配额耗尽时，仅屏蔽耗尽的 Gemini 模型直到下一个太平洋时间午夜',
+                                      )
+                                }
+                              />
+                            )}
 
                             {inputs.type === 22 && (
                               <div>

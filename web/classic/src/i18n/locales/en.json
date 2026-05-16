@@ -3794,6 +3794,9 @@
     "见上方动态计费详情": "See dynamic pricing details above",
     "含时间条件": "Time rules",
     "含请求条件": "Request rules",
-    "（当前仅支持易支付接口，默认使用上方服务器地址作为回调地址！）": "(Currently only supports Epay interface, the default callback address is the server address above!)"
+    "（当前仅支持易支付接口，默认使用上方服务器地址作为回调地址！）": "(Currently only supports Epay interface, the default callback address is the server address above!)",
+    "Gemini 免费层": "Gemini Free Tier",
+    "仅当 API 地址为空并使用内置 Google Gemini 地址时生效": "Only effective when API address is empty and the built-in Google Gemini endpoint is used",
+    "Google 返回每日免费层配额耗尽时，仅屏蔽耗尽的 Gemini 模型直到下一个太平洋时间午夜": "When Google reports daily free-tier quota exhaustion, suppress only the exhausted Gemini model until the next Pacific midnight"
   }
 }
