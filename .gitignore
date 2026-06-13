@@ -39,3 +39,4 @@ skills-lock.json
 **/node_modules/
 web/default/dist
 web/.vite
+.playwright-mcp

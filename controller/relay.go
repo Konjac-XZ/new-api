@@ -110,11 +110,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			// - don't spam error logs
 			// - don't attempt to write a JSON response to a dead connection
 			if common.IsDownstreamContextDone(c.Request.Context()) {
-				logger.LogInfo(c, fmt.Sprintf("relay aborted (downstream gone): %s", newAPIError.Error()))
+				logger.LogInfo(c, fmt.Sprintf("relay aborted (downstream gone): %s", common.LocalLogPreview(newAPIError.Error())))
 				return
 			}
 
-			logger.LogError(c, fmt.Sprintf("relay error: %s", newAPIError.Error()))
+			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:
@@ -610,7 +610,7 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, suppressAutoDisable ...bool) {
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, err.Error()))
+	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	skipAutoDisable := len(suppressAutoDisable) > 0 && suppressAutoDisable[0]

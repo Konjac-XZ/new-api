@@ -53,12 +53,19 @@ func (e GeneralErrorResponse) TryToOpenAIError() *types.OpenAIError {
 				if _, ok := openAIError.Code.(string); !ok && openAIError.Type != "" {
 					openAIError.Code = openAIError.Type
 				}
-				if len(openAIError.Metadata) == 0 {
-					openAIError.Metadata = e.Error
+				if len(openAIError.Metadata) == 0 && len(e.Metadata) > 0 {
+					openAIError.Metadata = e.Metadata
 				}
 			}
 			return &openAIError
 		}
+	}
+	if len(e.Error) == 0 && e.Message != "" {
+		openAIError.Message = e.Message
+		if e.Metadata != nil {
+			openAIError.Metadata = e.Metadata
+		}
+		return &openAIError
 	}
 	return nil
 }
