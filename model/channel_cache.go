@@ -11,12 +11,16 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
 var channelsIDM map[int]*Channel                     // all channels include disabled
+// channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
+// path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
+var channel2advancedCustomConfig map[int]*dto.AdvancedCustomConfig
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
@@ -24,10 +28,16 @@ func InitChannelCache() {
 		return
 	}
 	newChannelId2channel := make(map[int]*Channel)
+	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
 	var channels []*Channel
 	DB.Find(&channels)
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
+		if channel.Type == constant.ChannelTypeAdvancedCustom {
+			if config := channel.GetOtherSettings().AdvancedCustom; config != nil {
+				newChannel2advancedCustomConfig[channel.Id] = config
+			}
+		}
 	}
 	var abilities []*Ability
 	DB.Find(&abilities)
@@ -82,6 +92,7 @@ func InitChannelCache() {
 		}
 	}
 	channelsIDM = newChannelId2channel
+	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channelSyncLock.Unlock()
 	common.SysLog("channels synced from database")
 }
@@ -97,22 +108,26 @@ func SyncChannelCache(frequency int) {
 // GetRandomSatisfiedChannel returns a channel using retry-indexed priority fallback.
 // Deprecated: Prefer GetRandomSatisfiedChannelExclude which excludes used channels
 // on the same priority before falling back to lower priorities.
-func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel, error) {
+func GetRandomSatisfiedChannel(group string, model string, retry int, requestPath ...string) (*Channel, error) {
+	rp := ""
+	if len(requestPath) > 0 {
+		rp = requestPath[0]
+	}
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry)
+		return GetChannel(group, model, retry, rp)
 	}
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
-	channels := group2model2channels[group][model]
+	channels := filterChannelsByRequestPath(group2model2channels[group][model], rp)
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = group2model2channels[group][normalizedModel]
+		channels = filterChannelsByRequestPath(group2model2channels[group][normalizedModel], rp)
 	}
 
 	if len(channels) == 0 {
@@ -198,22 +213,26 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 // available priority and excluding any channel IDs present in `exclude`.
 // It will keep retrying within the same priority (weighted) until all channels
 // at that priority are exhausted, then fall back to the next lower priority.
-func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[int]bool) (*Channel, error) {
+func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[int]bool, requestPath ...string) (*Channel, error) {
+	rp := ""
+	if len(requestPath) > 0 {
+		rp = requestPath[0]
+	}
 	// if memory cache is disabled, defer to DB-based implementation
 	if !common.MemoryCacheEnabled {
-		return GetChannelExclude(group, model, exclude)
+		return GetChannelExclude(group, model, exclude, rp)
 	}
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
 	// First, try to find channels with the exact model name.
-	channels := group2model2channels[group][model]
+	channels := filterChannelsByRequestPath(group2model2channels[group][model], rp)
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = group2model2channels[group][normalizedModel]
+		channels = filterChannelsByRequestPath(group2model2channels[group][normalizedModel], rp)
 	}
 
 	if len(channels) == 0 {
@@ -290,18 +309,22 @@ func GetRandomSatisfiedChannelExclude(group string, model string, exclude map[in
 	return nil, errors.New("channel not found after exclusion")
 }
 
-func GetEnabledChannelsByGroupModel(group string, model string) ([]*Channel, error) {
+func GetEnabledChannelsByGroupModel(group string, model string, requestPath ...string) ([]*Channel, error) {
+	rp := ""
+	if len(requestPath) > 0 {
+		rp = requestPath[0]
+	}
 	if !common.MemoryCacheEnabled {
-		return getEnabledChannelsByGroupModelDB(group, model)
+		return getEnabledChannelsByGroupModelDB(group, model, rp)
 	}
 
 	channelSyncLock.RLock()
 	defer channelSyncLock.RUnlock()
 
-	channels := group2model2channels[group][model]
+	channels := filterChannelsByRequestPath(group2model2channels[group][model], rp)
 	if len(channels) == 0 {
 		normalizedModel := ratio_setting.FormatMatchingModelName(model)
-		channels = group2model2channels[group][normalizedModel]
+		channels = filterChannelsByRequestPath(group2model2channels[group][normalizedModel], rp)
 	}
 	if len(channels) == 0 {
 		return nil, nil
@@ -318,7 +341,7 @@ func GetEnabledChannelsByGroupModel(group string, model string) ([]*Channel, err
 	return result, nil
 }
 
-func getEnabledChannelsByGroupModelDB(group string, model string) ([]*Channel, error) {
+func getEnabledChannelsByGroupModelDB(group string, model string, requestPath string) ([]*Channel, error) {
 	channelIDs, err := getEnabledChannelIDsByGroupModelDB(group, model)
 	if err != nil {
 		return nil, err
@@ -337,6 +360,9 @@ func getEnabledChannelsByGroupModelDB(group string, model string) ([]*Channel, e
 	result := make([]*Channel, 0, len(channelIDs))
 	for _, id := range channelIDs {
 		if channel, ok := channelMap[id]; ok {
+			if !channelSupportsRequestPath(channel, requestPath) {
+				continue
+			}
 			result = append(result, channel)
 		}
 	}
@@ -367,6 +393,45 @@ func getEnabledChannelIDsByGroupModelDB(group string, model string) ([]int, erro
 		}
 	}
 	return channelIDs, nil
+}
+
+func channelSupportsRequestPath(channel *Channel, requestPath string) bool {
+	if requestPath == "" || channel == nil {
+		return true
+	}
+	if channel.Type != constant.ChannelTypeAdvancedCustom {
+		return true
+	}
+	config := channel.GetOtherSettings().AdvancedCustom
+	return config != nil && config.SupportsPath(requestPath)
+}
+
+// filterChannelsByRequestPath restricts candidates by request path. Only Advanced
+// Custom (type 58) channels are path-checked: they are kept only when one of their
+// configured routes matches requestPath. All other channel types always pass.
+// When requestPath is empty (non-relay callers) filtering is skipped.
+// Caller must hold channelSyncLock (read lock). The cached slice is never mutated.
+func filterChannelsByRequestPath(channels []int, requestPath string) []int {
+	if requestPath == "" || len(channels) == 0 {
+		return channels
+	}
+	filtered := make([]int, 0, len(channels))
+	for _, channelId := range channels {
+		channel, ok := channelsIDM[channelId]
+		if !ok {
+			// keep it so the downstream consistency error is raised as before
+			filtered = append(filtered, channelId)
+			continue
+		}
+		if channel.Type != constant.ChannelTypeAdvancedCustom {
+			filtered = append(filtered, channelId)
+			continue
+		}
+		if config := channel2advancedCustomConfig[channelId]; config != nil && config.SupportsPath(requestPath) {
+			filtered = append(filtered, channelId)
+		}
+	}
+	return filtered
 }
 
 func CacheGetChannel(id int) (*Channel, error) {

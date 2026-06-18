@@ -17,6 +17,7 @@ type RetryParam struct {
 	Ctx          *gin.Context
 	TokenGroup   string
 	ModelName    string
+	RequestPath  string
 	Retry        *int
 	resetNextTry bool
 }
@@ -122,8 +123,8 @@ func selectObservedChannel(channels []*model.Channel, exclude map[int]bool) *mod
 	return topCandidates[len(topCandidates)-1].channel
 }
 
-func getFirstAttemptObservedChannel(group string, modelName string, exclude map[int]bool) (*model.Channel, error) {
-	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName)
+func getFirstAttemptObservedChannel(group string, modelName string, exclude map[int]bool, requestPath string) (*model.Channel, error) {
+	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName, requestPath)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +187,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 		}
 	}
 	mergeDynamicSuppressed := func(group string) error {
-		suppressed, err := GetDynamicSuppressedChannelIDs(group, param.ModelName)
+		suppressed, err := GetDynamicSuppressedChannelIDs(group, param.ModelName, param.RequestPath)
 		if err != nil {
 			return err
 		}
@@ -211,7 +212,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	// It is called only after an observed channel has already failed once this request
 	// (ContextKeyObservedChannelTriedAndFailed == true), enforcing the single-chance rule.
 	mergeObservedExclude := func(group string) error {
-		observed, err := GetObservedChannelIDsIfNormalExist(group, param.ModelName)
+		observed, err := GetObservedChannelIDsIfNormalExist(group, param.ModelName, param.RequestPath)
 		if err != nil {
 			return err
 		}
@@ -254,7 +255,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				}
 			}
 			if isFirstAttemptOfRequest {
-				channel, err = getFirstAttemptObservedChannel(autoGroup, param.ModelName, exclude)
+				channel, err = getFirstAttemptObservedChannel(autoGroup, param.ModelName, exclude, param.RequestPath)
 				if err != nil {
 					return nil, selectGroup, err
 				}
@@ -279,9 +280,9 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			logger.LogDebug(param.Ctx, "Auto selecting group: %s, priorityRetry: %d", autoGroup, priorityRetry)
 
 			if len(exclude) > 0 {
-				channel, _ = model.GetRandomSatisfiedChannelExclude(autoGroup, param.ModelName, exclude)
+				channel, _ = model.GetRandomSatisfiedChannelExclude(autoGroup, param.ModelName, exclude, param.RequestPath)
 			} else {
-				channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry)
+				channel, _ = model.GetRandomSatisfiedChannel(autoGroup, param.ModelName, priorityRetry, param.RequestPath)
 			}
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
@@ -332,18 +333,18 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			}
 		}
 		if isFirstAttemptOfRequest {
-			channel, err = getFirstAttemptObservedChannel(param.TokenGroup, param.ModelName, exclude)
+			channel, err = getFirstAttemptObservedChannel(param.TokenGroup, param.ModelName, exclude, param.RequestPath)
 			if err != nil {
 				return nil, param.TokenGroup, err
 			}
 		}
 		if len(exclude) > 0 {
 			if channel == nil {
-				channel, err = model.GetRandomSatisfiedChannelExclude(param.TokenGroup, param.ModelName, exclude)
+				channel, err = model.GetRandomSatisfiedChannelExclude(param.TokenGroup, param.ModelName, exclude, param.RequestPath)
 			}
 		} else {
 			if channel == nil {
-				channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry())
+				channel, err = model.GetRandomSatisfiedChannel(param.TokenGroup, param.ModelName, param.GetRetry(), param.RequestPath)
 			}
 		}
 		if err != nil {

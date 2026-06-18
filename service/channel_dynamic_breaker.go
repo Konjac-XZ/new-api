@@ -12,8 +12,12 @@ import (
 	"github.com/QuantumNous/new-api/types"
 )
 
-func GetDynamicSuppressedChannelIDs(group string, modelName string) (map[int]bool, error) {
-	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName)
+func GetDynamicSuppressedChannelIDs(group string, modelName string, requestPath ...string) (map[int]bool, error) {
+	rp := ""
+	if len(requestPath) > 0 {
+		rp = requestPath[0]
+	}
+	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName, rp)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +54,12 @@ func GetDynamicSuppressedChannelIDs(group string, modelName string) (map[int]boo
 //
 // Returns nil when no normal channels exist (e.g. all channels are observed or in
 // cooldown) so the caller can fall back to the full candidate pool.
-func GetObservedChannelIDsIfNormalExist(group string, modelName string) (map[int]bool, error) {
-	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName)
+func GetObservedChannelIDsIfNormalExist(group string, modelName string, requestPath ...string) (map[int]bool, error) {
+	rp := ""
+	if len(requestPath) > 0 {
+		rp = requestPath[0]
+	}
+	channels, err := model.GetEnabledChannelsByGroupModel(group, modelName, rp)
 	if err != nil {
 		return nil, err
 	}
