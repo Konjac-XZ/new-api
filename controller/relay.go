@@ -222,6 +222,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		monitorID = monitor.RecordStart(c, bodyBytes)
 		if monitorID != "" {
 			c.Set("monitor_id", monitorID)
+			responseCaptureDegradationGeneration := monitor.DegradationGeneration()
+			responseCaptureEnabled := !monitor.IsDegraded()
+			relayInfo.MonitorResponseBody = relaycommon.NewConditionalMonitorResponseBody(func() bool {
+				return responseCaptureEnabled && !monitor.IsDegraded() && monitor.DegradationGeneration() == responseCaptureDegradationGeneration
+			})
 		}
 		// Mark monitor record complete when function exits
 		defer func(monitorID string) {

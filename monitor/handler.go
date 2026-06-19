@@ -42,6 +42,10 @@ func GetRequest() gin.HandlerFunc {
 func GetStats() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		stats := GetManager().GetStore().GetStats()
+		load := GetLoadSnapshot()
+		if load.ActiveRequests > stats.ActiveRequests {
+			stats.ActiveRequests = load.ActiveRequests
+		}
 
 		connections := 0
 		if GetManager().GetHub() != nil {
@@ -51,6 +55,7 @@ func GetStats() gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
 			"data":        stats,
+			"load":        load,
 			"connections": connections,
 		})
 	}

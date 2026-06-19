@@ -34,6 +34,39 @@ func GetHub() *Hub {
 	return GetManager().GetHub()
 }
 
+// GetLoadSnapshot returns a lightweight pressure snapshot for UI hints.
+func GetLoadSnapshot() LoadSnapshot {
+	load := GetManager().GetLoad()
+	if load == nil {
+		return LoadSnapshot{Capacity: MonitorDegradeActiveLimit}
+	}
+	return load.Snapshot()
+}
+
+// IsDegraded reports whether monitor detail capture/realtime should be reduced.
+func IsDegraded() bool {
+	load := GetManager().GetLoad()
+	return load != nil && load.IsDegraded()
+}
+
+func DegradationGeneration() uint64 {
+	load := GetManager().GetLoad()
+	if load == nil {
+		return 0
+	}
+	return load.DegradationGeneration()
+}
+
+// FinishActive marks a request as no longer active in the monitor pressure
+// tracker. It is intentionally idempotent.
+func FinishActive(recordID string) {
+	load := GetManager().GetLoad()
+	if load == nil {
+		return
+	}
+	load.Finish(recordID)
+}
+
 // sensitiveHeaders are headers that should be masked
 var sensitiveHeaders = map[string]bool{
 	"authorization":       true,
@@ -76,9 +109,15 @@ func ginHeadersToMap(c *gin.Context) map[string]string {
 	return result
 }
 
-// monitorBody returns full body and indicates no truncation.
-// Body is kept as raw bytes and rendered as string only in API handlers.
+// monitorBody captures only small bodies, and captures none while the monitor
+// is degraded. This keeps monitor memory bounded under high concurrency.
 func monitorBody(body []byte) (MonitorBody, bool) {
+	if len(body) == 0 {
+		return nil, false
+	}
+	if IsDegraded() || len(body) > MonitorBodyCaptureMaxBytes {
+		return nil, true
+	}
 	return body, false
 }
 
@@ -96,6 +135,10 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 	tokenId := c.GetInt("token_id")
 	tokenName := c.GetString("token_name")
 	model := c.GetString("original_model")
+
+	if load := GetManager().GetLoad(); load != nil {
+		load.Start(requestId)
+	}
 
 	bodyBytes, truncated := monitorBody(requestBody)
 
@@ -190,6 +233,7 @@ func RecordResponse(recordID string, statusCode int, headers http.Header, body [
 	}
 
 	GetManager().GetStore().BatchUpdate(recordID, false, markComplete)
+	FinishActive(recordID)
 }
 
 // RecordResponseWithContext records response using gin context
@@ -257,6 +301,7 @@ func RecordError(recordID string, err error) {
 	}
 
 	GetManager().GetStore().BatchUpdate(recordID, true, markError, finishAttempt, markPhase)
+	FinishActive(recordID)
 }
 
 // RecordErrorWithContext records an error using gin context
@@ -278,6 +323,7 @@ func MarkRequestAbandoned(recordID string) {
 	GetManager().GetStore().Update(recordID, func(r *RequestRecord) {
 		r.Status = StatusAbandoned
 	})
+	FinishActive(recordID)
 }
 
 // StartChannelAttempt records that we are about to try a specific channel.

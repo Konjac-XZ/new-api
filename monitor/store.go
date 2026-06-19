@@ -69,6 +69,15 @@ func (s *Store) shouldEmitRealtime() bool {
 	return s.realtimeEnabled.Load()
 }
 
+func shouldEmitSummaryWhenDegraded(summary *RequestSummary) bool {
+	if summary == nil {
+		return false
+	}
+	return summary.Status == StatusCompleted ||
+		summary.Status == StatusError ||
+		summary.Status == StatusAbandoned
+}
+
 // Events returns the event channel for subscribing to store events
 func (s *Store) Events() <-chan StoreEvent {
 	s.eventsMu.RLock()
@@ -123,7 +132,9 @@ func (s *Store) Add(record *RequestRecord) {
 
 	if emitRealtime {
 		// Build summary outside lock
-		s.emitEvent(EventTypeNew, snap.toSummary())
+		if !IsDegraded() {
+			s.emitEvent(EventTypeNew, snap.toSummary())
+		}
 	}
 }
 
@@ -158,7 +169,10 @@ func (s *Store) Update(id string, updater func(*RequestRecord)) {
 
 	if emitRealtime {
 		// Build summary outside lock
-		s.emitEvent(EventTypeUpdate, snap.toSummary())
+		summary := snap.toSummary()
+		if !IsDegraded() || shouldEmitSummaryWhenDegraded(summary) {
+			s.emitEvent(EventTypeUpdate, summary)
+		}
 	}
 }
 
@@ -194,7 +208,10 @@ func (s *Store) UpdateIfChanged(id string, updater func(*RequestRecord) bool) {
 	slot.mu.Unlock()
 
 	if emitRealtime {
-		s.emitEvent(EventTypeUpdate, snap.toSummary())
+		summary := snap.toSummary()
+		if !IsDegraded() || shouldEmitSummaryWhenDegraded(summary) {
+			s.emitEvent(EventTypeUpdate, summary)
+		}
 	}
 }
 
@@ -239,8 +256,13 @@ func (s *Store) UpdateAndBroadcastChannel(id string, updater func(*RequestRecord
 
 	if emitRealtime {
 		// Emit both events outside the lock
-		s.emitEvent(EventTypeUpdate, snap.toSummary())
-		s.emitEvent(EventTypeChannel, chUpdate)
+		summary := snap.toSummary()
+		if !IsDegraded() || shouldEmitSummaryWhenDegraded(summary) {
+			s.emitEvent(EventTypeUpdate, summary)
+		}
+		if !IsDegraded() {
+			s.emitEvent(EventTypeChannel, chUpdate)
+		}
 	}
 }
 
@@ -285,8 +307,13 @@ func (s *Store) UpdateAndBroadcastChannelIfChanged(id string, updater func(*Requ
 	slot.mu.Unlock()
 
 	if emitRealtime {
-		s.emitEvent(EventTypeUpdate, snap.toSummary())
-		s.emitEvent(EventTypeChannel, chUpdate)
+		summary := snap.toSummary()
+		if !IsDegraded() || shouldEmitSummaryWhenDegraded(summary) {
+			s.emitEvent(EventTypeUpdate, summary)
+		}
+		if !IsDegraded() {
+			s.emitEvent(EventTypeChannel, chUpdate)
+		}
 	}
 }
 
@@ -332,8 +359,11 @@ func (s *Store) BatchUpdate(id string, broadcastChannel bool, updaters ...func(*
 	slot.mu.Unlock()
 
 	if emitRealtime {
-		s.emitEvent(EventTypeUpdate, snap.toSummary())
-		if chUpdate != nil {
+		summary := snap.toSummary()
+		if !IsDegraded() || shouldEmitSummaryWhenDegraded(summary) {
+			s.emitEvent(EventTypeUpdate, summary)
+		}
+		if chUpdate != nil && !IsDegraded() {
 			s.emitEvent(EventTypeChannel, chUpdate)
 		}
 	}
@@ -393,7 +423,7 @@ func (s *Store) GetChannelUpdate(id string) *ChannelUpdate {
 // BroadcastChannelUpdate sends a channel update message for the given record ID.
 // Uses GetChannelUpdate to avoid a full deep clone.
 func (s *Store) BroadcastChannelUpdate(id string) {
-	if !s.shouldEmitRealtime() {
+	if !s.shouldEmitRealtime() || IsDegraded() {
 		return
 	}
 

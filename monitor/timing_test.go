@@ -10,6 +10,7 @@ func resetMonitorManagerForTest() *Manager {
 	manager.mu.Lock()
 	manager.store = NewStore()
 	manager.hub = NewHub()
+	manager.load = NewLoadState()
 	manager.hub.SetStore(manager.store)
 	manager.store.SetRealtimeEnabled(false)
 	manager.mu.Unlock()

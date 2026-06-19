@@ -28,6 +28,64 @@ type ThinkingContentInfo struct {
 	HasSentThinkingContent  bool
 }
 
+type MonitorResponseBody interface {
+	Write(p []byte) (int, error)
+	WriteString(s string) (int, error)
+	Len() int
+	String() string
+}
+
+type monitorResponseBody struct {
+	body        strings.Builder
+	shouldWrite func() bool
+}
+
+func NewMonitorResponseBody() MonitorResponseBody {
+	return NewConditionalMonitorResponseBody(nil)
+}
+
+func NewConditionalMonitorResponseBody(shouldWrite func() bool) MonitorResponseBody {
+	return &monitorResponseBody{
+		shouldWrite: shouldWrite,
+	}
+}
+
+func (b *monitorResponseBody) Write(p []byte) (int, error) {
+	if !b.enabled() {
+		b.body.Reset()
+		return len(p), nil
+	}
+	return b.body.Write(p)
+}
+
+func (b *monitorResponseBody) WriteString(s string) (int, error) {
+	if !b.enabled() {
+		b.body.Reset()
+		return len(s), nil
+	}
+	return b.body.WriteString(s)
+}
+
+func (b *monitorResponseBody) Len() int {
+	if !b.enabled() {
+		b.body.Reset()
+		return 0
+	}
+	return b.body.Len()
+}
+
+func (b *monitorResponseBody) String() string {
+	if !b.enabled() {
+		b.body.Reset()
+		return ""
+	}
+	return b.body.String()
+}
+
+func (b *monitorResponseBody) enabled() bool {
+	return b.shouldWrite == nil || b.shouldWrite()
+}
+
 const (
 	LastMessageTypeNone     = "none"
 	LastMessageTypeText     = "text"
@@ -62,23 +120,23 @@ type ResponsesUsageInfo struct {
 }
 
 type ChannelMeta struct {
-	ChannelType          int
-	ChannelId            int
-	ChannelIsMultiKey    bool
-	ChannelMultiKeyIndex int
-	ChannelBaseUrl       string
-	ApiType              int
-	ApiVersion           string
-	ApiKey               string
-	Organization         string
-	ChannelCreateTime    int64
-	ParamOverride        map[string]interface{}
-	HeadersOverride      map[string]interface{}
-	ChannelSetting       dto.ChannelSettings
-	ChannelOtherSettings dto.ChannelOtherSettings
-	UpstreamModelName    string
-	IsModelMapped        bool
-	SupportStreamOptions bool // 是否支持流式选项
+	ChannelType                 int
+	ChannelId                   int
+	ChannelIsMultiKey           bool
+	ChannelMultiKeyIndex        int
+	ChannelBaseUrl              string
+	ApiType                     int
+	ApiVersion                  string
+	ApiKey                      string
+	Organization                string
+	ChannelCreateTime           int64
+	ParamOverride               map[string]interface{}
+	HeadersOverride             map[string]interface{}
+	ChannelSetting              dto.ChannelSettings
+	ChannelOtherSettings        dto.ChannelOtherSettings
+	UpstreamModelName           string
+	IsModelMapped               bool
+	SupportStreamOptions        bool // 是否支持流式选项
 	MaxFirstTokenLatencySeconds int
 }
 
@@ -124,10 +182,10 @@ type RelayInfo struct {
 	SendResponseCount      int
 	ReceivedResponseCount  int
 	// MonitorResponseBody accumulates streaming response text for centralized monitor
-	// recording. Written by channel stream handlers; read once by top-level helpers
-	// after DoResponse returns.
-	MonitorResponseBody    *strings.Builder
-	FinalPreConsumedQuota  int // 最终预消耗的配额
+	// recording. It may drop already-captured content if monitor degradation starts
+	// while a request is still streaming.
+	MonitorResponseBody   MonitorResponseBody
+	FinalPreConsumedQuota int // 最终预消耗的配额
 	// ForcePreConsume 为 true 时禁用 BillingSession 的信任额度旁路，
 	// 强制预扣全额。用于异步任务（视频/音乐生成等），因为请求返回后任务仍在运行，
 	// 必须在提交前锁定全额。
@@ -506,7 +564,7 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 			//promptTokens: common.GetContextKeyInt(c, constant.ContextKeyPromptTokens),
 			estimatePromptTokens: common.GetContextKeyInt(c, constant.ContextKeyEstimatedTokens),
 		},
-		MonitorResponseBody: &strings.Builder{},
+		MonitorResponseBody: NewMonitorResponseBody(),
 	}
 
 	if info.RelayMode == relayconstant.RelayModeUnknown {

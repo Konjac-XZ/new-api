@@ -3644,6 +3644,9 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "吞吐量": "スループット",
+    "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "モニター保護モードが有効です: アクティブなリクエストが {{capacity}} を超えたため、業務リクエストへの影響を避けるためリアルタイム詳細を簡略化しています。",
+    "首个 Token 耗时": "最初のトークンまでの時間"
   }
 }

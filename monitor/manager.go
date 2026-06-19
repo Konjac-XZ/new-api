@@ -9,6 +9,7 @@ import (
 type Manager struct {
 	store   *Store
 	hub     *Hub
+	load    *LoadState
 	enabled atomic.Bool
 	mu      sync.RWMutex
 }
@@ -35,6 +36,7 @@ func (m *Manager) Init() {
 	if m.hub == nil {
 		m.hub = NewHub()
 		m.store = NewStore()
+		m.load = NewLoadState()
 		m.hub.SetStore(m.store)
 		m.store.SetRealtimeEnabled(false)
 		go m.hub.Run()
@@ -80,6 +82,13 @@ func (m *Manager) GetHub() *Hub {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.hub
+}
+
+// GetLoad returns the LoadState instance.
+func (m *Manager) GetLoad() *LoadState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.load
 }
 
 // IsEnabled returns whether monitoring is enabled

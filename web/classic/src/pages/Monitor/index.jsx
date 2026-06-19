@@ -32,6 +32,8 @@ import {
   Typography,
   Space,
   Button,
+  Checkbox,
+  Banner,
   Empty,
   Spin,
   Badge,
@@ -41,7 +43,7 @@ import {
   Tooltip,
   Modal,
 } from '@douyinfe/semi-ui';
-import { IconRefresh } from '@douyinfe/semi-icons';
+import { IconRefresh, IconSetting } from '@douyinfe/semi-icons';
 import {
   Activity,
   ArrowDownToLine,
@@ -110,6 +112,52 @@ const attemptStatusColors = {
   succeeded: 'green',
 };
 
+const MONITOR_COLUMN_STORAGE_KEY = 'monitor-table-columns';
+
+const MONITOR_COLUMN_KEYS = {
+  TIME: 'time',
+  STATUS: 'status',
+  MODEL: 'model',
+  CHANNEL: 'channel',
+  DURATION: 'duration',
+  TTFT: 'ttft',
+  THROUGHPUT: 'throughput',
+};
+
+const MIN_OUTPUT_TOKENS_FOR_THROUGHPUT = 100;
+
+const getDefaultMonitorVisibleColumns = () => ({
+  [MONITOR_COLUMN_KEYS.TIME]: true,
+  [MONITOR_COLUMN_KEYS.STATUS]: true,
+  [MONITOR_COLUMN_KEYS.MODEL]: true,
+  [MONITOR_COLUMN_KEYS.CHANNEL]: true,
+  [MONITOR_COLUMN_KEYS.DURATION]: true,
+  [MONITOR_COLUMN_KEYS.TTFT]: true,
+  [MONITOR_COLUMN_KEYS.THROUGHPUT]: true,
+});
+
+const getInitialMonitorVisibleColumns = () => {
+  const defaults = getDefaultMonitorVisibleColumns();
+
+  if (typeof localStorage === 'undefined') {
+    return defaults;
+  }
+
+  const savedColumns = localStorage.getItem(MONITOR_COLUMN_STORAGE_KEY);
+  if (!savedColumns) {
+    return defaults;
+  }
+
+  try {
+    return {
+      ...defaults,
+      ...JSON.parse(savedColumns),
+    };
+  } catch {
+    return defaults;
+  }
+};
+
 const getTimestampMs = (msValue, fallbackValue) => {
   if (Number.isFinite(msValue) && msValue > 0) {
     return msValue;
@@ -150,6 +198,53 @@ const formatLiveSeconds = (seconds) => {
 const getRequestStartMs = (record) =>
   getTimestampMs(record?.start_time_ms, record?.start_time);
 
+const getFirstTokenStartMs = (record) =>
+  getTimestampMs(record?.current_attempt_streaming_started_at_ms, null);
+
+const getTimeToFirstTokenMs = (record) => {
+  if (!record?.is_stream) {
+    return 0;
+  }
+
+  const startMs = getRequestStartMs(record);
+  const firstTokenMs = getFirstTokenStartMs(record);
+
+  if (!startMs || !firstTokenMs || firstTokenMs < startMs) {
+    return 0;
+  }
+
+  return firstTokenMs - startMs;
+};
+
+const getOutputSpeed = (record) => {
+  if (!record?.is_stream) {
+    return null;
+  }
+
+  const rawCompletionTokens =
+    record?.completion_tokens ?? record?.response?.completion_tokens;
+  const completionTokens = Number(rawCompletionTokens);
+  const durationMs = Number(record?.duration_ms || 0);
+
+  if (
+    !Number.isFinite(completionTokens) ||
+    completionTokens <= MIN_OUTPUT_TOKENS_FOR_THROUGHPUT ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return null;
+  }
+
+  const ttftMs = getTimeToFirstTokenMs(record);
+  const generationMs = ttftMs > 0 ? Math.max(0, durationMs - ttftMs) : durationMs;
+
+  if (generationMs <= 0) {
+    return null;
+  }
+
+  return completionTokens / (generationMs / MS_TO_SECONDS);
+};
+
 const getSyncedNowMs = (record, clientNowMs) => {
   const serverNowMs = record?.server_now_ms;
   const receivedAtMs = record?._receivedAtMs;
@@ -183,6 +278,51 @@ const renderDurationTag = (durationMs, t) => {
   return (
     <Tag color={color} shape='circle'>
       {seconds}s
+    </Tag>
+  );
+};
+
+const renderLatencyTag = (milliseconds) => {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+    return <Text type='tertiary'>-</Text>;
+  }
+
+  const seconds = milliseconds / MS_TO_SECONDS;
+  let color = 'green';
+
+  if (seconds >= 8) {
+    color = 'red';
+  } else if (seconds >= 4) {
+    color = 'orange';
+  } else if (seconds >= 1.5) {
+    color = 'blue';
+  }
+
+  return (
+    <Tag color={color} shape='circle'>
+      {seconds.toFixed(1)}s
+    </Tag>
+  );
+};
+
+const renderThroughputTag = (tokensPerSecond) => {
+  if (!Number.isFinite(tokensPerSecond) || tokensPerSecond < 0) {
+    return <Text type='tertiary'>-</Text>;
+  }
+
+  let color = 'red';
+
+  if (tokensPerSecond >= 20) {
+    color = 'green';
+  } else if (tokensPerSecond >= 10) {
+    color = 'blue';
+  } else if (tokensPerSecond >= 3) {
+    color = 'orange';
+  }
+
+  return (
+    <Tag color={color} shape='circle'>
+      {tokensPerSecond.toFixed(1)} Token/s
     </Tag>
   );
 };
@@ -1453,12 +1593,76 @@ const RequestDetail = ({
   );
 };
 
+const MonitorColumnSelectorModal = ({
+  showColumnSelector,
+  setShowColumnSelector,
+  visibleColumns,
+  handleColumnVisibilityChange,
+  handleSelectAll,
+  initDefaultColumns,
+  columns,
+  t,
+}) => {
+  return (
+    <Modal
+      title={t('列设置')}
+      visible={showColumnSelector}
+      onCancel={() => setShowColumnSelector(false)}
+      footer={
+        <div className='flex justify-end'>
+          <Button onClick={() => initDefaultColumns()}>{t('重置')}</Button>
+          <Button onClick={() => setShowColumnSelector(false)}>
+            {t('取消')}
+          </Button>
+          <Button onClick={() => setShowColumnSelector(false)}>
+            {t('确定')}
+          </Button>
+        </div>
+      }
+    >
+      <div style={{ marginBottom: 20 }}>
+        <Checkbox
+          checked={Object.values(visibleColumns).every((v) => v === true)}
+          indeterminate={
+            Object.values(visibleColumns).some((v) => v === true) &&
+            !Object.values(visibleColumns).every((v) => v === true)
+          }
+          onChange={(e) => handleSelectAll(e.target.checked)}
+        >
+          {t('全选')}
+        </Checkbox>
+      </div>
+      <div
+        className='flex flex-wrap max-h-96 overflow-y-auto rounded-lg p-4'
+        style={{ border: '1px solid var(--semi-color-border)' }}
+      >
+        {columns.map((column) => (
+          <div key={column.key} className='w-1/2 mb-4 pr-2'>
+            <Checkbox
+              checked={!!visibleColumns[column.key]}
+              onChange={(e) =>
+                handleColumnVisibilityChange(column.key, e.target.checked)
+              }
+            >
+              {column.title}
+            </Checkbox>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  );
+};
+
 const Monitor = () => {
   const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [filter, setFilter] = useState('all');
   const [isCompact, setIsCompact] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState(
+    getInitialMonitorVisibleColumns,
+  );
+  const [showColumnSelector, setShowColumnSelector] = useState(false);
   const tableRef = useRef(null);
   const detailScrollContainerRef = useRef(null);
   // Track previous status to detect status changes
@@ -1481,6 +1685,130 @@ const Monitor = () => {
   } = useRequestDetail();
 
   const statusLabels = useMemo(() => getStatusLabels(t), [t]);
+
+  const monitorColumns = useMemo(() => {
+    return [
+      {
+        title: t('时间'),
+        key: MONITOR_COLUMN_KEYS.TIME,
+        dataIndex: 'start_time',
+        width: isCompact ? 126 : 146,
+        render: (time, record) => {
+          if (!time) return '-';
+          return formatMonthDayTime(record?.start_time_ms, record?.start_time);
+        },
+      },
+      {
+        title: t('状态'),
+        key: MONITOR_COLUMN_KEYS.STATUS,
+        dataIndex: 'status',
+        width: isCompact ? 86 : 98,
+        render: (_, record) => {
+          const displayStatus =
+            record.displayStatus || deriveDisplayStatus(record);
+          return (
+            <Tag
+              color={
+                statusColors[displayStatus] ||
+                statusColors[record.status] ||
+                'grey'
+              }
+            >
+              {statusLabels[displayStatus] ||
+                statusLabels[record.status] ||
+                displayStatus ||
+                record.status}
+            </Tag>
+          );
+        },
+      },
+      {
+        title: t('模型'),
+        key: MONITOR_COLUMN_KEYS.MODEL,
+        dataIndex: 'model',
+        width: isCompact ? 220 : 280,
+        ellipsis: true,
+        render: (_, record) =>
+          renderModelTag(record.model || t('未知模型'), {
+            shape: 'circle',
+          }),
+      },
+      {
+        title: t('渠道'),
+        key: MONITOR_COLUMN_KEYS.CHANNEL,
+        dataIndex: 'channel_name',
+        width: isCompact ? 150 : 200,
+        ellipsis: true,
+        render: (_, record) => (
+          <Tag
+            color={stringToColor(
+              record.channel_name || String(record.channel_id || ''),
+            )}
+            shape='circle'
+          >
+            {record.channel_name || t('未知渠道')}
+          </Tag>
+        ),
+      },
+      {
+        title: t('耗时'),
+        key: MONITOR_COLUMN_KEYS.DURATION,
+        dataIndex: 'duration_ms',
+        width: isCompact ? 76 : 90,
+        render: (_, record) => <DurationCell record={record} t={t} />,
+      },
+      {
+        title: t('首个 Token 耗时'),
+        key: MONITOR_COLUMN_KEYS.TTFT,
+        dataIndex: 'current_attempt_streaming_started_at_ms',
+        width: isCompact ? 118 : 136,
+        render: (_, record) => renderLatencyTag(getTimeToFirstTokenMs(record)),
+      },
+      {
+        title: t('吞吐量'),
+        key: MONITOR_COLUMN_KEYS.THROUGHPUT,
+        dataIndex: 'response',
+        width: isCompact ? 110 : 128,
+        render: (_, record) => renderThroughputTag(getOutputSpeed(record)),
+      },
+    ];
+  }, [t, statusLabels, isCompact]);
+
+  const initDefaultColumns = useCallback(() => {
+    const defaults = getDefaultMonitorVisibleColumns();
+    setVisibleColumns(defaults);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(MONITOR_COLUMN_STORAGE_KEY, JSON.stringify(defaults));
+    }
+  }, []);
+
+  const handleColumnVisibilityChange = useCallback((columnKey, checked) => {
+    setVisibleColumns((previous) => ({
+      ...previous,
+      [columnKey]: checked,
+    }));
+  }, []);
+
+  const handleSelectAll = useCallback((checked) => {
+    const defaults = getDefaultMonitorVisibleColumns();
+    const nextColumns = Object.keys(defaults).reduce((acc, key) => {
+      acc[key] = checked;
+      return acc;
+    }, {});
+    setVisibleColumns(nextColumns);
+  }, []);
+
+  useEffect(() => {
+    if (
+      Object.keys(visibleColumns).length > 0 &&
+      typeof localStorage !== 'undefined'
+    ) {
+      localStorage.setItem(
+        MONITOR_COLUMN_STORAGE_KEY,
+        JSON.stringify(visibleColumns),
+      );
+    }
+  }, [visibleColumns]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) {
@@ -1622,73 +1950,8 @@ const Monitor = () => {
   }, [filteredSummaries]);
 
   const columns = useMemo(() => {
-    return [
-      {
-        title: t('时间'),
-        dataIndex: 'start_time',
-        width: isCompact ? 126 : 146,
-        render: (time, record) => {
-          if (!time) return '-';
-          return formatMonthDayTime(record?.start_time_ms, record?.start_time);
-        },
-      },
-      {
-        title: t('状态'),
-        dataIndex: 'status',
-        width: isCompact ? 86 : 98,
-        render: (_, record) => {
-          const displayStatus =
-            record.displayStatus || deriveDisplayStatus(record);
-          return (
-            <Tag
-              color={
-                statusColors[displayStatus] ||
-                statusColors[record.status] ||
-                'grey'
-              }
-            >
-              {statusLabels[displayStatus] ||
-                statusLabels[record.status] ||
-                displayStatus ||
-                record.status}
-            </Tag>
-          );
-        },
-      },
-      {
-        title: t('模型'),
-        dataIndex: 'model',
-        width: isCompact ? undefined : 280,
-        ellipsis: true,
-        render: (_, record) =>
-          renderModelTag(record.model || t('未知模型'), {
-            shape: 'circle',
-          }),
-      },
-      {
-        title: t('渠道'),
-        dataIndex: 'channel_name',
-        width: isCompact ? 150 : 200,
-        ellipsis: true,
-        render: (_, record) => (
-          <Tag
-            color={stringToColor(
-              record.channel_name || String(record.channel_id || ''),
-            )}
-            shape='circle'
-          >
-            {record.channel_name || t('未知渠道')}
-          </Tag>
-        ),
-      },
-      {
-        title: t('耗时'),
-        dataIndex: 'duration_ms',
-        width: isCompact ? 76 : 90,
-        render: (_, record) => <DurationCell record={record} t={t} />,
-      },
-    ];
-  }, [t, statusLabels, isCompact]);
+    return monitorColumns.filter((column) => visibleColumns[column.key]);
+  }, [monitorColumns, visibleColumns]);
 
   return (
     <div className='mt-[60px] px-2'>
@@ -1717,8 +1980,27 @@ const Monitor = () => {
                 {t('重新连接')}
               </Button>
             )}
+            <Button
+              icon={<IconSetting />}
+              onClick={() => setShowColumnSelector(true)}
+            >
+              {t('列设置')}
+            </Button>
           </Space>
         </div>
+
+        {stats.load?.degraded && (
+          <Banner
+            type='warning'
+            closeIcon={null}
+            fullMode={false}
+            description={t(
+              '监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。',
+              { capacity: stats.load.capacity || 100 },
+            )}
+            style={{ marginBottom: '12px' }}
+          />
+        )}
 
         {/* Filter Tabs */}
         <Tabs
@@ -1750,6 +2032,7 @@ const Monitor = () => {
             rowKey='id'
             pagination={false}
             size='small'
+            scroll={{ x: 'max-content' }}
             onRow={(record) => ({
               onClick: () => handleRowClick(record),
               style: {
@@ -1768,6 +2051,17 @@ const Monitor = () => {
           />
         </div>
       </Card>
+
+      <MonitorColumnSelectorModal
+        showColumnSelector={showColumnSelector}
+        setShowColumnSelector={setShowColumnSelector}
+        visibleColumns={visibleColumns}
+        handleColumnVisibilityChange={handleColumnVisibilityChange}
+        handleSelectAll={handleSelectAll}
+        initDefaultColumns={initDefaultColumns}
+        columns={monitorColumns}
+        t={t}
+      />
 
       <Modal
         title={t('请求详情')}

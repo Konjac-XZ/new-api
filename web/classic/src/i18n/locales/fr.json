@@ -3675,6 +3675,9 @@
     "并确认自行承担部署": "confirm that I bear legal responsibility arising from deployment",
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
-    "、": ", "
+    "、": ", ",
+    "吞吐量": "Débit",
+    "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "Le mode de protection du monitoring est activé : les requêtes actives dépassent {{capacity}}, les détails en temps réel ont donc été dégradés afin de ne pas affecter les requêtes métier.",
+    "首个 Token 耗时": "Temps avant le premier token"
   }
 }

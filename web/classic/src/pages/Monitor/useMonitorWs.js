@@ -60,7 +60,16 @@ const normalizeMonitorPayload = (payload, receivedAtMs = Date.now()) => {
 
 const useMonitorWs = ({ focusedRequestId } = {}) => {
   const [summaries, setSummaries] = useState([]);
-  const [stats, setStats] = useState({ total: 0, active: 0, memory: 0 });
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    memory: 0,
+    load: {
+      active: 0,
+      capacity: MAX_SUMMARY_ITEMS,
+      degraded: false,
+    },
+  });
   const [connected, setConnected] = useState(false);
   // Only keep the most recent channel update for the currently focused request
   // to avoid unbounded memory growth when the page is open for long periods.
@@ -187,10 +196,16 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
       const response = await API.get('/api/monitor/stats');
       const { success, data } = response.data;
       if (success && data) {
+        const load = response.data.load || {};
         setStats({
           total: data.total_requests || 0,
           active: data.active_requests || 0,
           memory: data.memory_bytes || 0,
+          load: {
+            active: load.active_requests || data.active_requests || 0,
+            capacity: load.capacity || MAX_SUMMARY_ITEMS,
+            degraded: !!load.degraded,
+          },
         });
       }
     } catch (error) {

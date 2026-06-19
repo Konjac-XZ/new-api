@@ -26,7 +26,7 @@ func TestOaiResponsesHandlerNonStreamMonitorBody(t *testing.T) {
 		Body: io.NopCloser(strings.NewReader(responseBody)),
 	}
 	info := &relaycommon.RelayInfo{
-		MonitorResponseBody: &strings.Builder{},
+		MonitorResponseBody: relaycommon.NewMonitorResponseBody(),
 	}
 
 	usage, newAPIErr := OaiResponsesHandler(c, info, resp)

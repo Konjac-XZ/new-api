@@ -1,5 +1,5 @@
 // Duration and timing constants
-export const DURATION_UPDATE_INTERVAL_MS = 100;
+export const DURATION_UPDATE_INTERVAL_MS = 1000;
 export const MS_TO_SECONDS = 1000;
 
 // Body size limits
