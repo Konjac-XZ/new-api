@@ -4210,6 +4210,8 @@
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
     "、": ", ",
+    "进入全屏": "Vào toàn màn hình",
+    "浏览器未允许进入全屏，请确认当前浏览器支持移动端全屏模式。": "Trình duyệt không cho phép toàn màn hình. Hãy xác nhận trình duyệt này hỗ trợ chế độ toàn màn hình trên di động.",
     "吞吐量": "Thông lượng",
     "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "Chế độ bảo vệ giám sát đã bật: số yêu cầu đang hoạt động vượt quá {{capacity}}, nên chi tiết thời gian thực đã được giảm để tránh ảnh hưởng đến yêu cầu nghiệp vụ.",
     "首个 Token 耗时": "Thời gian đến token đầu tiên"

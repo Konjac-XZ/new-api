@@ -3676,6 +3676,9 @@
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
     "、": ", ",
+    "进入全屏": "Passer en plein écran",
+    "退出全屏": "Quitter le plein écran",
+    "浏览器未允许进入全屏，请确认当前浏览器支持移动端全屏模式。": "Le navigateur n'a pas autorisé le plein écran. Vérifiez que ce navigateur prend en charge le plein écran mobile.",
     "吞吐量": "Débit",
     "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "Le mode de protection du monitoring est activé : les requêtes actives dépassent {{capacity}}, les détails en temps réel ont donc été dégradés afin de ne pas affecter les requêtes métier.",
     "首个 Token 耗时": "Temps avant le premier token"

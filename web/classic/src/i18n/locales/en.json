@@ -3822,6 +3822,9 @@
     "运营和收费行为产生的法律责任": "operation and charging behavior",
     "，": ", ",
     "、": ", ",
+    "进入全屏": "Enter fullscreen",
+    "退出全屏": "Exit fullscreen",
+    "浏览器未允许进入全屏，请确认当前浏览器支持移动端全屏模式。": "The browser did not allow fullscreen. Make sure this browser supports mobile fullscreen mode.",
     "吞吐量": "Throughput",
     "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "Monitor protection mode is enabled: active requests exceed {{capacity}}, so real-time details have been degraded to avoid affecting business requests.",
     "首个 Token 耗时": "Time To First Token"

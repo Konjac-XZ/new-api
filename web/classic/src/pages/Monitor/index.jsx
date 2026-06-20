@@ -42,6 +42,7 @@ import {
   Collapse,
   Tooltip,
   Modal,
+  Toast,
 } from '@douyinfe/semi-ui';
 import { IconRefresh, IconSetting } from '@douyinfe/semi-icons';
 import {
@@ -54,6 +55,8 @@ import {
   Hash,
   History,
   KeyRound,
+  Maximize2,
+  Minimize2,
   Network,
   Radio,
   Route,
@@ -69,11 +72,7 @@ import {
   isActiveStatus,
   isTerminalStatus,
 } from './statusUtils';
-import {
-  renderModelTag,
-  stringToColor,
-  escapeHtml,
-} from '../../helpers';
+import { renderModelTag, stringToColor, escapeHtml } from '../../helpers';
 import { API } from '../../helpers/api';
 import {
   DURATION_UPDATE_INTERVAL_MS,
@@ -82,7 +81,7 @@ import {
   DURATION_INSTANT_THRESHOLD_S,
   DURATION_FAST_THRESHOLD_S,
   DURATION_MEDIUM_THRESHOLD_S,
-  DURATION_SLOW_THRESHOLD_S
+  DURATION_SLOW_THRESHOLD_S,
 } from './constants';
 
 const { Title, Text } = Typography;
@@ -236,7 +235,8 @@ const getOutputSpeed = (record) => {
   }
 
   const ttftMs = getTimeToFirstTokenMs(record);
-  const generationMs = ttftMs > 0 ? Math.max(0, durationMs - ttftMs) : durationMs;
+  const generationMs =
+    ttftMs > 0 ? Math.max(0, durationMs - ttftMs) : durationMs;
 
   if (generationMs <= 0) {
     return null;
@@ -250,8 +250,10 @@ const getSyncedNowMs = (record, clientNowMs) => {
   const receivedAtMs = record?._receivedAtMs;
 
   if (
-    Number.isFinite(serverNowMs) && serverNowMs > 0
-    && Number.isFinite(receivedAtMs) && receivedAtMs > 0
+    Number.isFinite(serverNowMs) &&
+    serverNowMs > 0 &&
+    Number.isFinite(receivedAtMs) &&
+    receivedAtMs > 0
   ) {
     return serverNowMs + Math.max(0, clientNowMs - receivedAtMs);
   }
@@ -378,7 +380,7 @@ const durationTicker = createDurationTicker(DURATION_UPDATE_INTERVAL_MS);
 const useDurationNow = (enabled) => {
   const subscribe = useCallback(
     (listener) => {
-      if (!enabled) return () => { };
+      if (!enabled) return () => {};
       return durationTicker.subscribe(listener);
     },
     [enabled],
@@ -405,9 +407,8 @@ const DurationCell = ({ record, t }) => {
 
   const elapsed = useMemo(() => {
     if (!isActive || !activeStartTimeMs) return 0;
-    const elapsedSeconds = (
-      getSyncedNowMs(record, now) - activeStartTimeMs
-    ) / MS_TO_SECONDS;
+    const elapsedSeconds =
+      (getSyncedNowMs(record, now) - activeStartTimeMs) / MS_TO_SECONDS;
     return elapsedSeconds > 0 ? elapsedSeconds : 0;
   }, [activeStartTimeMs, isActive, now, record]);
 
@@ -1100,10 +1101,16 @@ const RequestDetail = ({
 
               <MetaPill icon={<Activity size={14} />} label={t('当前响应状态')}>
                 <Tag
-                  color={record.status === 'abandoned' ? 'grey' : (channelPhaseColors[record.current_phase] || 'grey')}
+                  color={
+                    record.status === 'abandoned'
+                      ? 'grey'
+                      : channelPhaseColors[record.current_phase] || 'grey'
+                  }
                   size='small'
                 >
-                  {record.status === 'abandoned' ? t('放弃') : (phaseLabels[record.current_phase] || t('未知状态'))}
+                  {record.status === 'abandoned'
+                    ? t('放弃')
+                    : phaseLabels[record.current_phase] || t('未知状态')}
                 </Tag>
               </MetaPill>
 
@@ -1243,8 +1250,8 @@ const RequestDetail = ({
                             {t('开始')}:{' '}
                             {attempt.started_at
                               ? new Date(
-                                attempt.started_at,
-                              ).toLocaleTimeString()
+                                  attempt.started_at,
+                                ).toLocaleTimeString()
                               : '-'}
                             {attempt.ended_at
                               ? ` | ${t('结束')}: ${new Date(attempt.ended_at).toLocaleTimeString()}`
@@ -1253,16 +1260,16 @@ const RequestDetail = ({
                           {(attempt.reason ||
                             attempt.error_code ||
                             attempt.http_status) && (
-                              <Text type='tertiary' size='small'>
-                                {t('原因')}: {attempt.reason || '-'}
-                                {attempt.error_code
-                                  ? ` | ${t('错误码')}: ${attempt.error_code}`
-                                  : ''}
-                                {attempt.http_status
-                                  ? ` | HTTP ${attempt.http_status}`
-                                  : ''}
-                              </Text>
-                            )}
+                            <Text type='tertiary' size='small'>
+                              {t('原因')}: {attempt.reason || '-'}
+                              {attempt.error_code
+                                ? ` | ${t('错误码')}: ${attempt.error_code}`
+                                : ''}
+                              {attempt.http_status
+                                ? ` | HTTP ${attempt.http_status}`
+                                : ''}
+                            </Text>
+                          )}
                         </div>
                       </div>
                     );
@@ -1663,6 +1670,7 @@ const Monitor = () => {
     getInitialMonitorVisibleColumns,
   );
   const [showColumnSelector, setShowColumnSelector] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const tableRef = useRef(null);
   const detailScrollContainerRef = useRef(null);
   // Track previous status to detect status changes
@@ -1685,6 +1693,70 @@ const Monitor = () => {
   } = useRequestDetail();
 
   const statusLabels = useMemo(() => getStatusLabels(t), [t]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    const handleFullscreenChange = () => {
+      setIsFullscreen(
+        Boolean(document.fullscreenElement || document.webkitFullscreenElement),
+      );
+    };
+
+    handleFullscreenChange();
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener(
+        'webkitfullscreenchange',
+        handleFullscreenChange,
+      );
+    };
+  }, []);
+
+  const handleFullscreenToggle = useCallback(async () => {
+    if (typeof document === 'undefined') {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement || document.webkitFullscreenElement) {
+        const exitFullscreen =
+          document.exitFullscreen || document.webkitExitFullscreen;
+        if (!exitFullscreen) {
+          throw new Error('Fullscreen API is not supported');
+        }
+        await exitFullscreen.call(document);
+        return;
+      }
+
+      const target = document.documentElement;
+      const requestFullscreen =
+        target.requestFullscreen || target.webkitRequestFullscreen;
+
+      if (!requestFullscreen) {
+        throw new Error('Fullscreen API is not supported');
+      }
+
+      try {
+        await requestFullscreen.call(target, { navigationUI: 'hide' });
+      } catch (error) {
+        if (!target.requestFullscreen) {
+          throw error;
+        }
+        await target.requestFullscreen();
+      }
+    } catch (error) {
+      console.error('Failed to toggle fullscreen mode:', error);
+      Toast.warning(
+        t('浏览器未允许进入全屏，请确认当前浏览器支持移动端全屏模式。'),
+      );
+    }
+  }, [t]);
 
   const monitorColumns = useMemo(() => {
     return [
@@ -1778,7 +1850,10 @@ const Monitor = () => {
     const defaults = getDefaultMonitorVisibleColumns();
     setVisibleColumns(defaults);
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(MONITOR_COLUMN_STORAGE_KEY, JSON.stringify(defaults));
+      localStorage.setItem(
+        MONITOR_COLUMN_STORAGE_KEY,
+        JSON.stringify(defaults),
+      );
     }
   }, []);
 
@@ -1985,6 +2060,14 @@ const Monitor = () => {
               onClick={() => setShowColumnSelector(true)}
             >
               {t('列设置')}
+            </Button>
+            <Button
+              icon={
+                isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />
+              }
+              onClick={handleFullscreenToggle}
+            >
+              {isFullscreen ? t('退出全屏') : t('进入全屏')}
             </Button>
           </Space>
         </div>
