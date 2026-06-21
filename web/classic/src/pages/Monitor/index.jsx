@@ -1671,6 +1671,7 @@ const Monitor = () => {
   );
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const wakeLockRef = useRef(null);
   const tableRef = useRef(null);
   const detailScrollContainerRef = useRef(null);
   // Track previous status to detect status changes
@@ -1717,6 +1718,80 @@ const Monitor = () => {
       );
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      typeof navigator === 'undefined' ||
+      typeof document === 'undefined' ||
+      !isFullscreen
+    ) {
+      return;
+    }
+
+    if (!navigator.wakeLock?.request) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const requestWakeLock = async () => {
+      if (
+        cancelled ||
+        wakeLockRef.current ||
+        document.visibilityState !== 'visible'
+      ) {
+        return;
+      }
+
+      try {
+        const wakeLock = await navigator.wakeLock.request('screen');
+        if (cancelled) {
+          await wakeLock.release();
+          return;
+        }
+
+        wakeLockRef.current = wakeLock;
+        wakeLock.addEventListener('release', () => {
+          wakeLockRef.current = null;
+          requestWakeLock();
+        });
+      } catch (error) {
+        console.warn('Failed to request monitor screen wake lock:', error);
+      }
+    };
+
+    const releaseWakeLock = async () => {
+      const wakeLock = wakeLockRef.current;
+      wakeLockRef.current = null;
+
+      if (!wakeLock) {
+        return;
+      }
+
+      try {
+        await wakeLock.release();
+      } catch (error) {
+        console.warn('Failed to release monitor screen wake lock:', error);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      } else {
+        releaseWakeLock();
+      }
+    };
+
+    requestWakeLock();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      releaseWakeLock();
+    };
+  }, [isFullscreen]);
 
   const handleFullscreenToggle = useCallback(async () => {
     if (typeof document === 'undefined') {
