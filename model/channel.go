@@ -26,16 +26,16 @@ type Channel struct {
 	Key                   string  `json:"key" gorm:"not null"`
 	OpenAIOrganization    *string `json:"openai_organization"`
 	TestModel             *string `json:"test_model"`
-	TestCase              *string `json:"test_case" gorm:"type:text"`
-	ExpectedAnswer        *string `json:"expected_answer" gorm:"type:text"`
+	TestCase              *string `json:"test_case" gorm:"-"`
+	ExpectedAnswer        *string `json:"expected_answer" gorm:"-"`
 	Status                int     `json:"status" gorm:"default:1"`
 	Name                  string  `json:"name" gorm:"index"`
 	Weight                *uint   `json:"weight" gorm:"default:0"`
 	CreatedTime           int64   `json:"created_time" gorm:"bigint"`
 	TestTime              int64   `json:"test_time" gorm:"bigint"`
 	ResponseTime          int     `json:"response_time"` // in milliseconds
-	MaxFirstTokenLatency  *int    `json:"max_first_token_latency" gorm:"column:max_first_token_latency"`
-	ScheduledTestInterval *int    `json:"scheduled_test_interval" gorm:"column:scheduled_test_interval;default:0"` // 定时测试间隔（分钟）
+	MaxFirstTokenLatency  *int    `json:"max_first_token_latency" gorm:"-"`
+	ScheduledTestInterval *int    `json:"scheduled_test_interval" gorm:"-"` // 定时测试间隔（分钟）
 	BaseURL               *string `json:"base_url" gorm:"column:base_url;default:''"`
 	Other                 string  `json:"other"`
 	Balance               float64 `json:"balance"` // in USD
@@ -54,16 +54,16 @@ type Channel struct {
 	ParamOverride         *string `json:"param_override" gorm:"type:text"`
 	HeaderOverride        *string `json:"header_override" gorm:"type:text"`
 	Remark                *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
-	BreakerPressure       float64 `json:"-" gorm:"column:breaker_pressure;default:0"`
-	BreakerUpdatedAt      int64   `json:"-" gorm:"column:breaker_updated_at;bigint;default:0"`
-	BreakerFailStreak     int     `json:"-" gorm:"column:breaker_fail_streak;default:0"`
-	BreakerCooldownAt     int64   `json:"-" gorm:"column:breaker_cooldown_at;bigint;default:0"`
-	BreakerLastFailure    string  `json:"-" gorm:"column:breaker_last_failure;type:varchar(64);default:''"`
-	BreakerHP             float64 `json:"-" gorm:"column:breaker_hp;default:-1"`
-	BreakerTripCount      int     `json:"-" gorm:"column:breaker_trip_count;default:0"`
-	BreakerRecentRequests float64 `json:"-" gorm:"column:breaker_recent_requests;default:0"`
-	BreakerRecentFailures float64 `json:"-" gorm:"column:breaker_recent_failures;default:0"`
-	BreakerRecentTimeouts float64 `json:"-" gorm:"column:breaker_recent_timeouts;default:0"`
+	BreakerPressure       float64 `json:"-" gorm:"-"`
+	BreakerUpdatedAt      int64   `json:"-" gorm:"-"`
+	BreakerFailStreak     int     `json:"-" gorm:"-"`
+	BreakerCooldownAt     int64   `json:"-" gorm:"-"`
+	BreakerLastFailure    string  `json:"-" gorm:"-"`
+	BreakerHP             float64 `json:"-" gorm:"-"`
+	BreakerTripCount      int     `json:"-" gorm:"-"`
+	BreakerRecentRequests float64 `json:"-" gorm:"-"`
+	BreakerRecentFailures float64 `json:"-" gorm:"-"`
+	BreakerRecentTimeouts float64 `json:"-" gorm:"-"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -421,14 +421,27 @@ func (channel *Channel) IsBreakerProbationAt(now int64) bool {
 }
 
 func (channel *Channel) Save() error {
-	return DB.Save(channel).Error
+	if channel == nil {
+		return errors.New("channel is nil")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(channel).Error; err != nil {
+			return err
+		}
+		return saveChannelExternalFieldsTx(tx, channel)
+	})
 }
 
 func (channel *Channel) SaveWithoutKey() error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
-	return DB.Omit("key").Save(channel).Error
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Omit("key").Save(channel).Error; err != nil {
+			return err
+		}
+		return saveChannelExternalFieldsTx(tx, channel)
+	})
 }
 
 func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
@@ -439,6 +452,9 @@ func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOpti
 		err = order.Apply(DB).Find(&channels).Error
 	} else {
 		err = order.Apply(DB).Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
+	}
+	if err == nil {
+		err = LoadChannelExternalFields(channels...)
 	}
 	return channels, err
 }
@@ -451,6 +467,9 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...Ch
 		query = query.Omit("key")
 	}
 	err := query.Find(&channels).Error
+	if err == nil {
+		err = LoadChannelExternalFields(channels...)
+	}
 	return channels, err
 }
 
@@ -484,13 +503,22 @@ func SearchChannels(keyword string, group string, model string, idSort bool, sor
 	if err != nil {
 		return nil, err
 	}
+	if err := LoadChannelExternalFields(channels...); err != nil {
+		return nil, err
+	}
 	return channels, nil
 }
 
 func GetChannelsWithScheduledTest() ([]*Channel, error) {
 	var channels []*Channel
 	// Schedule tests for every channel that opts in (except those manually disabled by the user)
-	err := DB.Where("status != ? AND scheduled_test_interval > 0", common.ChannelStatusManuallyDisabled).Find(&channels).Error
+	err := DB.
+		Joins("JOIN channel_test_configs ON channel_test_configs.channel_id = channels.id").
+		Where("channels.status != ? AND channel_test_configs.scheduled_test_interval > 0", common.ChannelStatusManuallyDisabled).
+		Find(&channels).Error
+	if err == nil {
+		err = LoadChannelExternalFields(channels...)
+	}
 	return channels, err
 }
 
@@ -503,6 +531,10 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 		err = DB.Omit("key").First(channel, "id = ?", id).Error
 	}
 	if err != nil {
+		return nil, err
+	}
+	channel.applyDefaultExternalFields()
+	if err := LoadChannelExternalFields(channel); err != nil {
 		return nil, err
 	}
 	return channel, nil
@@ -528,6 +560,10 @@ func BatchInsertChannels(channels []Channel) error {
 			return err
 		}
 		for _, channel_ := range chunk {
+			if err := saveChannelExternalFieldsTx(tx, &channel_); err != nil {
+				tx.Rollback()
+				return err
+			}
 			if err := channel_.AddAbilities(tx); err != nil {
 				tx.Rollback()
 				return err
@@ -548,6 +584,10 @@ func BatchDeleteChannels(ids []int) error {
 	}
 	for _, chunk := range lo.Chunk(ids, 200) {
 		if err := tx.Where("id in (?)", chunk).Delete(&Channel{}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+		if err := deleteChannelExternalFieldsTx(tx, chunk); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -633,13 +673,18 @@ func (channel *Channel) GetStatusCodeMapping() string {
 }
 
 func (channel *Channel) Insert() error {
-	var err error
-	err = DB.Create(channel).Error
-	if err != nil {
-		return err
+	if channel == nil {
+		return errors.New("channel is nil")
 	}
-	err = channel.AddAbilities(nil)
-	return err
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(channel).Error; err != nil {
+			return err
+		}
+		if err := saveChannelExternalFieldsTx(tx, channel); err != nil {
+			return err
+		}
+		return channel.AddAbilities(tx)
+	})
 }
 
 func (channel *Channel) Update() error {
@@ -681,14 +726,22 @@ func (channel *Channel) Update() error {
 			}
 		}
 	}
-	var err error
-	err = DB.Model(channel).Updates(channel).Error
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(channel).Updates(channel).Error; err != nil {
+			return err
+		}
+		if err := saveChannelExternalFieldsTx(tx, channel); err != nil {
+			return err
+		}
+		return channel.UpdateAbilities(tx)
+	})
 	if err != nil {
 		return err
 	}
-	DB.Model(channel).First(channel, "id = ?", channel.Id)
-	err = channel.UpdateAbilities(nil)
-	return err
+	if err := DB.Model(channel).First(channel, "id = ?", channel.Id).Error; err != nil {
+		return err
+	}
+	return LoadChannelExternalFields(channel)
 }
 
 func (channel *Channel) UpdateResponseTime(responseTime int64) {
@@ -712,13 +765,18 @@ func (channel *Channel) UpdateBalance(balance float64) {
 }
 
 func (channel *Channel) Delete() error {
-	var err error
-	err = DB.Delete(channel).Error
-	if err != nil {
-		return err
+	if channel == nil {
+		return errors.New("channel is nil")
 	}
-	err = channel.DeleteAbilities()
-	return err
+	return DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Delete(channel).Error; err != nil {
+			return err
+		}
+		if err := deleteChannelExternalFieldsTx(tx, []int{channel.Id}); err != nil {
+			return err
+		}
+		return tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
+	})
 }
 
 var channelStatusLock sync.Mutex
@@ -990,13 +1048,39 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
-	result := DB.Where("status = ?", status).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	var ids []int
+	if err := DB.Model(&Channel{}).Where("status = ?", status).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id in ?", ids).Delete(&Channel{}).Error; err != nil {
+			return err
+		}
+		return deleteChannelExternalFieldsTx(tx, ids)
+	})
+	return int64(len(ids)), err
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	var ids []int
+	if err := DB.Model(&Channel{}).
+		Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).
+		Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id in ?", ids).Delete(&Channel{}).Error; err != nil {
+			return err
+		}
+		return deleteChannelExternalFieldsTx(tx, ids)
+	})
+	return int64(len(ids)), err
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {
@@ -1106,42 +1190,6 @@ func (channel *Channel) GetMaxRetryAttempts() int {
 		return 1
 	}
 	return setting.MaxRetryAttempts
-}
-
-func UpdateChannelBreakerState(channel *Channel) error {
-	if channel == nil {
-		return errors.New("channel is nil")
-	}
-	if err := UpdateChannelBreakerStateTx(DB, channel); err != nil {
-		return err
-	}
-	CacheUpdateChannelBreakerState(channel)
-	return nil
-}
-
-func UpdateChannelBreakerStateTx(tx *gorm.DB, channel *Channel) error {
-	if tx == nil {
-		return errors.New("transaction is nil")
-	}
-	if channel == nil {
-		return errors.New("channel is nil")
-	}
-	updates := map[string]interface{}{
-		"breaker_pressure":        channel.BreakerPressure,
-		"breaker_updated_at":      channel.BreakerUpdatedAt,
-		"breaker_fail_streak":     channel.BreakerFailStreak,
-		"breaker_cooldown_at":     channel.BreakerCooldownAt,
-		"breaker_last_failure":    channel.BreakerLastFailure,
-		"breaker_hp":              channel.BreakerHP,
-		"breaker_trip_count":      channel.BreakerTripCount,
-		"breaker_recent_requests": channel.BreakerRecentRequests,
-		"breaker_recent_failures": channel.BreakerRecentFailures,
-		"breaker_recent_timeouts": channel.BreakerRecentTimeouts,
-	}
-	if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error; err != nil {
-		return err
-	}
-	return nil
 }
 
 func (channel *Channel) SetSetting(setting dto.ChannelSettings) {

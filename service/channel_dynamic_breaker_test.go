@@ -172,6 +172,27 @@ func TestFastSuccessRefillFractions(t *testing.T) {
 	}
 }
 
+func loadBreakerStateForTest(t *testing.T, channelID int, dest *model.Channel) {
+	t.Helper()
+	original := *dest
+	var state model.ChannelBreakerState
+	if err := model.DB.Where("channel_id = ?", channelID).First(&state).Error; err != nil {
+		t.Fatalf("failed to reload channel breaker state: %v", err)
+	}
+	*dest = original
+	dest.Id = channelID
+	dest.BreakerPressure = state.BreakerPressure
+	dest.BreakerUpdatedAt = state.BreakerUpdatedAt
+	dest.BreakerFailStreak = state.BreakerFailStreak
+	dest.BreakerCooldownAt = state.BreakerCooldownAt
+	dest.BreakerLastFailure = state.BreakerLastFailure
+	dest.BreakerHP = state.BreakerHP
+	dest.BreakerTripCount = state.BreakerTripCount
+	dest.BreakerRecentRequests = state.BreakerRecentRequests
+	dest.BreakerRecentFailures = state.BreakerRecentFailures
+	dest.BreakerRecentTimeouts = state.BreakerRecentTimeouts
+}
+
 func TestRecordChannelProbeSuccess_DoesNotFastForwardCooldown(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now+120, now-10, 5)
@@ -181,9 +202,7 @@ func TestRecordChannelProbeSuccess_DoesNotFastForwardCooldown(t *testing.T) {
 	}
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_cooldown_at", "breaker_updated_at").Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload channel breaker state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerCooldownAt != channel.BreakerCooldownAt {
 		t.Fatalf("expected cooldown_at to remain unchanged, got %d want %d", latest.BreakerCooldownAt, channel.BreakerCooldownAt)
 	}
@@ -195,7 +214,7 @@ func TestRecordChannelProbeSuccess_DoesNotFastForwardCooldown(t *testing.T) {
 func TestRecordChannelProbeSuccess_PromotesOnlyInAwaitingProbe(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", channel.Id).Updates(map[string]any{
 		"breaker_fail_streak":  4,
 		"breaker_last_failure": string(channelFailureKindFirstTokenTimeout),
 	}).Error; err != nil {
@@ -209,9 +228,7 @@ func TestRecordChannelProbeSuccess_PromotesOnlyInAwaitingProbe(t *testing.T) {
 	}
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_cooldown_at", "breaker_updated_at", "breaker_fail_streak", "breaker_last_failure").Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload channel breaker state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerCooldownAt <= channel.BreakerCooldownAt {
 		t.Fatalf("expected cooldown_at to be promoted to now, got %d <= %d", latest.BreakerCooldownAt, channel.BreakerCooldownAt)
 	}
@@ -230,16 +247,14 @@ func TestRecordChannelProbeFailure_IgnoresCoolingPhase(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now+180, now-10, 5)
 
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", channel.Id).Updates(map[string]any{
 		"breaker_pressure":     1.5,
 		"breaker_fail_streak":  2,
 		"breaker_last_failure": "",
 	}).Error; err != nil {
 		t.Fatalf("failed to set breaker baseline: %v", err)
 	}
-	channel.BreakerPressure = 1.5
-	channel.BreakerFailStreak = 2
-	channel.BreakerLastFailure = ""
+	loadBreakerStateForTest(t, channel.Id, channel)
 
 	probeErr := types.NewErrorWithStatusCode(
 		fmt.Errorf("probe failed during cooling"),
@@ -249,10 +264,7 @@ func TestRecordChannelProbeFailure_IgnoresCoolingPhase(t *testing.T) {
 	RecordChannelProbeFailure(channel, probeErr)
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_pressure", "breaker_fail_streak", "breaker_cooldown_at", "breaker_updated_at", "breaker_last_failure").
-		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload channel breaker state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerPressure != 1.5 {
 		t.Fatalf("expected pressure unchanged during cooling, got %f", latest.BreakerPressure)
 	}
@@ -276,10 +288,7 @@ func TestRecordChannelProbeFailure_AwaitingProbeRestartsCooldown(t *testing.T) {
 	RecordChannelProbeFailure(channel, probeErr)
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_pressure", "breaker_fail_streak", "breaker_cooldown_at", "breaker_last_failure").
-		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload channel breaker state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerCooldownAt <= now {
 		t.Fatalf("expected cooldown to restart from now, got cooldown_at=%d now=%d", latest.BreakerCooldownAt, now)
 	}
@@ -308,13 +317,9 @@ func TestRecordChannelProbeFailure_ObservationPenaltyIsStronger(t *testing.T) {
 	RecordChannelProbeFailure(observation, probeErr)
 
 	var awaitingLatest model.Channel
-	if err := model.DB.Select("breaker_pressure", "breaker_cooldown_at").Where("id = ?", awaiting.Id).First(&awaitingLatest).Error; err != nil {
-		t.Fatalf("failed to reload awaiting channel: %v", err)
-	}
+	loadBreakerStateForTest(t, awaiting.Id, &awaitingLatest)
 	var observationLatest model.Channel
-	if err := model.DB.Select("breaker_pressure", "breaker_cooldown_at").Where("id = ?", observation.Id).First(&observationLatest).Error; err != nil {
-		t.Fatalf("failed to reload observation channel: %v", err)
-	}
+	loadBreakerStateForTest(t, observation.Id, &observationLatest)
 	if observationLatest.BreakerPressure <= awaitingLatest.BreakerPressure {
 		t.Fatalf("expected observation pressure penalty > awaiting penalty, got observation=%f awaiting=%f", observationLatest.BreakerPressure, awaitingLatest.BreakerPressure)
 	}
@@ -345,10 +350,7 @@ func TestRecordChannelRelayFailure_AccumulatesAcrossStaleHandles(t *testing.T) {
 	RecordChannelRelayFailure(&secondHandle, nil, failure)
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_fail_streak", "breaker_recent_requests", "breaker_recent_failures").
-		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload channel breaker state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerFailStreak != 2 {
 		t.Fatalf("expected stale handles to accumulate fail streak via working state cache, got %d", latest.BreakerFailStreak)
 	}
@@ -402,16 +404,15 @@ func TestRecordChannelRelayFailure_ObservationTimeoutAlwaysRestartsCooldown(t *t
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-30, 5)
 
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", channel.Id).Updates(map[string]any{
 		"breaker_hp":          9.5,
 		"breaker_trip_count":  0,
 		"breaker_fail_streak": 0,
 	}).Error; err != nil {
 		t.Fatalf("failed to seed observation timeout baseline: %v", err)
 	}
-	channel.BreakerHP = 9.5
-	channel.BreakerTripCount = 0
-	channel.BreakerFailStreak = 0
+	clearChannelBreakerWorkingState(channel.Id)
+	loadBreakerStateForTest(t, channel.Id, channel)
 
 	timeoutErr := types.NewErrorWithStatusCode(
 		fmt.Errorf("first token timeout in observation"),
@@ -421,10 +422,7 @@ func TestRecordChannelRelayFailure_ObservationTimeoutAlwaysRestartsCooldown(t *t
 	RecordChannelRelayFailure(channel, nil, timeoutErr)
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_cooldown_at", "breaker_hp", "breaker_trip_count", "breaker_last_failure", "breaker_fail_streak").
-		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload observation timeout state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerCooldownAt <= now {
 		t.Fatalf("expected timeout in observation to restart cooldown, got cooldown_at=%d now=%d", latest.BreakerCooldownAt, now)
 	}
@@ -484,7 +482,7 @@ func TestRecordChannelRelaySuccess_ObservationImplicitTimeoutBecomesFailure(t *t
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-20, now-20, 5)
 
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", channel.Id).Updates(map[string]any{
 		"breaker_hp":              9.5,
 		"breaker_trip_count":      0,
 		"breaker_fail_streak":     0,
@@ -495,13 +493,8 @@ func TestRecordChannelRelaySuccess_ObservationImplicitTimeoutBecomesFailure(t *t
 	}).Error; err != nil {
 		t.Fatalf("failed to seed implicit timeout baseline: %v", err)
 	}
-	channel.BreakerHP = 9.5
-	channel.BreakerTripCount = 0
-	channel.BreakerFailStreak = 0
-	channel.BreakerRecentRequests = 0
-	channel.BreakerRecentFailures = 0
-	channel.BreakerRecentTimeouts = 0
-	channel.BreakerLastFailure = ""
+	clearChannelBreakerWorkingState(channel.Id)
+	loadBreakerStateForTest(t, channel.Id, channel)
 
 	info := &relaycommon.RelayInfo{
 		IsStream:  true,
@@ -510,10 +503,7 @@ func TestRecordChannelRelaySuccess_ObservationImplicitTimeoutBecomesFailure(t *t
 	RecordChannelRelaySuccess(channel, info)
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_cooldown_at", "breaker_fail_streak", "breaker_last_failure", "breaker_recent_requests", "breaker_recent_failures", "breaker_recent_timeouts", "breaker_hp", "breaker_trip_count").
-		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload implicit-timeout state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerCooldownAt <= now {
 		t.Fatalf("expected implicit timeout in observation to restart cooldown, got cooldown_at=%d now=%d", latest.BreakerCooldownAt, now)
 	}
@@ -538,7 +528,7 @@ func TestRecordChannelRelaySuccess_AwaitingProbeReturnsToClosed(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)
 
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", channel.Id).Updates(map[string]any{
 		"breaker_hp":           3.0,
 		"breaker_trip_count":   2,
 		"breaker_fail_streak":  4,
@@ -559,10 +549,7 @@ func TestRecordChannelRelaySuccess_AwaitingProbeReturnsToClosed(t *testing.T) {
 	RecordChannelRelaySuccess(channel, info)
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_cooldown_at", "breaker_updated_at", "breaker_fail_streak", "breaker_last_failure", "breaker_trip_count", "breaker_hp").
-		Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload awaiting-probe success state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerCooldownAt != 0 {
 		t.Fatalf("expected awaiting-probe real success to clear cooldown, got %d", latest.BreakerCooldownAt)
 	}
@@ -587,7 +574,7 @@ func TestRecordChannelRelaySuccess_ObservationReturnsToClosed(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-20, now-20, 5)
 
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", channel.Id).Updates(map[string]any{
 		"breaker_hp":           2.5,
 		"breaker_trip_count":   1,
 		"breaker_fail_streak":  2,
@@ -608,9 +595,7 @@ func TestRecordChannelRelaySuccess_ObservationReturnsToClosed(t *testing.T) {
 	RecordChannelRelaySuccess(channel, info)
 
 	var latest model.Channel
-	if err := model.DB.Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload observation success state: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 	if latest.BreakerCooldownAt != 0 {
 		t.Fatalf("expected observation real success to clear cooldown, got %d", latest.BreakerCooldownAt)
 	}
@@ -690,13 +675,13 @@ func seedDynamicBreakerChannelForProbeTest(t *testing.T, cooldownAt int64, updat
 		BreakerCooldownAt:     cooldownAt,
 		BreakerUpdatedAt:      updatedAt,
 	}
-	if err := model.DB.Create(channel).Error; err != nil {
+	if err := channel.Insert(); err != nil {
 		t.Fatalf("failed to seed channel: %v", err)
 	}
 	clearChannelBreakerWorkingState(channel.Id)
 	t.Cleanup(func() {
 		clearChannelBreakerWorkingState(channel.Id)
-		_ = model.DB.Delete(&model.Channel{}, channel.Id).Error
+		_ = channel.Delete()
 	})
 	return channel
 }
@@ -1071,9 +1056,7 @@ func TestProbeSuccess_RefillsToPartialHP(t *testing.T) {
 	}
 
 	var latest model.Channel
-	if err := model.DB.Select("breaker_hp").Where("id = ?", channel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload channel: %v", err)
-	}
+	loadBreakerStateForTest(t, channel.Id, &latest)
 
 	maxHP := computeMaxHP(&latest)
 	expected := maxHP * hpProbeSuccessRefillFraction
@@ -1123,7 +1106,7 @@ func TestProbationSuccess_DoesNotReduceHigherHP(t *testing.T) {
 func TestResetAllDynamicChannelBreakers(t *testing.T) {
 	now := time.Now().Unix()
 	dynamicChannel := seedDynamicBreakerChannelForProbeTest(t, now+300, now-60, 5)
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", dynamicChannel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", dynamicChannel.Id).Updates(map[string]any{
 		"breaker_pressure":        4.5,
 		"breaker_fail_streak":     6,
 		"breaker_cooldown_at":     now + 300,
@@ -1159,11 +1142,11 @@ func TestResetAllDynamicChannelBreakers(t *testing.T) {
 		BreakerHP:          2.0,
 		BreakerTripCount:   4,
 	}
-	if err := model.DB.Create(plainChannel).Error; err != nil {
+	if err := plainChannel.Insert(); err != nil {
 		t.Fatalf("failed to seed plain channel: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = model.DB.Delete(&model.Channel{}, plainChannel.Id).Error
+		_ = plainChannel.Delete()
 	})
 
 	successCount, failCount, err := ResetAllDynamicChannelBreakers()
@@ -1178,9 +1161,7 @@ func TestResetAllDynamicChannelBreakers(t *testing.T) {
 	}
 
 	var resetDynamic model.Channel
-	if err := model.DB.Where("id = ?", dynamicChannel.Id).First(&resetDynamic).Error; err != nil {
-		t.Fatalf("failed to reload dynamic channel: %v", err)
-	}
+	loadBreakerStateForTest(t, dynamicChannel.Id, &resetDynamic)
 	if resetDynamic.BreakerPressure != 0 {
 		t.Fatalf("expected dynamic breaker pressure reset to 0, got %f", resetDynamic.BreakerPressure)
 	}
@@ -1208,9 +1189,7 @@ func TestResetAllDynamicChannelBreakers(t *testing.T) {
 	}
 
 	var unchangedPlain model.Channel
-	if err := model.DB.Where("id = ?", plainChannel.Id).First(&unchangedPlain).Error; err != nil {
-		t.Fatalf("failed to reload plain channel: %v", err)
-	}
+	loadBreakerStateForTest(t, plainChannel.Id, &unchangedPlain)
 	if unchangedPlain.BreakerPressure != plainChannel.BreakerPressure {
 		t.Fatalf("expected non-dynamic channel pressure unchanged, got %f want %f", unchangedPlain.BreakerPressure, plainChannel.BreakerPressure)
 	}
@@ -1222,7 +1201,7 @@ func TestResetAllDynamicChannelBreakers(t *testing.T) {
 func TestResetDynamicChannelBreakerByID(t *testing.T) {
 	now := time.Now().Unix()
 	dynamicChannel := seedDynamicBreakerChannelForProbeTest(t, now+300, now-60, 5)
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", dynamicChannel.Id).Updates(map[string]any{
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", dynamicChannel.Id).Updates(map[string]any{
 		"breaker_pressure":        3.5,
 		"breaker_fail_streak":     5,
 		"breaker_cooldown_at":     now + 300,
@@ -1242,9 +1221,7 @@ func TestResetDynamicChannelBreakerByID(t *testing.T) {
 	}
 
 	var latest model.Channel
-	if err := model.DB.Where("id = ?", dynamicChannel.Id).First(&latest).Error; err != nil {
-		t.Fatalf("failed to reload channel: %v", err)
-	}
+	loadBreakerStateForTest(t, dynamicChannel.Id, &latest)
 	if latest.BreakerPressure != 0 || latest.BreakerFailStreak != 0 || latest.BreakerCooldownAt != 0 {
 		t.Fatalf("expected core breaker state reset, got pressure=%f fail_streak=%d cooldown_at=%d", latest.BreakerPressure, latest.BreakerFailStreak, latest.BreakerCooldownAt)
 	}

@@ -302,6 +302,8 @@ func migrateDB() error {
 
 	err := DB.AutoMigrate(
 		&Channel{},
+		&ChannelBreakerState{},
+		&ChannelTestConfig{},
 		&BreakerPenaltyTrace{},
 		&Token{},
 		&User{},
@@ -332,6 +334,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateChannelExternalTables(); err != nil {
+		return err
+	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -353,6 +358,8 @@ func migrateDBFast() error {
 		name  string
 	}{
 		{&Channel{}, "Channel"},
+		{&ChannelBreakerState{}, "ChannelBreakerState"},
+		{&ChannelTestConfig{}, "ChannelTestConfig"},
 		{&BreakerPenaltyTrace{}, "BreakerPenaltyTrace"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
@@ -402,6 +409,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := migrateChannelExternalTables(); err != nil {
+		return err
 	}
 	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {

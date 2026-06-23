@@ -48,7 +48,7 @@ func setupChannelBreakerDetailTestDB(t *testing.T) *gorm.DB {
 	model.DB = db
 	model.LOG_DB = db
 
-	if err := db.AutoMigrate(&model.Channel{}, &model.BreakerPenaltyTrace{}); err != nil {
+	if err := db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.ChannelBreakerState{}, &model.ChannelTestConfig{}, &model.BreakerPenaltyTrace{}); err != nil {
 		t.Fatalf("failed to migrate breaker detail tables: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestGetChannelBreakerDetailReturnsTraceHistory(t *testing.T) {
 		BreakerHP:          0,
 		BreakerTripCount:   2,
 	}
-	if err := db.Create(channel).Error; err != nil {
+	if err := channel.Insert(); err != nil {
 		t.Fatalf("failed to create channel: %v", err)
 	}
 
