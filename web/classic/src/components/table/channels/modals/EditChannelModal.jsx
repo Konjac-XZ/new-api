@@ -174,6 +174,9 @@ const EditChannelModal = (props) => {
     key: '',
     openai_organization: '',
     max_input_tokens: 0,
+    max_first_token_latency: 0,
+    max_retry_attempts: 1,
+    scheduled_test_interval: 0,
     base_url: '',
     other: '',
     model_mapping: '',
@@ -182,6 +185,8 @@ const EditChannelModal = (props) => {
     models: [],
     auto_ban: 1,
     test_model: '',
+    test_case: '',
+    expected_answer: '',
     groups: ['default'],
     priority: 0,
     weight: 0,
@@ -192,6 +197,9 @@ const EditChannelModal = (props) => {
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
+    treat_empty_reply_as_failure: false,
+    dynamic_circuit_breaker: false,
+    tolerance_coefficient: null,
     system_prompt: '',
     system_prompt_override: false,
     settings: '',
@@ -514,7 +522,11 @@ const EditChannelModal = (props) => {
     thinking_to_content: false,
     proxy: '',
     pass_through_body_enabled: false,
+    treat_empty_reply_as_failure: false,
+    dynamic_circuit_breaker: false,
+    tolerance_coefficient: null,
     system_prompt: '',
+    max_retry_attempts: 1,
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
@@ -865,25 +877,40 @@ const EditChannelModal = (props) => {
           data.proxy = parsedSettings.proxy || '';
           data.pass_through_body_enabled =
             parsedSettings.pass_through_body_enabled || false;
+          data.treat_empty_reply_as_failure =
+            parsedSettings.treat_empty_reply_as_failure || false;
+          data.dynamic_circuit_breaker =
+            parsedSettings.dynamic_circuit_breaker === true;
+          data.tolerance_coefficient =
+            parsedSettings.tolerance_coefficient ?? null;
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.max_retry_attempts = parsedSettings.max_retry_attempts || 1;
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
           data.thinking_to_content = false;
           data.proxy = '';
           data.pass_through_body_enabled = false;
+          data.treat_empty_reply_as_failure = false;
+          data.dynamic_circuit_breaker = false;
+          data.tolerance_coefficient = null;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.max_retry_attempts = 1;
         }
       } else {
         data.force_format = false;
         data.thinking_to_content = false;
         data.proxy = '';
         data.pass_through_body_enabled = false;
+        data.treat_empty_reply_as_failure = false;
+        data.dynamic_circuit_breaker = false;
+        data.tolerance_coefficient = null;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.max_retry_attempts = 1;
       }
 
       if (data.settings) {
@@ -991,8 +1018,13 @@ const EditChannelModal = (props) => {
         thinking_to_content: data.thinking_to_content,
         proxy: data.proxy,
         pass_through_body_enabled: data.pass_through_body_enabled,
+        treat_empty_reply_as_failure:
+          data.treat_empty_reply_as_failure || false,
+        dynamic_circuit_breaker: data.dynamic_circuit_breaker || false,
+        tolerance_coefficient: data.tolerance_coefficient ?? null,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        max_retry_attempts: data.max_retry_attempts || 1,
       });
       initialModelsRef.current = (data.models || [])
         .map((model) => (model || '').trim())
@@ -1031,6 +1063,14 @@ const EditChannelModal = (props) => {
         (data.weight && data.weight !== 0) ||
         (data.proxy && data.proxy.trim()) ||
         (data.system_prompt && data.system_prompt.trim()) ||
+        (data.test_case && data.test_case.trim()) ||
+        (data.expected_answer && data.expected_answer.trim()) ||
+        (data.max_first_token_latency && data.max_first_token_latency !== 0) ||
+        (data.max_retry_attempts && data.max_retry_attempts !== 1) ||
+        (data.scheduled_test_interval && data.scheduled_test_interval !== 0) ||
+        data.treat_empty_reply_as_failure ||
+        data.dynamic_circuit_breaker ||
+        data.tolerance_coefficient != null ||
         data.thinking_to_content ||
         data.pass_through_body_enabled ||
         data.force_format ||
@@ -1375,8 +1415,12 @@ const EditChannelModal = (props) => {
       thinking_to_content: false,
       proxy: '',
       pass_through_body_enabled: false,
+      treat_empty_reply_as_failure: false,
+      dynamic_circuit_breaker: false,
+      tolerance_coefficient: null,
       system_prompt: '',
       system_prompt_override: false,
+      max_retry_attempts: 1,
     });
     // 重置密钥模式状态
     setKeyMode('append');
@@ -1740,15 +1784,29 @@ const EditChannelModal = (props) => {
     }
 
     // 生成渠道额外设置JSON
+    const parsedMaxRetryAttempts = Number(localInputs.max_retry_attempts);
+    const normalizedMaxRetryAttempts =
+      Number.isFinite(parsedMaxRetryAttempts) && parsedMaxRetryAttempts > 0
+        ? Math.round(parsedMaxRetryAttempts)
+        : 1;
     const channelExtraSettings = {
       force_format: localInputs.force_format || false,
       thinking_to_content: localInputs.thinking_to_content || false,
       proxy: localInputs.proxy || '',
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
+      treat_empty_reply_as_failure:
+        localInputs.treat_empty_reply_as_failure || false,
+      dynamic_circuit_breaker:
+        localInputs.dynamic_circuit_breaker === true,
+      ...(localInputs.tolerance_coefficient != null && {
+        tolerance_coefficient: Number(localInputs.tolerance_coefficient),
+      }),
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
+      max_retry_attempts: normalizedMaxRetryAttempts,
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
+    localInputs.max_retry_attempts = normalizedMaxRetryAttempts;
 
     // 处理 settings 字段（包括企业账户设置和字段透传控制）
     let settings = {};
@@ -1821,11 +1879,28 @@ const EditChannelModal = (props) => {
 
     localInputs.settings = JSON.stringify(settings);
 
+    const latencyValue = Number(localInputs.max_first_token_latency);
+    if (!Number.isFinite(latencyValue) || latencyValue < 0) {
+      delete localInputs.max_first_token_latency;
+    } else {
+      localInputs.max_first_token_latency = Math.round(latencyValue);
+    }
+
+    const scheduledTestValue = Number(localInputs.scheduled_test_interval);
+    if (!Number.isFinite(scheduledTestValue) || scheduledTestValue < 0) {
+      delete localInputs.scheduled_test_interval;
+    } else {
+      localInputs.scheduled_test_interval = Math.round(scheduledTestValue);
+    }
+
     // 清理不需要发送到后端的字段
     delete localInputs.force_format;
     delete localInputs.thinking_to_content;
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
+    delete localInputs.treat_empty_reply_as_failure;
+    delete localInputs.dynamic_circuit_breaker;
+    delete localInputs.tolerance_coefficient;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
     delete localInputs.is_enterprise_account;
@@ -2300,6 +2375,26 @@ const EditChannelModal = (props) => {
                     {t('请求配置')}
                   </Text>
 
+                  <Form.TextArea
+                    field='test_case'
+                    label={t('自定义测试用例')}
+                    placeholder={t('不填则使用默认值 "hi"')}
+                    onChange={(value) => handleInputChange('test_case', value)}
+                    autosize={{ minRows: 2, maxRows: 6 }}
+                    showClear
+                  />
+
+                  <Form.TextArea
+                    field='expected_answer'
+                    label={t('预期回答')}
+                    placeholder={t('测试时检查响应是否包含此字符串，不填则不检查')}
+                    onChange={(value) =>
+                      handleInputChange('expected_answer', value)
+                    }
+                    autosize={{ minRows: 2, maxRows: 6 }}
+                    showClear
+                  />
+
                   <div className='mb-4'>
                     <div className='flex items-center justify-between gap-2 mb-1'>
                       <Text className='text-sm font-medium'>{t('参数覆盖')}</Text>
@@ -2478,6 +2573,85 @@ const EditChannelModal = (props) => {
                     </Col>
                   </Row>
 
+                  <Form.InputNumber
+                    field='max_first_token_latency'
+                    label={t('最大首 Token 延迟 (秒)')}
+                    placeholder={t('超出延迟后自动切换下一个渠道')}
+                    min={0}
+                    onNumberChange={(value) =>
+                      handleInputChange('max_first_token_latency', value)
+                    }
+                    style={{ width: '100%' }}
+                    extraText={t('仅对流式请求生效，0 表示关闭')}
+                  />
+
+                  <Form.InputNumber
+                    field='max_retry_attempts'
+                    label={t('单渠道最大重试次数')}
+                    placeholder={t('同一渠道失败后的最大重试次数')}
+                    min={1}
+                    onNumberChange={(value) =>
+                      handleChannelSettingsChange('max_retry_attempts', value)
+                    }
+                    style={{ width: '100%' }}
+                    extraText={t(
+                      '默认 1（仅请求一次）。超过该次数后才切换到下一个渠道',
+                    )}
+                  />
+
+                  <Form.Switch
+                    field='dynamic_circuit_breaker'
+                    label={t('启用动态熔断冷却')}
+                    checkedText={t('开')}
+                    uncheckedText={t('关')}
+                    disabled={!autoBan}
+                    onChange={(value) =>
+                      handleChannelSettingsChange(
+                        'dynamic_circuit_breaker',
+                        value,
+                      )
+                    }
+                    extraText={t(
+                      '仅在开启自动禁用时生效。根据真实请求的近期失败、连续失败和恢复情况，临时将该渠道移出候选列表；不改变现有优先级和权重机制。',
+                    )}
+                  />
+
+                  <Form.InputNumber
+                    field='tolerance_coefficient'
+                    label={t('容错系数')}
+                    placeholder='1.0'
+                    min={0.1}
+                    max={10.0}
+                    step={0.1}
+                    precision={1}
+                    disabled={!autoBan || !channelSettings.dynamic_circuit_breaker}
+                    onChange={(value) =>
+                      handleChannelSettingsChange(
+                        'tolerance_coefficient',
+                        value || null,
+                      )
+                    }
+                    style={{ width: '100%' }}
+                    extraText={t(
+                      '动态熔断容错系数，范围 0.1 - 10.0，默认 1.0。值越大允许更多失败次数才触发冷却，值越小则更灵敏。',
+                    )}
+                  />
+
+                  <Form.InputNumber
+                    field='scheduled_test_interval'
+                    label={t('独立定时测试间隔 (分钟)')}
+                    placeholder={t('设置定时测试间隔')}
+                    min={0}
+                    disabled={!autoBan}
+                    onNumberChange={(value) =>
+                      handleInputChange('scheduled_test_interval', value)
+                    }
+                    style={{ width: '100%' }}
+                    extraText={t(
+                      '需开启自动禁用。当值不为 0 时，每隔指定分钟数测试该渠道。如果首 Token 延迟超过"最大首 Token 延迟"，则禁用渠道；如果延迟正常，则重新启用渠道',
+                    )}
+                  />
+
                   {inputs.type === 1 && (
                     <>
                       <div className='mt-4 mb-2 text-sm font-medium text-gray-700'>
@@ -2518,6 +2692,7 @@ const EditChannelModal = (props) => {
 
                   <Form.Switch field='thinking_to_content' label={t('思考内容转换')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('thinking_to_content', value)} extraText={t('将 reasoning_content 转换为 <think> 标签拼接到内容中')} />
                   <Form.Switch field='pass_through_body_enabled' label={t('透传请求体')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('pass_through_body_enabled', value)} extraText={t('启用请求体透传功能')} />
+                  <Form.Switch field='treat_empty_reply_as_failure' label={t('将空回复视为失败')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('treat_empty_reply_as_failure', value)} extraText={t('启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试')} />
 
                   <Form.Input field='proxy' label={t('代理地址')} placeholder={t('例如: socks5://user:pass@host:port')} onChange={(value) => handleChannelSettingsChange('proxy', value)} showClear extraText={t('用于配置网络代理，支持 socks5 协议')} />
 

@@ -3827,6 +3827,25 @@
     "浏览器未允许进入全屏，请确认当前浏览器支持移动端全屏模式。": "The browser did not allow fullscreen. Make sure this browser supports mobile fullscreen mode.",
     "吞吐量": "Throughput",
     "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "Monitor protection mode is enabled: active requests exceed {{capacity}}, so real-time details have been degraded to avoid affecting business requests.",
-    "首个 Token 耗时": "Time To First Token"
+    "首个 Token 耗时": "Time To First Token",
+    "最大首 Token 延迟 (秒)": "Maximum first token latency (seconds)",
+    "超出延迟后自动切换下一个渠道": "Automatically switch to the next channel after this latency is exceeded",
+    "仅对流式请求生效，0 表示关闭": "Only applies to streaming requests. 0 disables it.",
+    "单渠道最大重试次数": "Maximum retries per channel",
+    "同一渠道失败后的最大重试次数": "Maximum retries after failures on the same channel",
+    "默认 1（仅请求一次）。超过该次数后才切换到下一个渠道": "Default is 1 (send only once). Switch to the next channel only after this count is exceeded.",
+    "启用动态熔断冷却": "Enable dynamic circuit breaker cooldown",
+    "仅在开启自动禁用时生效。根据真实请求的近期失败、连续失败和恢复情况，临时将该渠道移出候选列表；不改变现有优先级和权重机制。": "Only takes effect when automatic disabling is enabled. Based on recent failures, consecutive failures, and recovery from real requests, temporarily removes this channel from the candidate list without changing the existing priority and weight mechanism.",
+    "容错系数": "Tolerance coefficient",
+    "动态熔断容错系数，范围 0.1 - 10.0，默认 1.0。值越大允许更多失败次数才触发冷却，值越小则更灵敏。": "Dynamic circuit breaker tolerance coefficient, range 0.1 - 10.0, default 1.0. Higher values allow more failures before cooldown; lower values make it more sensitive.",
+    "独立定时测试间隔 (分钟)": "Independent scheduled test interval (minutes)",
+    "设置定时测试间隔": "Set the scheduled test interval",
+    "需开启自动禁用。当值不为 0 时，每隔指定分钟数测试该渠道。如果首 Token 延迟超过\"最大首 Token 延迟\"，则禁用渠道；如果延迟正常，则重新启用渠道": "Requires automatic disabling. When the value is not 0, this channel is tested every specified number of minutes. If first token latency exceeds \"Maximum first token latency\", the channel is disabled; if latency is normal, the channel is re-enabled.",
+    "自定义测试用例": "Custom test case",
+    "不填则使用默认值 \"hi\"": "Leave empty to use the default value \"hi\"",
+    "预期回答": "Expected answer",
+    "测试时检查响应是否包含此字符串，不填则不检查": "During tests, check whether the response contains this string. Leave empty to skip the check.",
+    "将空回复视为失败": "Treat empty replies as failures",
+    "启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试": "When enabled, if the upstream returns an empty reply with no content and no tool calls, it is treated as a channel failure and triggers automatic disabling and retry."
   }
 }
