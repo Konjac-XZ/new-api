@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/stretchr/testify/require"
 )
 
 func newChannelWithDynamicWeightForTest(dynamicEnabled bool) *Channel {
@@ -147,4 +148,107 @@ func TestGetRandomSatisfiedChannelExcludeKeepsStrictPriorityWhenTierDegraded(t *
 			t.Fatalf("expected remaining high-priority channel id=4, got id=%d", selected.Id)
 		}
 	}
+}
+
+func TestDBChannelSelectionLoadsExternalTimeoutConfig(t *testing.T) {
+	truncateTables(t)
+
+	const (
+		group = "db-timeout-group"
+		model = "db-timeout-model"
+	)
+	priority := int64(10)
+	weight := uint(100)
+	maxLatency := 5
+	channel := &Channel{
+		Name:                 "db-timeout-channel",
+		Key:                  "sk-timeout",
+		Group:                group,
+		Models:               model,
+		Status:               common.ChannelStatusEnabled,
+		Priority:             &priority,
+		Weight:               &weight,
+		MaxFirstTokenLatency: &maxLatency,
+	}
+	require.NoError(t, channel.Insert())
+
+	selected, err := GetChannel(group, model, 0, "")
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	require.Equal(t, maxLatency, selected.GetMaxFirstTokenLatency())
+
+	selectedExclude, err := GetChannelExclude(group, model, nil)
+	require.NoError(t, err)
+	require.NotNil(t, selectedExclude)
+	require.Equal(t, maxLatency, selectedExclude.GetMaxFirstTokenLatency())
+}
+
+func TestFixAbilityLoadsExternalDynamicBreakerConfig(t *testing.T) {
+	truncateTables(t)
+
+	priority := int64(10)
+	weight := uint(100)
+	autoBan := 1
+	channel := &Channel{
+		Name:                  "db-breaker-channel",
+		Key:                   "sk-breaker",
+		Group:                 "db-breaker-group",
+		Models:                "db-breaker-model",
+		Status:                common.ChannelStatusAutoDisabled,
+		Priority:              &priority,
+		Weight:                &weight,
+		AutoBan:               &autoBan,
+		DynamicCircuitBreaker: true,
+	}
+	require.NoError(t, channel.Insert())
+	require.NoError(t, DB.Model(&Ability{}).Where("channel_id = ?", channel.Id).Update("enabled", false).Error)
+
+	success, failed, err := FixAbility()
+	require.NoError(t, err)
+	require.Equal(t, 1, success)
+	require.Equal(t, 0, failed)
+
+	var ability Ability
+	require.NoError(t, DB.First(&ability, "channel_id = ?", channel.Id).Error)
+	require.True(t, ability.Enabled)
+}
+
+func TestUpdateChannelStatusPreservesExternalConfigs(t *testing.T) {
+	truncateTables(t)
+
+	priority := int64(10)
+	weight := uint(100)
+	autoBan := 1
+	maxLatency := 5
+	interval := 15
+	coeff := 2.5
+	channel := &Channel{
+		Name:                     "status-preserve-channel",
+		Key:                      "sk-status",
+		Group:                    "status-preserve-group",
+		Models:                   "status-preserve-model",
+		Status:                   common.ChannelStatusEnabled,
+		Priority:                 &priority,
+		Weight:                   &weight,
+		AutoBan:                  &autoBan,
+		DynamicCircuitBreaker:    true,
+		ToleranceCoefficient:     &coeff,
+		MaxFirstTokenLatency:     &maxLatency,
+		ScheduledTestInterval:    &interval,
+		MaxRetryAttempts:         3,
+		TreatEmptyReplyAsFailure: true,
+	}
+	require.NoError(t, channel.Insert())
+
+	require.True(t, UpdateChannelStatus(channel.Id, "", common.ChannelStatusAutoDisabled, "test status update"))
+
+	reloaded, err := GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	require.True(t, reloaded.DynamicCircuitBreaker)
+	require.NotNil(t, reloaded.ToleranceCoefficient)
+	require.Equal(t, coeff, *reloaded.ToleranceCoefficient)
+	require.Equal(t, maxLatency, reloaded.GetMaxFirstTokenLatency())
+	require.Equal(t, interval, reloaded.GetScheduledTestInterval())
+	require.Equal(t, 3, reloaded.GetMaxRetryAttempts())
+	require.True(t, reloaded.TreatEmptyReplyAsFailure)
 }

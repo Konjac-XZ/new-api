@@ -31,6 +31,9 @@ func InitChannelCache() {
 	newChannel2advancedCustomConfig := make(map[int]*dto.AdvancedCustomConfig)
 	var channels []*Channel
 	DB.Find(&channels)
+	if err := LoadChannelExternalFields(channels...); err != nil {
+		common.SysError(fmt.Sprintf("failed to load channel external fields while syncing cache: %v", err))
+	}
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
 		if channel.Type == constant.ChannelTypeAdvancedCustom {

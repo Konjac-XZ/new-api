@@ -139,7 +139,13 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		return nil, nil
 	}
 	err = DB.First(&channel, "id = ?", channel.Id).Error
-	return &channel, err
+	if err != nil {
+		return nil, err
+	}
+	if err := LoadChannelExternalFields(&channel); err != nil {
+		return nil, err
+	}
+	return &channel, nil
 }
 
 // GetChannelExclude selects a channel with the highest available priority,
@@ -239,7 +245,13 @@ func GetChannelExclude(group string, model string, exclude map[int]bool, request
 
 		channel := Channel{}
 		err = DB.First(&channel, "id = ?", chosen.channelId).Error
-		return &channel, err
+		if err != nil {
+			return nil, err
+		}
+		if err := LoadChannelExternalFields(&channel); err != nil {
+			return nil, err
+		}
+		return &channel, nil
 	}
 
 	// nothing available
@@ -264,6 +276,9 @@ func getChannelMapByIDs(channelIDs []int) (map[int]*Channel, error) {
 
 	channels := make([]*Channel, 0, len(uniqueIDs))
 	if err := DB.Where("id IN ?", uniqueIDs).Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	if err := LoadChannelExternalFields(channels...); err != nil {
 		return nil, err
 	}
 	for _, ch := range channels {
@@ -487,6 +502,9 @@ func FixAbility() (int, int, error) {
 	// Find all channels
 	err := DB.Model(&Channel{}).Find(&channels).Error
 	if err != nil {
+		return 0, 0, err
+	}
+	if err := LoadChannelExternalFields(channels...); err != nil {
 		return 0, 0, err
 	}
 	if len(channels) == 0 {

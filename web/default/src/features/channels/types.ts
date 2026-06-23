@@ -34,6 +34,33 @@ export const channelInfoSchema = z.object({
 
 export type ChannelInfo = z.infer<typeof channelInfoSchema>
 
+export const channelBreakerStateSchema = z.object({
+  auto_ban_enabled: z.boolean().default(false),
+  dynamic_enabled: z.boolean().default(false),
+  phase: z.string().default('disabled'),
+  pressure: z.number().default(0),
+  fail_streak: z.number().default(0),
+  last_failure: z.string().optional(),
+  cooldown_at: z.number().default(0),
+  updated_at: z.number().default(0),
+  remaining_cooldown_seconds: z.number().default(0),
+  cooldown_seconds: z.number().default(0),
+  observation_elapsed_seconds: z.number().default(0),
+  hp: z.number().default(0),
+  max_hp: z.number().default(0),
+  trip_count: z.number().default(0),
+  tolerance_coefficient: z.number().default(1),
+  failure_rate: z.number().default(0),
+  timeout_rate: z.number().default(0),
+  hp_ratio: z.number().default(0),
+  rate_penalty_factor: z.number().default(1),
+  confidence_multiplier: z.number().default(1),
+  base_weight: z.number().default(0),
+  effective_weight: z.number().default(0),
+})
+
+export type ChannelBreakerState = z.infer<typeof channelBreakerStateSchema>
+
 export const channelSchema = z.object({
   id: z.number(),
   type: z.number(),
@@ -46,6 +73,10 @@ export const channelSchema = z.object({
   created_time: z.number(),
   test_time: z.number(),
   response_time: z.number(), // in milliseconds
+  test_case: z.string().nullish(),
+  expected_answer: z.string().nullish(),
+  max_first_token_latency: z.number().nullish(),
+  scheduled_test_interval: z.number().nullish(),
   base_url: z.string().nullish(),
   other: z.string().default(''),
   balance: z.number().default(0), // in USD
@@ -64,6 +95,11 @@ export const channelSchema = z.object({
   header_override: z.string().nullish(),
   remark: z.string().default(''),
   max_input_tokens: z.number().default(0),
+  max_retry_attempts: z.number().default(0),
+  treat_empty_reply_as_failure: z.boolean().default(false),
+  dynamic_circuit_breaker: z.boolean().default(false),
+  tolerance_coefficient: z.number().nullish(),
+  breaker_state: channelBreakerStateSchema.nullish(),
   channel_info: channelInfoSchema.default({
     is_multi_key: false,
     multi_key_size: 0,

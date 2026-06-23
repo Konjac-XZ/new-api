@@ -7,6 +7,7 @@ import {
   ListOrdered,
   Shuffle,
   SlidersHorizontal,
+  Zap,
 } from 'lucide-react'
 /*
 Copyright (C) 2023-2026 QuantumNous
@@ -167,6 +168,35 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
         />
       )}
     </div>
+  )
+}
+
+function DynamicBreakerIndicator({ channel }: { channel: Channel }) {
+  const { t } = useTranslation()
+  const dynamicEnabled =
+    channel.breaker_state?.dynamic_enabled === true ||
+    (channel.auto_ban === 1 && channel.dynamic_circuit_breaker === true)
+
+  if (!dynamicEnabled) {
+    return null
+  }
+
+  return (
+    <TooltipProvider delay={100}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Zap
+              className='text-info h-3.5 w-3.5 flex-shrink-0 fill-current'
+              aria-hidden='true'
+            />
+          }
+        />
+        <TooltipContent side='top'>
+          {t('Dynamic circuit breaker enabled')}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }
 
@@ -624,6 +654,7 @@ export function useChannelsColumns(): ColumnDef<Channel>[] {
                       </Tooltip>
                     </TooltipProvider>
                   )}
+                  <DynamicBreakerIndicator channel={channel} />
                   <UpstreamUpdateTags channel={channel} />
                 </div>
                 {channel.remark && (

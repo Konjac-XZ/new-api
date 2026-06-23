@@ -33,6 +33,15 @@ type channelBreakerDetailResponse struct {
 	} `json:"trace_page"`
 }
 
+type channelListResponse struct {
+	Items []struct {
+		Id           int                 `json:"id"`
+		Name         string              `json:"name"`
+		BreakerState ChannelBreakerState `json:"breaker_state"`
+	} `json:"items"`
+	Total int64 `json:"total"`
+}
+
 func setupChannelBreakerDetailTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -154,5 +163,146 @@ func TestGetChannelBreakerDetailReturnsTraceHistory(t *testing.T) {
 	}
 	if detail.TracePage.Items[0].CalculationResult["triggered_cooldown"] == nil {
 		t.Fatal("expected decoded calculation result payload")
+	}
+}
+
+func TestGetAllChannelsLoadsExternalBreakerConfig(t *testing.T) {
+	setupChannelBreakerDetailTestDB(t)
+
+	autoBan := 1
+	settingsBytes, err := common.Marshal(dto.ChannelSettings{DynamicCircuitBreaker: true})
+	if err != nil {
+		t.Fatalf("failed to marshal channel settings: %v", err)
+	}
+	settings := string(settingsBytes)
+	channel := &model.Channel{
+		Name:    "breaker-list-channel",
+		Key:     "sk-breaker-list",
+		Status:  common.ChannelStatusEnabled,
+		Group:   "default",
+		Models:  "gpt-4o-mini",
+		AutoBan: &autoBan,
+		Setting: &settings,
+	}
+	if err := channel.Insert(); err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/channel/?p=1&page_size=20", nil, 1)
+	GetAllChannels(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected success response, got message: %s", response.Message)
+	}
+
+	var list channelListResponse
+	if err := common.Unmarshal(response.Data, &list); err != nil {
+		t.Fatalf("failed to decode channel list response: %v", err)
+	}
+	if list.Total != 1 || len(list.Items) != 1 {
+		t.Fatalf("expected one list item, got total=%d len=%d", list.Total, len(list.Items))
+	}
+	if list.Items[0].Id != channel.Id {
+		t.Fatalf("expected channel id=%d, got %d", channel.Id, list.Items[0].Id)
+	}
+	if !list.Items[0].BreakerState.DynamicEnabled {
+		t.Fatal("expected list breaker state to report dynamic breaker enabled")
+	}
+}
+
+func TestUpdateChannelPreservesExternalConfigWhenRequestOmitsFields(t *testing.T) {
+	setupChannelBreakerDetailTestDB(t)
+
+	autoBan := 1
+	priority := int64(10)
+	weight := uint(100)
+	coeff := 2.5
+	maxLatency := 6
+	interval := 15
+	testCase := "ping"
+	expectedAnswer := "pong"
+	channel := &model.Channel{
+		Name:                     "preserve-external-channel",
+		Key:                      "sk-preserve",
+		Status:                   common.ChannelStatusEnabled,
+		Group:                    "default",
+		Models:                   "gpt-4o-mini",
+		Priority:                 &priority,
+		Weight:                   &weight,
+		AutoBan:                  &autoBan,
+		DynamicCircuitBreaker:    true,
+		ToleranceCoefficient:     &coeff,
+		MaxRetryAttempts:         4,
+		TreatEmptyReplyAsFailure: true,
+		TestCase:                 &testCase,
+		ExpectedAnswer:           &expectedAnswer,
+		MaxFirstTokenLatency:     &maxLatency,
+		ScheduledTestInterval:    &interval,
+	}
+	if err := channel.Insert(); err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+
+	payload := gin.H{
+		"id":                  channel.Id,
+		"name":                "preserve-external-channel-updated",
+		"type":                channel.Type,
+		"key":                 "",
+		"status":              common.ChannelStatusEnabled,
+		"group":               channel.Group,
+		"models":              channel.Models,
+		"priority":            priority,
+		"weight":              weight,
+		"auto_ban":            autoBan,
+		"base_url":            "",
+		"openai_organization": "",
+		"test_model":          "",
+		"tag":                 "",
+		"remark":              "",
+		"model_mapping":       "",
+		"status_code_mapping": "",
+		"param_override":      "",
+		"header_override":     "",
+		"setting":             "{}",
+		"settings":            "{}",
+		"other":               "",
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/channel/", payload, 1)
+
+	UpdateChannel(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	if !response.Success {
+		t.Fatalf("expected success response, got message: %s", response.Message)
+	}
+
+	reloaded, err := model.GetChannelById(channel.Id, true)
+	if err != nil {
+		t.Fatalf("failed to reload channel: %v", err)
+	}
+	if !reloaded.DynamicCircuitBreaker {
+		t.Fatal("expected dynamic breaker config to be preserved")
+	}
+	if reloaded.ToleranceCoefficient == nil || *reloaded.ToleranceCoefficient != coeff {
+		t.Fatalf("expected tolerance coefficient %.1f, got %#v", coeff, reloaded.ToleranceCoefficient)
+	}
+	if reloaded.GetMaxRetryAttempts() != 4 {
+		t.Fatalf("expected max retry attempts 4, got %d", reloaded.GetMaxRetryAttempts())
+	}
+	if !reloaded.TreatEmptyReplyAsFailure {
+		t.Fatal("expected empty-reply failure config to be preserved")
+	}
+	if reloaded.TestCase == nil || *reloaded.TestCase != testCase {
+		t.Fatalf("expected test case %q, got %#v", testCase, reloaded.TestCase)
+	}
+	if reloaded.ExpectedAnswer == nil || *reloaded.ExpectedAnswer != expectedAnswer {
+		t.Fatalf("expected expected answer %q, got %#v", expectedAnswer, reloaded.ExpectedAnswer)
+	}
+	if reloaded.GetMaxFirstTokenLatency() != maxLatency {
+		t.Fatalf("expected max first token latency %d, got %d", maxLatency, reloaded.GetMaxFirstTokenLatency())
+	}
+	if reloaded.GetScheduledTestInterval() != interval {
+		t.Fatalf("expected scheduled test interval %d, got %d", interval, reloaded.GetScheduledTestInterval())
 	}
 }

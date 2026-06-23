@@ -146,6 +146,14 @@ export const channelFormSchema = z
     priority: z.number().optional(),
     weight: z.number().optional(),
     test_model: z.string().optional(),
+    test_case: z.string().optional(),
+    expected_answer: z.string().optional(),
+    max_first_token_latency: z.number().optional().nullable(),
+    scheduled_test_interval: z.number().optional().nullable(),
+    max_retry_attempts: z.number().optional(),
+    treat_empty_reply_as_failure: z.boolean().optional(),
+    dynamic_circuit_breaker: z.boolean().optional(),
+    tolerance_coefficient: z.number().optional().nullable(),
     auto_ban: z.number().optional(),
     status: z.number(),
     status_code_mapping: z
@@ -309,6 +317,14 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   priority: 0,
   weight: 0,
   test_model: '',
+  test_case: '',
+  expected_answer: '',
+  max_first_token_latency: null,
+  scheduled_test_interval: null,
+  max_retry_attempts: 1,
+  treat_empty_reply_as_failure: false,
+  dynamic_circuit_breaker: false,
+  tolerance_coefficient: null,
   auto_ban: 1,
   status: CHANNEL_STATUS.ENABLED,
   status_code_mapping: '',
@@ -450,6 +466,15 @@ export function transformChannelToFormDefaults(
     priority: channel.priority || 0,
     weight: channel.weight || 0,
     test_model: channel.test_model || '',
+    test_case: channel.test_case || '',
+    expected_answer: channel.expected_answer || '',
+    max_first_token_latency: channel.max_first_token_latency ?? null,
+    scheduled_test_interval: channel.scheduled_test_interval ?? null,
+    max_retry_attempts: channel.max_retry_attempts || 1,
+    treat_empty_reply_as_failure:
+      channel.treat_empty_reply_as_failure === true,
+    dynamic_circuit_breaker: channel.dynamic_circuit_breaker === true,
+    tolerance_coefficient: channel.tolerance_coefficient ?? null,
     auto_ban: channel.auto_ban ?? 1,
     status: channel.status,
     status_code_mapping: channel.status_code_mapping || '',
@@ -657,6 +682,15 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     priority: formData.priority || null,
     weight: formData.weight || null,
     test_model: formData.test_model || null,
+    test_case: formData.test_case || null,
+    expected_answer: formData.expected_answer || null,
+    max_first_token_latency: formData.max_first_token_latency || null,
+    scheduled_test_interval: formData.scheduled_test_interval || null,
+    max_retry_attempts: formData.max_retry_attempts || 1,
+    treat_empty_reply_as_failure:
+      formData.treat_empty_reply_as_failure === true,
+    dynamic_circuit_breaker: formData.dynamic_circuit_breaker === true,
+    tolerance_coefficient: formData.tolerance_coefficient ?? null,
     auto_ban: formData.auto_ban ?? 1,
     status: formData.status,
     status_code_mapping: formData.status_code_mapping || null,
@@ -705,6 +739,15 @@ export function transformFormDataToUpdatePayload(
     priority: formData.priority ?? 0,
     weight: formData.weight ?? 0,
     test_model: formData.test_model || null,
+    test_case: formData.test_case || null,
+    expected_answer: formData.expected_answer || null,
+    max_first_token_latency: formData.max_first_token_latency || null,
+    scheduled_test_interval: formData.scheduled_test_interval || null,
+    max_retry_attempts: formData.max_retry_attempts || 1,
+    treat_empty_reply_as_failure:
+      formData.treat_empty_reply_as_failure === true,
+    dynamic_circuit_breaker: formData.dynamic_circuit_breaker === true,
+    tolerance_coefficient: formData.tolerance_coefficient ?? null,
     auto_ban: formData.auto_ban ?? 1,
     status: formData.status,
     status_code_mapping: formData.status_code_mapping || null,
@@ -733,6 +776,8 @@ export function transformFormDataToUpdatePayload(
   payload.base_url = normalizeBaseUrl(formData.base_url) || ''
   payload.openai_organization = formData.openai_organization || ''
   payload.test_model = formData.test_model || ''
+  payload.test_case = formData.test_case || ''
+  payload.expected_answer = formData.expected_answer || ''
   payload.tag = formData.tag || ''
   payload.remark = formData.remark || ''
   payload.model_mapping = formData.model_mapping || ''

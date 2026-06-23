@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -142,6 +143,11 @@ func GetAllChannels(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签渠道失败，请稍后重试"})
 				return
 			}
+			if err := model.LoadChannelExternalFields(tagChannels...); err != nil {
+				common.SysError("failed to load channel external fields: " + err.Error())
+				c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道扩展配置失败，请稍后重试"})
+				return
+			}
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
@@ -159,6 +165,11 @@ func GetAllChannels(c *gin.Context) {
 		if err != nil {
 			common.SysError("failed to get channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道列表失败，请稍后重试"})
+			return
+		}
+		if err := model.LoadChannelExternalFields(channelData...); err != nil {
+			common.SysError("failed to load channel external fields: " + err.Error())
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道扩展配置失败，请稍后重试"})
 			return
 		}
 	}
@@ -320,6 +331,13 @@ func SearchChannels(c *gin.Context) {
 					Omit("key").
 					Find(&tagChannels).Error
 				if err != nil {
+					c.JSON(http.StatusOK, gin.H{
+						"success": false,
+						"message": err.Error(),
+					})
+					return
+				}
+				if err := model.LoadChannelExternalFields(tagChannels...); err != nil {
 					c.JSON(http.StatusOK, gin.H{
 						"success": false,
 						"message": err.Error(),
@@ -891,7 +909,7 @@ func getVertexArrayKeys(keys string) ([]string, error) {
 		case string:
 			keyStr = strings.TrimSpace(v)
 		default:
-			bytes, err := json.Marshal(v)
+			bytes, err := common.Marshal(v)
 			if err != nil {
 				return nil, fmt.Errorf("Vertex AI key JSON 编码失败: %w", err)
 			}
@@ -905,6 +923,11 @@ func getVertexArrayKeys(keys string) ([]string, error) {
 		return nil, fmt.Errorf("批量添加 Vertex AI 的 keys 不能为空")
 	}
 	return cleanKeys, nil
+}
+
+func isValidJSONText(value string) bool {
+	var parsed any
+	return common.Unmarshal([]byte(value), &parsed) == nil
 }
 
 func AddChannel(c *gin.Context) {
@@ -1001,6 +1024,7 @@ func AddChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	model.InitChannelCache()
 	service.ResetProxyClientCache()
 	recordManageAudit(c, "channel.create", map[string]interface{}{
 		"name":  addChannelRequest.Channel.Name,
@@ -1139,7 +1163,7 @@ func EditTagChannels(c *gin.Context) {
 	}
 	if channelTag.ParamOverride != nil {
 		trimmed := strings.TrimSpace(*channelTag.ParamOverride)
-		if trimmed != "" && !json.Valid([]byte(trimmed)) {
+		if trimmed != "" && !isValidJSONText(trimmed) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "参数覆盖必须是合法的 JSON 格式",
@@ -1150,7 +1174,7 @@ func EditTagChannels(c *gin.Context) {
 	}
 	if channelTag.HeaderOverride != nil {
 		trimmed := strings.TrimSpace(*channelTag.HeaderOverride)
-		if trimmed != "" && !json.Valid([]byte(trimmed)) {
+		if trimmed != "" && !isValidJSONText(trimmed) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "请求头覆盖必须是合法的 JSON 格式",
@@ -1213,7 +1237,59 @@ type PatchChannel struct {
 	KeyMode      *string `json:"key_mode"` // 多key模式下密钥覆盖或者追加
 }
 
+func readJSONFieldSet(c *gin.Context) map[string]bool {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return nil
+	}
+	c.Request.Body = io.NopCloser(strings.NewReader(string(body)))
+	if len(body) == 0 {
+		return nil
+	}
+
+	var payload map[string]any
+	if err := common.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+	fieldSet := make(map[string]bool, len(payload))
+	for key := range payload {
+		fieldSet[key] = true
+	}
+	return fieldSet
+}
+
+func preserveMissingExternalChannelFields(channel *model.Channel, originChannel *model.Channel, fieldSet map[string]bool) {
+	if channel == nil || originChannel == nil || fieldSet == nil {
+		return
+	}
+	if !fieldSet["dynamic_circuit_breaker"] {
+		channel.DynamicCircuitBreaker = originChannel.DynamicCircuitBreaker
+	}
+	if !fieldSet["tolerance_coefficient"] {
+		channel.ToleranceCoefficient = originChannel.ToleranceCoefficient
+	}
+	if !fieldSet["max_retry_attempts"] {
+		channel.MaxRetryAttempts = originChannel.MaxRetryAttempts
+	}
+	if !fieldSet["treat_empty_reply_as_failure"] {
+		channel.TreatEmptyReplyAsFailure = originChannel.TreatEmptyReplyAsFailure
+	}
+	if !fieldSet["test_case"] {
+		channel.TestCase = originChannel.TestCase
+	}
+	if !fieldSet["expected_answer"] {
+		channel.ExpectedAnswer = originChannel.ExpectedAnswer
+	}
+	if !fieldSet["max_first_token_latency"] {
+		channel.MaxFirstTokenLatency = originChannel.MaxFirstTokenLatency
+	}
+	if !fieldSet["scheduled_test_interval"] {
+		channel.ScheduledTestInterval = originChannel.ScheduledTestInterval
+	}
+}
+
 func UpdateChannel(c *gin.Context) {
+	fieldSet := readJSONFieldSet(c)
 	channel := PatchChannel{}
 	err := c.ShouldBindJSON(&channel)
 	if err != nil {
@@ -1247,6 +1323,7 @@ func UpdateChannel(c *gin.Context) {
 		channel.ChannelInfo.MultiKeyMode = constant.MultiKeyMode(*channel.MultiKeyMode)
 	}
 
+	preserveMissingExternalChannelFields(&channel.Channel, originChannel, fieldSet)
 	normalizeChannelDefaults(&channel.Channel)
 
 	// 处理多key模式下的密钥追加/覆盖逻辑
@@ -1262,7 +1339,7 @@ func UpdateChannel(c *gin.Context) {
 				if strings.HasPrefix(strings.TrimSpace(originChannel.Key), "[") {
 					// JSON数组格式
 					var arr []json.RawMessage
-					if err := json.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
+					if err := common.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
 						existingKeys = make([]string, len(arr))
 						for i, v := range arr {
 							existingKeys[i] = string(v)
@@ -1484,7 +1561,7 @@ func FetchModels(c *gin.Context) {
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+	if err := common.DecodeJson(response.Body, &result); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": err.Error(),
@@ -2248,7 +2325,7 @@ func OllamaPullModelStream(c *gin.Context) {
 
 	// 创建进度回调函数
 	progressCallback := func(progress ollama.OllamaPullResponse) {
-		data, _ := json.Marshal(progress)
+		data, _ := common.Marshal(progress)
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(data))
 		c.Writer.Flush()
 	}
@@ -2257,12 +2334,12 @@ func OllamaPullModelStream(c *gin.Context) {
 	err = ollama.PullOllamaModelStream(baseURL, key, req.ModelName, progressCallback)
 
 	if err != nil {
-		errorData, _ := json.Marshal(gin.H{
+		errorData, _ := common.Marshal(gin.H{
 			"error": err.Error(),
 		})
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(errorData))
 	} else {
-		successData, _ := json.Marshal(gin.H{
+		successData, _ := common.Marshal(gin.H{
 			"message": fmt.Sprintf("Model %s pulled successfully", req.ModelName),
 		})
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(successData))

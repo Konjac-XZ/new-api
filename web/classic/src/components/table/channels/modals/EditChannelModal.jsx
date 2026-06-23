@@ -530,6 +530,14 @@ const EditChannelModal = (props) => {
   });
   const showApiConfigCard = true; // 控制是否显示 API 配置卡片
   const getInitValues = () => ({ ...originInputs });
+  const buildChannelExtraSettings = (settings) => ({
+    force_format: settings.force_format || false,
+    thinking_to_content: settings.thinking_to_content || false,
+    proxy: settings.proxy || '',
+    pass_through_body_enabled: settings.pass_through_body_enabled || false,
+    system_prompt: settings.system_prompt || '',
+    system_prompt_override: settings.system_prompt_override || false,
+  });
 
   // 处理渠道额外设置的更新
   const handleChannelSettingsChange = (key, value) => {
@@ -545,9 +553,20 @@ const EditChannelModal = (props) => {
     setInputs((prev) => ({ ...prev, [key]: value }));
 
     // 生成setting JSON并更新
-    const newSettings = { ...channelSettings, [key]: value };
+    const newSettings = buildChannelExtraSettings({
+      ...channelSettings,
+      [key]: value,
+    });
     const settingsJson = JSON.stringify(newSettings);
     handleInputChange('setting', settingsJson);
+  };
+
+  const handleChannelExternalConfigChange = (key, value) => {
+    setChannelSettings((prev) => ({ ...prev, [key]: value }));
+    if (formApiRef.current) {
+      formApiRef.current.setValue(key, value);
+    }
+    setInputs((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleChannelOtherSettingsChange = (key, value) => {
@@ -877,41 +896,44 @@ const EditChannelModal = (props) => {
           data.proxy = parsedSettings.proxy || '';
           data.pass_through_body_enabled =
             parsedSettings.pass_through_body_enabled || false;
-          data.treat_empty_reply_as_failure =
-            parsedSettings.treat_empty_reply_as_failure || false;
-          data.dynamic_circuit_breaker =
-            parsedSettings.dynamic_circuit_breaker === true;
-          data.tolerance_coefficient =
-            parsedSettings.tolerance_coefficient ?? null;
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
-          data.max_retry_attempts = parsedSettings.max_retry_attempts || 1;
+          data.treat_empty_reply_as_failure =
+            data.treat_empty_reply_as_failure ||
+            parsedSettings.treat_empty_reply_as_failure ||
+            false;
+          data.dynamic_circuit_breaker =
+            data.dynamic_circuit_breaker === true ||
+            parsedSettings.dynamic_circuit_breaker === true;
+          data.tolerance_coefficient =
+            data.tolerance_coefficient ??
+            parsedSettings.tolerance_coefficient ??
+            null;
+          data.max_retry_attempts =
+            data.max_retry_attempts || parsedSettings.max_retry_attempts || 1;
         } catch (error) {
           console.error('解析渠道设置失败:', error);
           data.force_format = false;
           data.thinking_to_content = false;
           data.proxy = '';
           data.pass_through_body_enabled = false;
-          data.treat_empty_reply_as_failure = false;
-          data.dynamic_circuit_breaker = false;
-          data.tolerance_coefficient = null;
           data.system_prompt = '';
           data.system_prompt_override = false;
-          data.max_retry_attempts = 1;
         }
       } else {
         data.force_format = false;
         data.thinking_to_content = false;
         data.proxy = '';
         data.pass_through_body_enabled = false;
-        data.treat_empty_reply_as_failure = false;
-        data.dynamic_circuit_breaker = false;
-        data.tolerance_coefficient = null;
         data.system_prompt = '';
         data.system_prompt_override = false;
-        data.max_retry_attempts = 1;
       }
+      data.treat_empty_reply_as_failure =
+        data.treat_empty_reply_as_failure || false;
+      data.dynamic_circuit_breaker = data.dynamic_circuit_breaker === true;
+      data.tolerance_coefficient = data.tolerance_coefficient ?? null;
+      data.max_retry_attempts = data.max_retry_attempts || 1;
 
       if (data.settings) {
         try {
@@ -1794,19 +1816,25 @@ const EditChannelModal = (props) => {
       thinking_to_content: localInputs.thinking_to_content || false,
       proxy: localInputs.proxy || '',
       pass_through_body_enabled: localInputs.pass_through_body_enabled || false,
-      treat_empty_reply_as_failure:
-        localInputs.treat_empty_reply_as_failure || false,
-      dynamic_circuit_breaker:
-        localInputs.dynamic_circuit_breaker === true,
-      ...(localInputs.tolerance_coefficient != null && {
-        tolerance_coefficient: Number(localInputs.tolerance_coefficient),
-      }),
       system_prompt: localInputs.system_prompt || '',
       system_prompt_override: localInputs.system_prompt_override || false,
-      max_retry_attempts: normalizedMaxRetryAttempts,
     };
     localInputs.setting = JSON.stringify(channelExtraSettings);
     localInputs.max_retry_attempts = normalizedMaxRetryAttempts;
+    localInputs.treat_empty_reply_as_failure =
+      localInputs.treat_empty_reply_as_failure === true;
+    localInputs.dynamic_circuit_breaker =
+      localInputs.dynamic_circuit_breaker === true;
+    if (localInputs.tolerance_coefficient == null) {
+      delete localInputs.tolerance_coefficient;
+    } else {
+      const toleranceCoefficient = Number(localInputs.tolerance_coefficient);
+      if (Number.isFinite(toleranceCoefficient)) {
+        localInputs.tolerance_coefficient = toleranceCoefficient;
+      } else {
+        delete localInputs.tolerance_coefficient;
+      }
+    }
 
     // 处理 settings 字段（包括企业账户设置和字段透传控制）
     let settings = {};
@@ -1898,9 +1926,6 @@ const EditChannelModal = (props) => {
     delete localInputs.thinking_to_content;
     delete localInputs.proxy;
     delete localInputs.pass_through_body_enabled;
-    delete localInputs.treat_empty_reply_as_failure;
-    delete localInputs.dynamic_circuit_breaker;
-    delete localInputs.tolerance_coefficient;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
     delete localInputs.is_enterprise_account;
@@ -2591,7 +2616,10 @@ const EditChannelModal = (props) => {
                     placeholder={t('同一渠道失败后的最大重试次数')}
                     min={1}
                     onNumberChange={(value) =>
-                      handleChannelSettingsChange('max_retry_attempts', value)
+                      handleChannelExternalConfigChange(
+                        'max_retry_attempts',
+                        value,
+                      )
                     }
                     style={{ width: '100%' }}
                     extraText={t(
@@ -2606,7 +2634,7 @@ const EditChannelModal = (props) => {
                     uncheckedText={t('关')}
                     disabled={!autoBan}
                     onChange={(value) =>
-                      handleChannelSettingsChange(
+                      handleChannelExternalConfigChange(
                         'dynamic_circuit_breaker',
                         value,
                       )
@@ -2626,7 +2654,7 @@ const EditChannelModal = (props) => {
                     precision={1}
                     disabled={!autoBan || !channelSettings.dynamic_circuit_breaker}
                     onChange={(value) =>
-                      handleChannelSettingsChange(
+                      handleChannelExternalConfigChange(
                         'tolerance_coefficient',
                         value || null,
                       )
@@ -2692,7 +2720,7 @@ const EditChannelModal = (props) => {
 
                   <Form.Switch field='thinking_to_content' label={t('思考内容转换')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('thinking_to_content', value)} extraText={t('将 reasoning_content 转换为 <think> 标签拼接到内容中')} />
                   <Form.Switch field='pass_through_body_enabled' label={t('透传请求体')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('pass_through_body_enabled', value)} extraText={t('启用请求体透传功能')} />
-                  <Form.Switch field='treat_empty_reply_as_failure' label={t('将空回复视为失败')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelSettingsChange('treat_empty_reply_as_failure', value)} extraText={t('启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试')} />
+                  <Form.Switch field='treat_empty_reply_as_failure' label={t('将空回复视为失败')} checkedText={t('开')} uncheckedText={t('关')} onChange={(value) => handleChannelExternalConfigChange('treat_empty_reply_as_failure', value)} extraText={t('启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试')} />
 
                   <Form.Input field='proxy' label={t('代理地址')} placeholder={t('例如: socks5://user:pass@host:port')} onChange={(value) => handleChannelSettingsChange('proxy', value)} showClear extraText={t('用于配置网络代理，支持 socks5 协议')} />
 

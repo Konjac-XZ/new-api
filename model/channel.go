@@ -45,25 +45,29 @@ type Channel struct {
 	UsedQuota             int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping          *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
-	StatusCodeMapping     *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority              *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan               *int    `json:"auto_ban" gorm:"default:1"`
-	OtherInfo             string  `json:"other_info"`
-	Tag                   *string `json:"tag" gorm:"index"`
-	Setting               *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride         *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride        *string `json:"header_override" gorm:"type:text"`
-	Remark                *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
-	BreakerPressure       float64 `json:"-" gorm:"-"`
-	BreakerUpdatedAt      int64   `json:"-" gorm:"-"`
-	BreakerFailStreak     int     `json:"-" gorm:"-"`
-	BreakerCooldownAt     int64   `json:"-" gorm:"-"`
-	BreakerLastFailure    string  `json:"-" gorm:"-"`
-	BreakerHP             float64 `json:"-" gorm:"-"`
-	BreakerTripCount      int     `json:"-" gorm:"-"`
-	BreakerRecentRequests float64 `json:"-" gorm:"-"`
-	BreakerRecentFailures float64 `json:"-" gorm:"-"`
-	BreakerRecentTimeouts float64 `json:"-" gorm:"-"`
+	StatusCodeMapping        *string  `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
+	Priority                 *int64   `json:"priority" gorm:"bigint;default:0"`
+	AutoBan                  *int     `json:"auto_ban" gorm:"default:1"`
+	OtherInfo                string   `json:"other_info"`
+	Tag                      *string  `json:"tag" gorm:"index"`
+	Setting                  *string  `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride            *string  `json:"param_override" gorm:"type:text"`
+	HeaderOverride           *string  `json:"header_override" gorm:"type:text"`
+	Remark                   *string  `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	MaxRetryAttempts         int      `json:"max_retry_attempts" gorm:"-"`
+	TreatEmptyReplyAsFailure bool     `json:"treat_empty_reply_as_failure" gorm:"-"`
+	DynamicCircuitBreaker    bool     `json:"dynamic_circuit_breaker" gorm:"-"`
+	ToleranceCoefficient     *float64 `json:"tolerance_coefficient" gorm:"-"`
+	BreakerPressure          float64  `json:"-" gorm:"-"`
+	BreakerUpdatedAt         int64    `json:"-" gorm:"-"`
+	BreakerFailStreak        int      `json:"-" gorm:"-"`
+	BreakerCooldownAt        int64    `json:"-" gorm:"-"`
+	BreakerLastFailure       string   `json:"-" gorm:"-"`
+	BreakerHP                float64  `json:"-" gorm:"-"`
+	BreakerTripCount         int      `json:"-" gorm:"-"`
+	BreakerRecentRequests    float64  `json:"-" gorm:"-"`
+	BreakerRecentFailures    float64  `json:"-" gorm:"-"`
+	BreakerRecentTimeouts    float64  `json:"-" gorm:"-"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -424,6 +428,7 @@ func (channel *Channel) Save() error {
 	if channel == nil {
 		return errors.New("channel is nil")
 	}
+	normalizeLegacyChannelSettingIfExternalTablesExist(DB, channel)
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(channel).Error; err != nil {
 			return err
@@ -436,6 +441,7 @@ func (channel *Channel) SaveWithoutKey() error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
+	normalizeLegacyChannelSettingIfExternalTablesExist(DB, channel)
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Omit("key").Save(channel).Error; err != nil {
 			return err
@@ -555,6 +561,9 @@ func BatchInsertChannels(channels []Channel) error {
 	}()
 
 	for _, chunk := range lo.Chunk(channels, 50) {
+		for i := range chunk {
+			normalizeLegacyChannelSettingIfExternalTablesExist(tx, &chunk[i])
+		}
 		if err := tx.Create(&chunk).Error; err != nil {
 			tx.Rollback()
 			return err
@@ -676,6 +685,7 @@ func (channel *Channel) Insert() error {
 	if channel == nil {
 		return errors.New("channel is nil")
 	}
+	normalizeLegacyChannelSettingIfExternalTablesExist(DB, channel)
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(channel).Error; err != nil {
 			return err
@@ -688,6 +698,7 @@ func (channel *Channel) Insert() error {
 }
 
 func (channel *Channel) Update() error {
+	normalizeLegacyChannelSettingIfExternalTablesExist(DB, channel)
 	// If this is a multi-key channel, recalculate MultiKeySize based on the current key list to avoid inconsistency after editing keys
 	if channel.ChannelInfo.IsMultiKey {
 		var keyStr string
@@ -1181,15 +1192,30 @@ func (channel *Channel) GetSetting() dto.ChannelSettings {
 			_ = channel.Save()    // 保存修改
 		}
 	}
+	if channel.MaxRetryAttempts > 0 {
+		setting.MaxRetryAttempts = channel.MaxRetryAttempts
+	}
+	if channel.TreatEmptyReplyAsFailure {
+		setting.TreatEmptyReplyAsFailure = true
+	}
+	if channel.DynamicCircuitBreaker {
+		setting.DynamicCircuitBreaker = true
+	}
+	if channel.ToleranceCoefficient != nil {
+		setting.ToleranceCoefficient = channel.ToleranceCoefficient
+	}
 	return setting
 }
 
 func (channel *Channel) GetMaxRetryAttempts() int {
-	setting := channel.GetSetting()
-	if setting.MaxRetryAttempts <= 0 {
+	if channel.MaxRetryAttempts <= 0 {
+		setting := channel.GetSetting()
+		if setting.MaxRetryAttempts > 0 {
+			return setting.MaxRetryAttempts
+		}
 		return 1
 	}
-	return setting.MaxRetryAttempts
+	return channel.MaxRetryAttempts
 }
 
 func (channel *Channel) SetSetting(setting dto.ChannelSettings) {
@@ -1248,6 +1274,12 @@ func (channel *Channel) GetHeaderOverride() map[string]interface{} {
 func GetChannelsByIds(ids []int) ([]*Channel, error) {
 	var channels []*Channel
 	err := DB.Where("id in (?)", ids).Find(&channels).Error
+	if err != nil {
+		return nil, err
+	}
+	if err := LoadChannelExternalFields(channels...); err != nil {
+		return nil, err
+	}
 	return channels, err
 }
 
@@ -1310,6 +1342,12 @@ func GetChannelsByType(startIdx int, num int, idSort bool, channelType int) ([]*
 		order = "id desc"
 	}
 	err := DB.Where("type = ?", channelType).Order(order).Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
+	if err != nil {
+		return nil, err
+	}
+	if err := LoadChannelExternalFields(channels...); err != nil {
+		return nil, err
+	}
 	return channels, err
 }
 
