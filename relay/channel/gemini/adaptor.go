@@ -24,6 +24,7 @@ type Adaptor struct {
 }
 
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
+	filterGenerateContentSafetySettings(request)
 	if len(request.Contents) > 0 {
 		for i, content := range request.Contents {
 			if i == 0 {
@@ -41,6 +42,30 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 	}
 	return request, nil
+}
+
+func filterGenerateContentSafetySettings(request *dto.GeminiChatRequest) {
+	if request == nil {
+		return
+	}
+
+	if len(request.SafetySettings) > 0 {
+		safetySettings := request.SafetySettings[:0]
+		for _, setting := range request.SafetySettings {
+			category := strings.TrimSpace(setting.Category)
+			if _, ok := generateContentSafetyCategorySet[category]; ok {
+				setting.Category = category
+				safetySettings = append(safetySettings, setting)
+			}
+		}
+		request.SafetySettings = safetySettings
+	}
+
+	if len(request.Requests) > 0 {
+		for i := range request.Requests {
+			filterGenerateContentSafetySettings(&request.Requests[i])
+		}
+	}
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, req *dto.ClaudeRequest) (any, error) {
