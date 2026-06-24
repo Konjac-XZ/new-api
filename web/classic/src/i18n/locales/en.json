@@ -3851,6 +3851,19 @@
     "预期回答": "Expected answer",
     "测试时检查响应是否包含此字符串，不填则不检查": "During tests, check whether the response contains this string. Leave empty to skip the check.",
     "将空回复视为失败": "Treat empty replies as failures",
-    "启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试": "When enabled, if the upstream returns an empty reply with no content and no tool calls, it is treated as a channel failure and triggers automatic disabling and retry."
+    "启用后，当上游返回无内容且无工具调用的空回复时，视为渠道故障，触发自动禁用和重试": "When enabled, if the upstream returns an empty reply with no content and no tool calls, it is treated as a channel failure and triggers automatic disabling and retry.",
+    "排序规则": "Sort rules",
+    "优先级降序": "Priority descending",
+    "升序": "Ascending",
+    "降序": "Descending",
+    "渠道排序规则": "Channel sort rules",
+    "恢复默认": "Restore default",
+    "使用示例规则": "Use example rules",
+    "按从上到下的顺序依次比较：当前一项相同时，继续使用下一项排序。": "Compare from top to bottom: when the current item is equal, continue sorting by the next item.",
+    "第 {{index}} 级": "Level {{index}}",
+    "添加排序级别": "Add sort level",
+    "上移": "Move up",
+    "下移": "Move down",
+    "测试时间": "Test time"
   }
 }

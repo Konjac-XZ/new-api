@@ -3686,6 +3686,19 @@
     "浏览器未允许进入全屏，请确认当前浏览器支持移动端全屏模式。": "Le navigateur n'a pas autorisé le plein écran. Vérifiez que ce navigateur prend en charge le plein écran mobile.",
     "吞吐量": "Débit",
     "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "Le mode de protection du monitoring est activé : les requêtes actives dépassent {{capacity}}, les détails en temps réel ont donc été dégradés afin de ne pas affecter les requêtes métier.",
-    "首个 Token 耗时": "Temps avant le premier token"
+    "首个 Token 耗时": "Temps avant le premier token",
+    "排序规则": "Regles de tri",
+    "优先级降序": "Priorite decroissante",
+    "升序": "Croissant",
+    "降序": "Decroissant",
+    "渠道排序规则": "Regles de tri des canaux",
+    "恢复默认": "Restaurer la valeur par defaut",
+    "使用示例规则": "Utiliser les regles exemples",
+    "按从上到下的顺序依次比较：当前一项相同时，继续使用下一项排序。": "Compare de haut en bas : lorsque l element courant est identique, le tri continue avec l element suivant.",
+    "第 {{index}} 级": "Niveau {{index}}",
+    "添加排序级别": "Ajouter un niveau de tri",
+    "上移": "Monter",
+    "下移": "Descendre",
+    "测试时间": "Heure du test"
   }
 }

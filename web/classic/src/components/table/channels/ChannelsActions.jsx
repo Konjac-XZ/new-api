@@ -25,8 +25,33 @@ import {
   Switch,
   Typography,
   Select,
+  Tag,
 } from '@douyinfe/semi-ui';
+import { IconSort } from '@douyinfe/semi-icons';
 import CompactModeToggle from '../../common/ui/CompactModeToggle';
+
+const CHANNEL_SORT_LABELS = {
+  id: 'ID',
+  name: '名称',
+  priority: '优先级',
+  weight: '权重',
+  balance: '余额',
+  response_time: '响应时间',
+  test_time: '测试时间',
+};
+
+const getSortSummary = (rules, t) => {
+  if (!Array.isArray(rules) || rules.length === 0) {
+    return t('优先级降序');
+  }
+  return rules
+    .map((rule) => {
+      const label = CHANNEL_SORT_LABELS[rule.field] || rule.field;
+      const order = rule.order === 'asc' ? t('升序') : t('降序');
+      return `${t(label)}${order}`;
+    })
+    .join(' / ');
+};
 
 const ChannelsActions = ({
   enableBatchDelete,
@@ -47,23 +72,23 @@ const ChannelsActions = ({
   dynamicBreakerFilter,
   setDynamicBreakerFilter,
   idSort,
-  setIdSort,
+  channelSortRules,
+  setShowChannelSortModal,
   setEnableBatchDelete,
   enableTagMode,
   setEnableTagMode,
   statusFilter,
   setStatusFilter,
-  getFormValues,
   loadChannels,
-  searchChannels,
   activeTypeKey,
-  activePage,
   pageSize,
   setActivePage,
   autoRefreshEnabled,
   setAutoRefreshEnabled,
   t,
 }) => {
+  const sortSummary = getSortSummary(channelSortRules, t);
+
   return (
     <div className='flex flex-col gap-2'>
       {/* 第一行：批量操作按钮 + 设置开关 */}
@@ -278,35 +303,18 @@ const ChannelsActions = ({
         {/* 右侧：设置开关区域 */}
         <div className='flex flex-col md:flex-row items-start md:items-center gap-2 w-full md:w-auto order-1 md:order-2'>
           <div className='flex items-center justify-between w-full md:w-auto'>
-            <Typography.Text strong className='mr-2'>
-              {t('ID 排序')}
-            </Typography.Text>
-            <Switch
+            <Button
               size='small'
-              checked={idSort}
-              onChange={(v) => {
-                localStorage.setItem('id-sort', v + '');
-                setIdSort(v);
-                const { searchKeyword, searchGroup, searchModel } =
-                  getFormValues();
-                if (
-                  searchKeyword === '' &&
-                  searchGroup === '' &&
-                  searchModel === ''
-                ) {
-                  loadChannels(activePage, pageSize, v, enableTagMode);
-                } else {
-                  searchChannels(
-                    enableTagMode,
-                    activeTypeKey,
-                    statusFilter,
-                    activePage,
-                    pageSize,
-                    v,
-                  );
-                }
-              }}
-            />
+              theme='light'
+              type='tertiary'
+              icon={<IconSort />}
+              onClick={() => setShowChannelSortModal(true)}
+            >
+              {t('排序规则')}
+            </Button>
+            <Tag color='blue' className='ml-2 max-w-64 truncate'>
+              {sortSummary}
+            </Tag>
           </div>
 
           <div className='flex items-center justify-between w-full md:w-auto'>

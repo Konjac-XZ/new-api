@@ -42,6 +42,69 @@ import { openCodexUsageModal } from '../../components/table/channels/modals/Code
 
 const CHANNELS_AUTO_REFRESH_INTERVAL_MS = 10000;
 const CHANNELS_DASHBOARD_AUTO_SWITCH_WIDTH = 960;
+export const CHANNEL_SORT_RULES_STORAGE_KEY = 'channel-sort-rules:v1';
+export const DEFAULT_CHANNEL_SORT_RULES = [
+  { field: 'priority', order: 'desc' },
+];
+const CHANNEL_SORT_FIELDS = new Set([
+  'id',
+  'name',
+  'priority',
+  'weight',
+  'balance',
+  'response_time',
+  'test_time',
+]);
+const CHANNEL_SORT_ORDERS = new Set(['asc', 'desc']);
+
+const normalizeChannelSortRules = (rules) => {
+  if (!Array.isArray(rules)) {
+    return [...DEFAULT_CHANNEL_SORT_RULES];
+  }
+  const normalized = [];
+  const seen = new Set();
+  rules.forEach((rule) => {
+    const field = String(rule?.field || '').trim().toLowerCase();
+    if (!CHANNEL_SORT_FIELDS.has(field) || seen.has(field)) {
+      return;
+    }
+    const order = CHANNEL_SORT_ORDERS.has(rule?.order) ? rule.order : 'desc';
+    seen.add(field);
+    normalized.push({ field, order });
+  });
+  return normalized.length > 0 ? normalized : [...DEFAULT_CHANNEL_SORT_RULES];
+};
+
+const loadStoredChannelSortRules = () => {
+  try {
+    const storedRules = localStorage.getItem(CHANNEL_SORT_RULES_STORAGE_KEY);
+    if (storedRules) {
+      return normalizeChannelSortRules(JSON.parse(storedRules));
+    }
+    if (localStorage.getItem('id-sort') === 'true') {
+      return [{ field: 'id', order: 'desc' }];
+    }
+  } catch (error) {
+    // Ignore invalid preferences and fall back to the default ordering.
+  }
+  return [...DEFAULT_CHANNEL_SORT_RULES];
+};
+
+const persistChannelSortRules = (rules) => {
+  try {
+    localStorage.setItem(
+      CHANNEL_SORT_RULES_STORAGE_KEY,
+      JSON.stringify(normalizeChannelSortRules(rules)),
+    );
+  } catch (error) {
+    // Storage may be unavailable in private browsing; keep in-memory state.
+  }
+};
+
+const buildChannelSortQuery = (rules) =>
+  `&sort_rules=${encodeURIComponent(
+    JSON.stringify(normalizeChannelSortRules(rules)),
+  )}`;
 
 export const useChannelsData = () => {
   const { t } = useTranslation();
@@ -56,7 +119,14 @@ export const useChannelsData = () => {
     localStorage.getItem('channel-auto-refresh-enabled') !== 'false',
   );
   const [activePage, setActivePage] = useState(1);
-  const [idSort, setIdSort] = useState(false);
+  const [channelSortRules, setChannelSortRules] = useState(
+    loadStoredChannelSortRules,
+  );
+  const [idSort, setIdSort] = useState(() =>
+    loadStoredChannelSortRules().some(
+      (rule) => rule.field === 'id' && rule.order === 'desc',
+    ),
+  );
   const [searching, setSearching] = useState(false);
   const [pageSize, setPageSize] = useState(ITEMS_PER_PAGE);
   const [channelCount, setChannelCount] = useState(0);
@@ -75,6 +145,7 @@ export const useChannelsData = () => {
   const [selectedChannels, setSelectedChannels] = useState([]);
   const [enableTagMode, setEnableTagMode] = useState(false);
   const [showBatchSetTag, setShowBatchSetTag] = useState(false);
+  const [showChannelSortModal, setShowChannelSortModal] = useState(false);
   const [batchSetTagValue, setBatchSetTagValue] = useState('');
   const [compactMode, setCompactMode] = useTableCompactMode('channels');
   const [isDashboardMode, setIsDashboardMode] = useState(() => {
@@ -167,6 +238,7 @@ export const useChannelsData = () => {
   const COLUMN_KEYS = {
     ID: 'id',
     NAME: 'name',
+    REMARK: 'remark',
     GROUP: 'group',
     TYPE: 'type',
     STATUS: 'status',
@@ -179,7 +251,10 @@ export const useChannelsData = () => {
 
   // Initialize from localStorage
   useEffect(() => {
-    const localIdSort = localStorage.getItem('id-sort') === 'true';
+    const localSortRules = loadStoredChannelSortRules();
+    const localIdSort = localSortRules.some(
+      (rule) => rule.field === 'id' && rule.order === 'desc',
+    );
     const localPageSize =
       parseInt(localStorage.getItem('page-size')) || ITEMS_PER_PAGE;
     const localEnableTagMode =
@@ -188,11 +263,12 @@ export const useChannelsData = () => {
       localStorage.getItem('enable-batch-delete') === 'true';
 
     setIdSort(localIdSort);
+    setChannelSortRules(localSortRules);
     setPageSize(localPageSize);
     setEnableTagMode(localEnableTagMode);
     setEnableBatchDelete(localEnableBatchDelete);
 
-    loadChannels(1, localPageSize, localIdSort, localEnableTagMode)
+    loadChannels(1, localPageSize, localIdSort, localEnableTagMode, undefined, undefined, {}, localSortRules)
       .then()
       .catch((reason) => {
         showError(reason);
@@ -207,6 +283,7 @@ export const useChannelsData = () => {
     return {
       [COLUMN_KEYS.ID]: true,
       [COLUMN_KEYS.NAME]: true,
+      [COLUMN_KEYS.REMARK]: true,
       [COLUMN_KEYS.GROUP]: true,
       [COLUMN_KEYS.TYPE]: true,
       [COLUMN_KEYS.STATUS]: true,
@@ -413,6 +490,7 @@ export const useChannelsData = () => {
     typeKey = activeTypeKey,
     statusF,
     options = {},
+    sortRules = channelSortRules,
   ) => {
     const isBackground = options.background === true;
     if (statusF === undefined) statusF = statusFilter;
@@ -427,6 +505,7 @@ export const useChannelsData = () => {
         pageSize,
         idSort,
         options,
+        sortRules,
       );
       return;
     }
@@ -439,8 +518,9 @@ export const useChannelsData = () => {
     }
     const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
     const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+    const sortParam = buildChannelSortQuery(sortRules);
     const res = await API.get(
-      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
+      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${sortParam}${typeParam}${statusParam}`,
     );
 
     if (res === undefined || reqId !== requestCounter.current) {
@@ -484,6 +564,7 @@ export const useChannelsData = () => {
     pageSz = pageSize,
     sortFlag = idSort,
     options = {},
+    sortRules = channelSortRules,
   ) => {
     const isBackground = options.background === true;
     const { searchKeyword, searchGroup, searchModel } = getFormValues();
@@ -497,6 +578,7 @@ export const useChannelsData = () => {
           typeKey,
           statusF,
           options,
+          sortRules,
         );
         return;
       }
@@ -509,8 +591,9 @@ export const useChannelsData = () => {
 
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
       const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+      const sortParam = buildChannelSortQuery(sortRules);
       const res = await API.get(
-        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
+        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${sortParam}${typeParam}${statusParam}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -536,6 +619,46 @@ export const useChannelsData = () => {
         setSearching(false);
       }
     }
+  };
+
+  const applyChannelSortRules = (rules) => {
+    const normalizedRules = normalizeChannelSortRules(rules);
+    const nextIdSort = normalizedRules.some(
+      (rule) => rule.field === 'id' && rule.order === 'desc',
+    );
+    persistChannelSortRules(normalizedRules);
+    try {
+      localStorage.setItem('id-sort', nextIdSort + '');
+    } catch (error) {
+      // Keep the legacy flag best-effort only.
+    }
+    setChannelSortRules(normalizedRules);
+    setIdSort(nextIdSort);
+    setActivePage(1);
+    const { searchKeyword, searchGroup, searchModel } = getFormValues();
+    if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
+      loadChannels(
+        1,
+        pageSize,
+        nextIdSort,
+        enableTagMode,
+        activeTypeKey,
+        statusFilter,
+        {},
+        normalizedRules,
+      );
+      return;
+    }
+    searchChannels(
+      enableTagMode,
+      activeTypeKey,
+      statusFilter,
+      1,
+      pageSize,
+      nextIdSort,
+      {},
+      normalizedRules,
+    );
   };
 
   // Refresh
@@ -716,6 +839,10 @@ export const useChannelsData = () => {
         if (data.weight < 0) data.weight = 0;
         res = await API.put('/api/channel/', data);
         break;
+      case 'remark':
+        data.remark = value === '' ? null : value;
+        res = await API.put('/api/channel/', data);
+        break;
       case 'enable_all':
         data.channel_info = record.channel_info;
         data.channel_info.multi_key_status_list = {};
@@ -729,6 +856,9 @@ export const useChannelsData = () => {
       let newChannels = [...channels];
       if (action !== 'delete') {
         record.status = channel.status;
+        if (action === 'remark') {
+          record.remark = channel.remark || '';
+        }
       }
       setChannels(newChannels);
     } else {
@@ -1577,6 +1707,7 @@ export const useChannelsData = () => {
     channelCount,
     groupOptions,
     idSort,
+    channelSortRules,
     enableTagMode,
     enableBatchDelete,
     statusFilter,
@@ -1598,6 +1729,8 @@ export const useChannelsData = () => {
     setSelectedChannels,
     showBatchSetTag,
     setShowBatchSetTag,
+    showChannelSortModal,
+    setShowChannelSortModal,
     batchSetTagValue,
     setBatchSetTagValue,
 
@@ -1699,6 +1832,8 @@ export const useChannelsData = () => {
 
     // Setters
     setIdSort,
+    setChannelSortRules,
+    applyChannelSortRules,
     setEnableTagMode,
     setEnableBatchDelete,
     setAutoRefreshEnabled,

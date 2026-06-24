@@ -35,6 +35,7 @@ import EditTagModal from './modals/EditTagModal';
 import MultiKeyManageModal from './modals/MultiKeyManageModal';
 import ChannelUpstreamUpdateModal from './modals/ChannelUpstreamUpdateModal';
 import ChannelBreakerStatusModal from './modals/ChannelBreakerStatusModal';
+import ChannelSortModal from './modals/ChannelSortModal';
 import { createCardProPagination } from '../../../helpers/utils';
 
 const ChannelsPage = () => {
@@ -84,6 +85,13 @@ const ChannelsPage = () => {
           channelsData.resetSingleDynamicBreakerChannelId ===
           channelsData.currentBreakerStatusChannel?.id
         }
+        t={channelsData.t}
+      />
+      <ChannelSortModal
+        visible={channelsData.showChannelSortModal}
+        onCancel={() => channelsData.setShowChannelSortModal(false)}
+        channelSortRules={channelsData.channelSortRules}
+        applyChannelSortRules={channelsData.applyChannelSortRules}
         t={channelsData.t}
       />
 

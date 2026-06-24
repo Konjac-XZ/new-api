@@ -63,6 +63,17 @@ func parseStatusFilter(statusParam string) int {
 	}
 }
 
+func parseChannelSortOptions(c *gin.Context, idSort bool) model.ChannelSortOptions {
+	var rules []model.ChannelSortRule
+	sortRules := strings.TrimSpace(c.Query("sort_rules"))
+	if sortRules != "" {
+		if err := common.UnmarshalJsonStr(sortRules, &rules); err == nil {
+			return model.NewChannelSortOptionsFromRules(rules, idSort)
+		}
+	}
+	return model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
+}
+
 func clearChannelInfo(channel *model.Channel) {
 	if channel.ChannelInfo.IsMultiKey {
 		channel.ChannelInfo.MultiKeyDisabledReason = nil
@@ -100,7 +111,7 @@ func GetAllChannels(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
-	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
+	sortOptions := parseChannelSortOptions(c, idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
 	groupFilter := model.NormalizeChannelGroupFilter(c.Query("group"))
 	statusParam := c.Query("status")
@@ -312,7 +323,7 @@ func SearchChannels(c *gin.Context) {
 	statusParam := c.Query("status")
 	statusFilter := parseStatusFilter(statusParam)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
-	sortOptions := model.NewChannelSortOptions(c.Query("sort_by"), c.Query("sort_order"), idSort)
+	sortOptions := parseChannelSortOptions(c, idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {

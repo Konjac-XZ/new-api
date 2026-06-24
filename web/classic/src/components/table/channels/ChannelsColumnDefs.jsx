@@ -21,6 +21,7 @@ import React from 'react';
 import {
   Button,
   Dropdown,
+  Input,
   InputNumber,
   Modal,
   Space,
@@ -153,6 +154,43 @@ const renderTagType = (t) => {
     <Tag color='light-blue' shape='circle' type='light'>
       {t('标签聚合')}
     </Tag>
+  );
+};
+
+const renderRemarkEditor = (record, manageChannel, t) => {
+  if (record.children !== undefined) {
+    return <Typography.Text type='tertiary'>-</Typography.Text>;
+  }
+
+  const submitRemark = (target) => {
+    const nextRemark = target.value.trim();
+    const currentRemark = (record.remark || '').trim();
+    if (nextRemark === currentRemark) {
+      target.value = record.remark || '';
+      return;
+    }
+    manageChannel(record.id, 'remark', record, nextRemark);
+  };
+
+  return (
+    <Input
+      size='small'
+      defaultValue={record.remark || ''}
+      maxLength={255}
+      showClear
+      style={{ width: 220 }}
+      onBlur={(e) => submitRemark(e.target)}
+      onEnterPress={(e) => {
+        submitRemark(e.target);
+        e.target.blur();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.currentTarget.value = record.remark || '';
+          e.currentTarget.blur();
+        }
+      }}
+    />
   );
 };
 
@@ -798,6 +836,12 @@ export const getChannelsColumns = ({
           );
         }
       },
+    },
+    {
+      key: COLUMN_KEYS.REMARK,
+      title: t('备注'),
+      dataIndex: 'remark',
+      render: (text, record) => renderRemarkEditor(record, manageChannel, t),
     },
     {
       key: COLUMN_KEYS.OPERATE,

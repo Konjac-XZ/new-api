@@ -88,43 +88,67 @@ type ChannelInfo struct {
 }
 
 type ChannelSortOptions struct {
-	SortBy    string
-	SortOrder string
-	IDSort    bool
+	Rules  []ChannelSortRule
+	IDSort bool
+}
+
+type ChannelSortRule struct {
+	SortBy    string `json:"field"`
+	SortOrder string `json:"order"`
 }
 
 var channelSortColumns = map[string]string{
 	"id":            "id",
 	"name":          "name",
 	"priority":      "priority",
+	"weight":        "weight",
 	"balance":       "balance",
 	"response_time": "response_time",
 	"test_time":     "test_time",
 }
 
 func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) ChannelSortOptions {
-	normalizedSortBy := strings.ToLower(strings.TrimSpace(sortBy))
-	normalizedSortOrder := strings.ToLower(strings.TrimSpace(sortOrder))
-	if _, ok := channelSortColumns[normalizedSortBy]; !ok {
-		normalizedSortBy = ""
-		normalizedSortOrder = ""
-	} else if normalizedSortOrder != "asc" {
-		normalizedSortOrder = "desc"
+	return NewChannelSortOptionsFromRules([]ChannelSortRule{
+		{SortBy: sortBy, SortOrder: sortOrder},
+	}, idSort)
+}
+
+func NewChannelSortOptionsFromRules(rules []ChannelSortRule, idSort bool) ChannelSortOptions {
+	normalizedRules := make([]ChannelSortRule, 0, len(rules))
+	seen := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		normalizedRule, ok := normalizeChannelSortRule(rule)
+		if !ok {
+			continue
+		}
+		if _, exists := seen[normalizedRule.SortBy]; exists {
+			continue
+		}
+		seen[normalizedRule.SortBy] = struct{}{}
+		normalizedRules = append(normalizedRules, normalizedRule)
 	}
 
 	return ChannelSortOptions{
-		SortBy:    normalizedSortBy,
-		SortOrder: normalizedSortOrder,
-		IDSort:    idSort,
+		Rules:  normalizedRules,
+		IDSort: idSort,
 	}
 }
 
 func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
-	if columnName, ok := channelSortColumns[options.SortBy]; ok {
-		return query.Order(clause.OrderByColumn{
+	appliedRules := false
+	for _, rule := range options.Rules {
+		columnName, ok := channelSortColumns[rule.SortBy]
+		if !ok {
+			continue
+		}
+		appliedRules = true
+		query = query.Order(clause.OrderByColumn{
 			Column: clause.Column{Name: columnName},
-			Desc:   options.SortOrder != "asc",
+			Desc:   rule.SortOrder != "asc",
 		})
+	}
+	if appliedRules {
+		return query
 	}
 	if options.IDSort {
 		return query.Order(clause.OrderByColumn{
@@ -136,6 +160,21 @@ func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
 		Column: clause.Column{Name: "priority"},
 		Desc:   true,
 	})
+}
+
+func normalizeChannelSortRule(rule ChannelSortRule) (ChannelSortRule, bool) {
+	normalizedSortBy := strings.ToLower(strings.TrimSpace(rule.SortBy))
+	if _, ok := channelSortColumns[normalizedSortBy]; !ok {
+		return ChannelSortRule{}, false
+	}
+	normalizedSortOrder := strings.ToLower(strings.TrimSpace(rule.SortOrder))
+	if normalizedSortOrder != "asc" {
+		normalizedSortOrder = "desc"
+	}
+	return ChannelSortRule{
+		SortBy:    normalizedSortBy,
+		SortOrder: normalizedSortOrder,
+	}, true
 }
 
 func resolveChannelSortOptions(idSort bool, sortOptions []ChannelSortOptions) ChannelSortOptions {

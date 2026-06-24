@@ -4219,6 +4219,19 @@
     "浏览器未允许进入全屏，请确认当前浏览器支持移动端全屏模式。": "Trình duyệt không cho phép toàn màn hình. Hãy xác nhận trình duyệt này hỗ trợ chế độ toàn màn hình trên di động.",
     "吞吐量": "Thông lượng",
     "监控保护模式已启用：当前活跃请求超过 {{capacity}}，实时明细已降级以避免影响业务请求。": "Chế độ bảo vệ giám sát đã bật: số yêu cầu đang hoạt động vượt quá {{capacity}}, nên chi tiết thời gian thực đã được giảm để tránh ảnh hưởng đến yêu cầu nghiệp vụ.",
-    "首个 Token 耗时": "Thời gian đến token đầu tiên"
+    "首个 Token 耗时": "Thời gian đến token đầu tiên",
+    "排序规则": "Quy tac sap xep",
+    "优先级降序": "Do uu tien giam dan",
+    "升序": "Tang dan",
+    "降序": "Giam dan",
+    "渠道排序规则": "Quy tac sap xep kenh",
+    "恢复默认": "Khoi phuc mac dinh",
+    "使用示例规则": "Dung quy tac vi du",
+    "按从上到下的顺序依次比较：当前一项相同时，继续使用下一项排序。": "So sanh tu tren xuong duoi: khi muc hien tai bang nhau, tiep tuc sap xep theo muc tiep theo.",
+    "第 {{index}} 级": "Cap {{index}}",
+    "添加排序级别": "Them cap sap xep",
+    "上移": "Di chuyen len",
+    "下移": "Di chuyen xuong",
+    "测试时间": "Thoi gian kiem tra"
   }
 }
