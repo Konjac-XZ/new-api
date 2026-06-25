@@ -597,6 +597,7 @@ const EditChannelModal = (props) => {
 
   const applyClipboardConfig = (config) => {
     if (!config) return;
+    if (loading || isIonetLocked) return;
     setInputs((prev) => ({
       ...prev,
       key: config.key,
@@ -1388,15 +1389,15 @@ const EditChannelModal = (props) => {
         loadChannel();
       } else {
         formApiRef.current?.setValues(getInitValues());
-        try {
-          navigator?.clipboard?.readText()?.then((text) => {
-            const parsed = parseChannelConnectionString(text);
-            if (parsed) {
-              setClipboardConfig(parsed);
-            }
-          }).catch(() => {});
-        } catch {}
       }
+      try {
+        navigator?.clipboard?.readText()?.then((text) => {
+          const parsed = parseChannelConnectionString(text);
+          if (parsed) {
+            setClipboardConfig(parsed);
+          }
+        }).catch(() => {});
+      } catch {}
       fetchModelGroups();
       // 重置手动输入模式状态
       setUseManualInput(false);
@@ -2257,12 +2258,13 @@ const EditChannelModal = (props) => {
                 {isEdit ? t('更新渠道信息') : t('创建新的渠道')}
               </Title>
             </Space>
-            {!isEdit && (
+            {!isIonetLocked && (
               <Button
                 size='small'
                 type='tertiary'
                 className='ec-dbcd0a3c01b55203 shrink-0'
                 icon={<IconBolt />}
+                disabled={loading}
                 onClick={pasteFromClipboard}
               >
                 {t('从剪贴板粘贴配置')}
@@ -2734,7 +2736,7 @@ const EditChannelModal = (props) => {
             <>
             <Spin spinning={loading}>
               <div className='p-2 space-y-3' ref={formContainerRef}>
-                {!isEdit && clipboardConfig && (
+                {!loading && !isIonetLocked && clipboardConfig && (
                   <Banner
                     type='info'
                     className='ec-dbcd0a3c01b55203'
