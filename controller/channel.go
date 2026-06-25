@@ -1335,6 +1335,9 @@ func UpdateChannel(c *gin.Context) {
 	}
 
 	preserveMissingExternalChannelFields(&channel.Channel, originChannel, fieldSet)
+	if fieldSet["remark"] && channel.Remark == nil {
+		channel.Remark = common.GetPointer("")
+	}
 	normalizeChannelDefaults(&channel.Channel)
 
 	// 处理多key模式下的密钥追加/覆盖逻辑

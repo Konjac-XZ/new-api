@@ -13,6 +13,8 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
 
@@ -305,4 +307,46 @@ func TestUpdateChannelPreservesExternalConfigWhenRequestOmitsFields(t *testing.T
 	if reloaded.GetScheduledTestInterval() != interval {
 		t.Fatalf("expected scheduled test interval %d, got %d", interval, reloaded.GetScheduledTestInterval())
 	}
+}
+
+func TestUpdateChannelClearsRemarkWhenRequestSendsNull(t *testing.T) {
+	setupChannelBreakerDetailTestDB(t)
+
+	autoBan := 1
+	priority := int64(10)
+	weight := uint(100)
+	remark := "temporary note"
+	channel := &model.Channel{
+		Name:     "clear-remark-channel",
+		Key:      "sk-clear-remark",
+		Status:   common.ChannelStatusEnabled,
+		Group:    "default",
+		Models:   "gpt-4o-mini",
+		Priority: &priority,
+		Weight:   &weight,
+		AutoBan:  &autoBan,
+		Remark:   &remark,
+	}
+	require.NoError(t, channel.Insert())
+
+	payload := gin.H{
+		"id":     channel.Id,
+		"remark": nil,
+	}
+	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/channel/", payload, 1)
+
+	UpdateChannel(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, response.Message)
+
+	var updated model.Channel
+	require.NoError(t, common.Unmarshal(response.Data, &updated))
+	assert.NotNil(t, updated.Remark)
+	assert.Empty(t, *updated.Remark)
+
+	reloaded, err := model.GetChannelById(channel.Id, true)
+	require.NoError(t, err)
+	require.NotNil(t, reloaded.Remark)
+	assert.Empty(t, *reloaded.Remark)
 }

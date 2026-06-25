@@ -840,7 +840,7 @@ export const useChannelsData = () => {
         res = await API.put('/api/channel/', data);
         break;
       case 'remark':
-        data.remark = value === '' ? null : value;
+        data.remark = value;
         res = await API.put('/api/channel/', data);
         break;
       case 'enable_all':
