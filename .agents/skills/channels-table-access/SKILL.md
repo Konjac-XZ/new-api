@@ -69,6 +69,34 @@ order by id
 limit 20;
 ```
 
+## Probe Testing (探针测试)
+
+For detailed information on probe testing execution rules, guard conditions, and database table schemas, refer to the [Probe Testing Reference](file:///home/xinrui/GitHub/new-api/.agents/skills/channels-table-access/references/probe_testing.md).
+
+### Quick SQL Queries for Probe Testing
+
+#### 1. View Probe Test Configs for Dynamic Circuit Breaker Channels
+```sql
+select 
+  c.id, c.name, c.status,
+  t.scheduled_test_interval, t.max_first_token_latency, t.treat_empty_reply_as_failure
+from channels c
+join channel_breaker_states b on c.id = b.channel_id
+left join channel_test_configs t on c.id = t.channel_id
+where b.dynamic_circuit_breaker = true;
+```
+
+#### 2. Update Probe Test Interval and Empty Reply settings
+```sql
+begin;
+update channel_test_configs t
+set scheduled_test_interval = 15, treat_empty_reply_as_failure = true
+from channel_breaker_states b
+where t.channel_id = b.channel_id
+  and b.dynamic_circuit_breaker = true;
+commit;
+```
+
 ## Write Operations
 
 ### 1. Update Channel Fields (with lock)
