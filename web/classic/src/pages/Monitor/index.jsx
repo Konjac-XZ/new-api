@@ -43,8 +43,9 @@ import {
   Tooltip,
   Modal,
   Toast,
+  Input,
 } from '@douyinfe/semi-ui';
-import { IconRefresh, IconSetting } from '@douyinfe/semi-icons';
+import { IconRefresh, IconSearch, IconSetting } from '@douyinfe/semi-icons';
 import {
   Activity,
   ArrowDownToLine,
@@ -1665,6 +1666,7 @@ const Monitor = () => {
   const [selectedId, setSelectedId] = useState(null);
   const [detailVisible, setDetailVisible] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [modelSearch, setModelSearch] = useState('');
   const [isCompact, setIsCompact] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(
     getInitialMonitorVisibleColumns,
@@ -1875,10 +1877,42 @@ const Monitor = () => {
         dataIndex: 'model',
         width: isCompact ? 220 : 280,
         ellipsis: true,
-        render: (_, record) =>
-          renderModelTag(record.model || t('未知模型'), {
-            shape: 'circle',
-          }),
+        render: (_, record) => {
+          let retryCount = Number(record.retry_count || 0);
+          if (!Number.isFinite(retryCount) || retryCount < 0) {
+            retryCount = 0;
+          }
+
+          const currentAttempt = Number(record.current_channel?.attempt);
+          if (
+            retryCount === 0 &&
+            Number.isFinite(currentAttempt) &&
+            currentAttempt > 1
+          ) {
+            retryCount = currentAttempt - 1;
+          }
+
+          if (
+            retryCount === 0 &&
+            Array.isArray(record.channel_attempts) &&
+            record.channel_attempts.length > 1
+          ) {
+            retryCount = record.channel_attempts.length - 1;
+          }
+
+          return (
+            <Space size={4}>
+              {renderModelTag(record.model || t('未知模型'), {
+                shape: 'circle',
+              })}
+              {retryCount > 0 && (
+                <Tag color='orange' shape='circle'>
+                  +{retryCount}
+                </Tag>
+              )}
+            </Space>
+          );
+        },
       },
       {
         title: t('渠道'),
@@ -2084,13 +2118,28 @@ const Monitor = () => {
   }, [summariesWithStatus]);
 
   const filteredSummaries = useMemo(() => {
+    const modelSearchText = modelSearch.trim().toLowerCase();
+
     return summariesWithStatus.filter((r) => {
       const displayStatus = r.displayStatus || deriveDisplayStatus(r);
-      if (filter === 'all') return true;
-      if (filter === 'processing') return isActiveStatus(displayStatus);
-      return displayStatus === filter;
+      const matchesStatus =
+        filter === 'all' ||
+        (filter === 'processing' && isActiveStatus(displayStatus)) ||
+        displayStatus === filter;
+
+      if (!matchesStatus) {
+        return false;
+      }
+
+      if (!modelSearchText) {
+        return true;
+      }
+
+      return String(r.model || '')
+        .toLowerCase()
+        .includes(modelSearchText);
     });
-  }, [summariesWithStatus, filter]);
+  }, [summariesWithStatus, filter, modelSearch]);
 
   // Sort by start_time descending (newest first)
   const sortedSummaries = useMemo(() => {
@@ -2160,27 +2209,48 @@ const Monitor = () => {
           />
         )}
 
-        {/* Filter Tabs */}
-        <Tabs
-          type='button'
-          activeKey={filter}
-          onChange={setFilter}
-          style={{ marginBottom: '12px', flexShrink: 0 }}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap',
+            marginBottom: '12px',
+            flexShrink: 0,
+          }}
         >
-          <TabPane tab={t('全部')} itemKey='all' />
-          <TabPane
-            tab={
-              <Space>
-                {t('处理中')}
-                <Badge count={localActiveCount} type='primary' />
-              </Space>
-            }
-            itemKey='processing'
+          {/* Filter Tabs */}
+          <Tabs
+            type='button'
+            activeKey={filter}
+            onChange={setFilter}
+            style={{ flexShrink: 0 }}
+          >
+            <TabPane tab={t('全部')} itemKey='all' />
+            <TabPane
+              tab={
+                <Space>
+                  {t('处理中')}
+                  <Badge count={localActiveCount} type='primary' />
+                </Space>
+              }
+              itemKey='processing'
+            />
+            <TabPane tab={t('完成')} itemKey='completed' />
+            <TabPane tab={t('错误')} itemKey='error' />
+            <TabPane tab={t('放弃')} itemKey='abandoned' />
+          </Tabs>
+
+          <Input
+            prefix={<IconSearch />}
+            placeholder={t('搜索模型名称')}
+            value={modelSearch}
+            onChange={setModelSearch}
+            showClear
+            style={{ width: 240, maxWidth: '100%' }}
           />
-          <TabPane tab={t('完成')} itemKey='completed' />
-          <TabPane tab={t('错误')} itemKey='error' />
-          <TabPane tab={t('放弃')} itemKey='abandoned' />
-        </Tabs>
+        </div>
 
         <div style={{ flex: 1, minHeight: 0 }}>
           <Table

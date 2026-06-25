@@ -58,6 +58,19 @@ const normalizeMonitorPayload = (payload, receivedAtMs = Date.now()) => {
   };
 };
 
+const getRetryCountFromChannelUpdate = (payload) => {
+  if (Array.isArray(payload?.channel_attempts)) {
+    return Math.max(0, payload.channel_attempts.length - 1);
+  }
+
+  const currentAttempt = Number(payload?.current_channel?.attempt);
+  if (Number.isFinite(currentAttempt) && currentAttempt > 1) {
+    return currentAttempt - 1;
+  }
+
+  return 0;
+};
+
 const useMonitorWs = ({ focusedRequestId } = {}) => {
   const [summaries, setSummaries] = useState([]);
   const [stats, setStats] = useState({
@@ -164,6 +177,23 @@ const useMonitorWs = ({ focusedRequestId } = {}) => {
         }
         case WS_MESSAGE_TYPES.CHANNEL: {
           if (message.payload && message.payload.request_id) {
+            const retryCount = getRetryCountFromChannelUpdate(message.payload);
+            const existingIndex = nextSummaries.findIndex(
+              (item) => item.id === message.payload.request_id,
+            );
+            if (
+              existingIndex !== -1 &&
+              nextSummaries[existingIndex].retry_count !== retryCount
+            ) {
+              ensureMutable();
+              nextSummaries[existingIndex] = {
+                ...nextSummaries[existingIndex],
+                retry_count: retryCount,
+                _receivedAtMs: receivedAtMs,
+              };
+              changed = true;
+            }
+
             const focusedId = focusedRequestIdRef.current;
             if (focusedId && message.payload.request_id === focusedId) {
               latestChannelUpdate = normalizeMonitorPayload(message.payload, receivedAtMs);

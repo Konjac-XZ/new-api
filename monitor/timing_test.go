@@ -61,6 +61,74 @@ func TestRequestSummaryIncludesMillisecondTimingFields(t *testing.T) {
 	}
 }
 
+func TestRequestSummaryIncludesRetryCount(t *testing.T) {
+	startTime := time.Unix(1711456789, 123000000)
+
+	record := &RequestRecord{
+		ID:          "req-summary-retry",
+		Status:      StatusProcessing,
+		StartTime:   startTime,
+		StartTimeMs: startTime.UnixMilli(),
+		Downstream:  DownstreamInfo{},
+		ChannelAttempts: []ChannelAttempt{
+			{
+				Attempt:     1,
+				ChannelId:   9,
+				ChannelName: "demo-a",
+				StartedAt:   startTime,
+				StartedAtMs: startTime.UnixMilli(),
+				Status:      AttemptStatusFailed,
+			},
+			{
+				Attempt:     2,
+				ChannelId:   10,
+				ChannelName: "demo-b",
+				StartedAt:   startTime.Add(time.Second),
+				StartedAtMs: startTime.Add(time.Second).UnixMilli(),
+				Status:      AttemptStatusFailed,
+			},
+			{
+				Attempt:     3,
+				ChannelId:   11,
+				ChannelName: "demo-c",
+				StartedAt:   startTime.Add(2 * time.Second),
+				StartedAtMs: startTime.Add(2 * time.Second).UnixMilli(),
+				Status:      AttemptStatusStreaming,
+			},
+		},
+	}
+
+	summary := record.ToSummary()
+	if summary.RetryCount != 2 {
+		t.Fatalf("expected retry_count 2, got %d", summary.RetryCount)
+	}
+}
+
+func TestRequestSummaryOmitsRetryCountForFirstAttempt(t *testing.T) {
+	startTime := time.Unix(1711456789, 123000000)
+
+	record := &RequestRecord{
+		ID:          "req-summary-no-retry",
+		Status:      StatusProcessing,
+		StartTime:   startTime,
+		StartTimeMs: startTime.UnixMilli(),
+		Downstream:  DownstreamInfo{},
+		ChannelAttempts: []ChannelAttempt{{
+			Attempt:     1,
+			ChannelId:   9,
+			ChannelName: "demo",
+			StartedAt:   startTime,
+			StartedAtMs: startTime.UnixMilli(),
+			Status:      AttemptStatusStreaming,
+		}},
+	}
+
+	summary := record.ToSummary()
+	if summary.RetryCount != 0 {
+		t.Fatalf("expected retry_count 0, got %d", summary.RetryCount)
+	}
+}
+
 func TestMarkChannelPhaseStreamingSetsStreamingStartedTiming(t *testing.T) {
 	resetMonitorManagerForTest()
 	store := GetManager().GetStore()

@@ -204,6 +204,7 @@ type RequestSummary struct {
 	IsStream                           bool            `json:"is_stream"`
 	CurrentPhase                       string          `json:"current_phase,omitempty"`
 	CurrentChannel                     *CurrentChannel `json:"current_channel,omitempty"`
+	RetryCount                         int             `json:"retry_count,omitempty"`
 	CurrentAttemptStartedAtMs          int64           `json:"current_attempt_started_at_ms,omitempty"`
 	CurrentAttemptStreamingStartedAtMs int64           `json:"current_attempt_streaming_started_at_ms,omitempty"`
 
@@ -238,6 +239,7 @@ type recordSnapshot struct {
 	Model                              string
 	IsStream                           bool
 	CurrentPhase                       string
+	RetryCount                         int
 	CurrentAttemptStartedAtMs          int64
 	CurrentAttemptStreamingStartedAtMs int64
 
@@ -281,6 +283,9 @@ func snapshotRecord(r *RequestRecord) recordSnapshot {
 	}
 	if len(r.ChannelAttempts) > 0 {
 		lastAttempt := r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		if len(r.ChannelAttempts) > 1 {
+			snap.RetryCount = len(r.ChannelAttempts) - 1
+		}
 		snap.CurrentAttemptStartedAtMs = lastAttempt.StartedAtMs
 		snap.CurrentAttemptStreamingStartedAtMs = lastAttempt.StreamingStartedAtMs
 	}
@@ -323,6 +328,7 @@ func (snap *recordSnapshot) toSummary() *RequestSummary {
 		Model:                              snap.Model,
 		IsStream:                           snap.IsStream,
 		CurrentPhase:                       snap.CurrentPhase,
+		RetryCount:                         snap.RetryCount,
 		CurrentAttemptStartedAtMs:          snap.CurrentAttemptStartedAtMs,
 		CurrentAttemptStreamingStartedAtMs: snap.CurrentAttemptStreamingStartedAtMs,
 	}
@@ -368,6 +374,9 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 	}
 	if len(r.ChannelAttempts) > 0 {
 		lastAttempt := r.ChannelAttempts[len(r.ChannelAttempts)-1]
+		if len(r.ChannelAttempts) > 1 {
+			summary.RetryCount = len(r.ChannelAttempts) - 1
+		}
 		summary.CurrentAttemptStartedAtMs = lastAttempt.StartedAtMs
 		summary.CurrentAttemptStreamingStartedAtMs = lastAttempt.StreamingStartedAtMs
 	}
