@@ -1,0 +1,4 @@
+interface:
+  display_name: "Channels Table Access"
+  short_description: "Access and inspect the local new-api channels table safely."
+  default_prompt: "Use the local new-api database environment to inspect the channels table safely."
