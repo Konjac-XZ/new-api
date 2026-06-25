@@ -157,40 +157,86 @@ const renderTagType = (t) => {
   );
 };
 
-const renderRemarkEditor = (record, manageChannel, t) => {
+const RemarkEditor = ({ record, manageChannel }) => {
+  const [focused, setFocused] = React.useState(false);
+  const [value, setValue] = React.useState(record.remark || '');
+  const submittedValueRef = React.useRef(null);
+  const clearingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    setValue(record.remark || '');
+  }, [record.remark]);
+
   if (record.children !== undefined) {
     return <Typography.Text type='tertiary'>-</Typography.Text>;
   }
 
-  const submitRemark = (target) => {
-    const nextRemark = target.value.trim();
+  const submitRemark = (rawValue) => {
+    const nextRemark = rawValue.trim();
     const currentRemark = (record.remark || '').trim();
     if (nextRemark === currentRemark) {
-      target.value = record.remark || '';
+      submittedValueRef.current = null;
+      setValue(record.remark || '');
       return;
     }
-    manageChannel(record.id, 'remark', record, nextRemark);
+    if (submittedValueRef.current === nextRemark) {
+      return;
+    }
+    submittedValueRef.current = nextRemark;
+    Promise.resolve(manageChannel(record.id, 'remark', record, nextRemark)).finally(
+      () => {
+        submittedValueRef.current = null;
+      },
+    );
+  };
+
+  const handleBlur = (nextValue) => {
+    if (clearingRef.current) {
+      window.setTimeout(() => {
+        clearingRef.current = false;
+        setFocused(false);
+      }, 0);
+      return;
+    }
+    setFocused(false);
+    submitRemark(nextValue);
   };
 
   return (
-    <Input
-      size='small'
-      defaultValue={record.remark || ''}
-      maxLength={255}
-      showClear
-      style={{ width: 220 }}
-      onBlur={(e) => submitRemark(e.target)}
-      onEnterPress={(e) => {
-        submitRemark(e.target);
-        e.target.blur();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.currentTarget.value = record.remark || '';
-          e.currentTarget.blur();
+    <span
+      onMouseDownCapture={(e) => {
+        if (e.target.closest?.('.semi-input-clearbtn')) {
+          clearingRef.current = true;
         }
       }}
-    />
+    >
+      <Input
+        size='small'
+        value={value}
+        maxLength={255}
+        showClear={focused}
+        style={{ width: 220 }}
+        onChange={setValue}
+        onFocus={() => setFocused(true)}
+        onBlur={(e) => handleBlur(e.target.value)}
+        onClear={() => {
+          clearingRef.current = false;
+          setValue('');
+          setFocused(false);
+          submitRemark('');
+        }}
+        onEnterPress={(e) => {
+          submitRemark(e.target.value);
+          e.target.blur();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setValue(record.remark || '');
+            e.currentTarget.blur();
+          }
+        }}
+      />
+    </span>
   );
 };
 
@@ -841,7 +887,9 @@ export const getChannelsColumns = ({
       key: COLUMN_KEYS.REMARK,
       title: t('备注'),
       dataIndex: 'remark',
-      render: (text, record) => renderRemarkEditor(record, manageChannel, t),
+      render: (text, record) => (
+        <RemarkEditor record={record} manageChannel={manageChannel} />
+      ),
     },
     {
       key: COLUMN_KEYS.OPERATE,
