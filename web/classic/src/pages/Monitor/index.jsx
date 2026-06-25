@@ -330,6 +330,32 @@ const renderThroughputTag = (tokensPerSecond) => {
   );
 };
 
+const getRetryCount = (record) => {
+  let retryCount = Number(record?.retry_count || 0);
+  if (!Number.isFinite(retryCount) || retryCount < 0) {
+    retryCount = 0;
+  }
+
+  const currentAttempt = Number(record?.current_channel?.attempt);
+  if (
+    retryCount === 0 &&
+    Number.isFinite(currentAttempt) &&
+    currentAttempt > 1
+  ) {
+    retryCount = currentAttempt - 1;
+  }
+
+  if (
+    retryCount === 0 &&
+    Array.isArray(record?.channel_attempts) &&
+    record.channel_attempts.length > 1
+  ) {
+    retryCount = record.channel_attempts.length - 1;
+  }
+
+  return retryCount;
+};
+
 const formatMemory = (bytes) => {
   if (!bytes || bytes === 0) return '0B';
   if (bytes < 1024) return `${bytes}B`;
@@ -1877,34 +1903,29 @@ const Monitor = () => {
         dataIndex: 'model',
         width: isCompact ? 220 : 280,
         ellipsis: true,
+        render: (_, record) =>
+          renderModelTag(record.model || t('未知模型'), {
+            shape: 'circle',
+          }),
+      },
+      {
+        title: t('渠道'),
+        key: MONITOR_COLUMN_KEYS.CHANNEL,
+        dataIndex: 'channel_name',
+        width: isCompact ? 150 : 200,
+        ellipsis: true,
         render: (_, record) => {
-          let retryCount = Number(record.retry_count || 0);
-          if (!Number.isFinite(retryCount) || retryCount < 0) {
-            retryCount = 0;
-          }
-
-          const currentAttempt = Number(record.current_channel?.attempt);
-          if (
-            retryCount === 0 &&
-            Number.isFinite(currentAttempt) &&
-            currentAttempt > 1
-          ) {
-            retryCount = currentAttempt - 1;
-          }
-
-          if (
-            retryCount === 0 &&
-            Array.isArray(record.channel_attempts) &&
-            record.channel_attempts.length > 1
-          ) {
-            retryCount = record.channel_attempts.length - 1;
-          }
-
+          const retryCount = getRetryCount(record);
           return (
             <Space size={4}>
-              {renderModelTag(record.model || t('未知模型'), {
-                shape: 'circle',
-              })}
+              <Tag
+                color={stringToColor(
+                  record.channel_name || String(record.channel_id || ''),
+                )}
+                shape='circle'
+              >
+                {record.channel_name || t('未知渠道')}
+              </Tag>
               {retryCount > 0 && (
                 <Tag color='orange' shape='circle'>
                   +{retryCount}
@@ -1913,23 +1934,6 @@ const Monitor = () => {
             </Space>
           );
         },
-      },
-      {
-        title: t('渠道'),
-        key: MONITOR_COLUMN_KEYS.CHANNEL,
-        dataIndex: 'channel_name',
-        width: isCompact ? 150 : 200,
-        ellipsis: true,
-        render: (_, record) => (
-          <Tag
-            color={stringToColor(
-              record.channel_name || String(record.channel_id || ''),
-            )}
-            shape='circle'
-          >
-            {record.channel_name || t('未知渠道')}
-          </Tag>
-        ),
       },
       {
         title: t('耗时'),
