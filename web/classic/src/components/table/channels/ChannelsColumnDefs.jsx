@@ -326,8 +326,8 @@ const renderStatus = (
     }
   }
 
-  // If dynamic circuit breaking is enabled, append a badge
-  if (breakerState?.dynamic_enabled) {
+  // Only active channels should show the dynamic breaker runtime badge.
+  if (status === 1 && breakerState?.dynamic_enabled) {
     const phaseTag = renderBreakerPhaseStatus(
       breakerState,
       t,
