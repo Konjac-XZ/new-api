@@ -211,6 +211,41 @@ func TestRecordChannelProbeSuccess_DoesNotFastForwardCooldown(t *testing.T) {
 	}
 }
 
+func TestRecordChannelProbeSuccess_ClosedProbeWeaklyRecoversHP(t *testing.T) {
+	now := time.Now().Unix()
+	channel := seedDynamicBreakerChannelForProbeTest(t, 0, now-10, 5)
+	if err := model.DB.Model(&model.ChannelBreakerState{}).Where("channel_id = ?", channel.Id).Updates(map[string]any{
+		"breaker_hp":           4.0,
+		"breaker_fail_streak":  3,
+		"breaker_last_failure": string(channelFailureKindImmediateFailure),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed closed probe baseline: %v", err)
+	}
+	clearChannelBreakerWorkingState(channel.Id)
+	loadBreakerStateForTest(t, channel.Id, channel)
+
+	if RecordChannelProbeSuccess(channel) {
+		t.Fatal("expected closed probe success to recover HP without promoting to probation")
+	}
+
+	var latest model.Channel
+	loadBreakerStateForTest(t, channel.Id, &latest)
+	expectedHP := 4.0 + hpScheduledProbeSuccessRecovery
+	const tolerance = 0.01
+	if latest.BreakerHP < expectedHP-tolerance || latest.BreakerHP > expectedHP+tolerance {
+		t.Fatalf("expected weak HP recovery to %.2f, got %f", expectedHP, latest.BreakerHP)
+	}
+	if latest.BreakerCooldownAt != 0 {
+		t.Fatalf("expected closed probe success to keep cooldown_at=0, got %d", latest.BreakerCooldownAt)
+	}
+	if latest.BreakerFailStreak != 3 {
+		t.Fatalf("expected closed probe success to preserve fail streak, got %d", latest.BreakerFailStreak)
+	}
+	if latest.BreakerLastFailure != string(channelFailureKindImmediateFailure) {
+		t.Fatalf("expected closed probe success to preserve last failure, got %q", latest.BreakerLastFailure)
+	}
+}
+
 func TestRecordChannelProbeSuccess_PromotesOnlyInAwaitingProbe(t *testing.T) {
 	now := time.Now().Unix()
 	channel := seedDynamicBreakerChannelForProbeTest(t, now-30, now-120, 5)

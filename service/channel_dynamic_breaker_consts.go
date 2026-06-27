@@ -68,27 +68,28 @@ const (
 
 // HP system constants — controls whether cooldown triggers
 const (
-	hpBase                               = 10.0      // base max HP before coefficient
-	hpMinCoefficient                     = 0.1       // minimum tolerance coefficient
-	hpMaxCoefficient                     = 10.0      // maximum tolerance coefficient
-	hpDefaultCoefficient                 = 1.0       // default when not configured
-	hpMinimum                            = 1.0       // minimum maxHP floor
-	hpPassiveRecoveryPerHour             = 0.5       // HP recovered per hour passively
-	hpSuccessRecovery                    = 1.0       // HP recovered per successful request
-	hpFastSuccessRecoveryBonus           = 0.5       // additional HP for fast streaming success
-	hpProbationSuccessRecovery           = 0.8       // HP recovered per success during observation
-	hpProbationDamageMultiplier          = 2.5       // damage multiplier during observation
-	hpProbationSilentTimeoutDamageMultiplier = 2.0   // implicit timeout during observation is treated as a severe signal
-	hpAwaitingProbeDamageMultiplier      = 2.0       // damage multiplier when awaiting probe
-	hpProbeSuccessRefillFraction         = 0.35      // probe success: refill to 35% of maxHP (not full)
-	hpFastProbeSuccessRefillFraction     = 0.45      // fast organic recovery: refill a bit more aggressively
-	hpProbationSuccessRefillFraction     = 0.70      // probation success: refill to 70% of maxHP
-	hpFastProbationSuccessRefillFraction = 0.85      // fast probation success: refill deeper to restore capacity sooner
-	hpEWMADecayWindow                    = 6 * time.Hour // EWMA decay time constant
-	hpEWMAMinValue                       = 0.01      // minimum EWMA value before zeroing
-	hpSuccessRewardConfidence            = 16.0      // recent successful requests needed to unlock the full bonus
-	hpSuccessRewardMaxBonus              = 1.0       // maximum additive multiplier for sustained success
-	hpQuickHonestFailureDamageFactor     = 0.6       // quick explicit streaming failure should be cheap
-	hpDelayedFailureDamageFactor         = 1.15      // delayed no-response failure is worse than an honest quick error
-	hpTimeoutFailureDamageFactor         = 1.75      // first-token timeout is the harshest signal
+	hpBase                                   = 10.0          // base max HP before coefficient
+	hpMinCoefficient                         = 0.1           // minimum tolerance coefficient
+	hpMaxCoefficient                         = 10.0          // maximum tolerance coefficient
+	hpDefaultCoefficient                     = 1.0           // default when not configured
+	hpMinimum                                = 1.0           // minimum maxHP floor
+	hpPassiveRecoveryPerHour                 = 0.5           // HP recovered per hour passively
+	hpSuccessRecovery                        = 1.0           // HP recovered per successful request
+	hpFastSuccessRecoveryBonus               = 0.5           // additional HP for fast streaming success
+	hpScheduledProbeSuccessRecovery          = 0.25          // weak HP recovery for successful scheduled probes
+	hpProbationSuccessRecovery               = 0.8           // HP recovered per success during observation
+	hpProbationDamageMultiplier              = 2.5           // damage multiplier during observation
+	hpProbationSilentTimeoutDamageMultiplier = 2.0           // implicit timeout during observation is treated as a severe signal
+	hpAwaitingProbeDamageMultiplier          = 2.0           // damage multiplier when awaiting probe
+	hpProbeSuccessRefillFraction             = 0.35          // probe success: refill to 35% of maxHP (not full)
+	hpFastProbeSuccessRefillFraction         = 0.45          // fast organic recovery: refill a bit more aggressively
+	hpProbationSuccessRefillFraction         = 0.70          // probation success: refill to 70% of maxHP
+	hpFastProbationSuccessRefillFraction     = 0.85          // fast probation success: refill deeper to restore capacity sooner
+	hpEWMADecayWindow                        = 6 * time.Hour // EWMA decay time constant
+	hpEWMAMinValue                           = 0.01          // minimum EWMA value before zeroing
+	hpSuccessRewardConfidence                = 16.0          // recent successful requests needed to unlock the full bonus
+	hpSuccessRewardMaxBonus                  = 1.0           // maximum additive multiplier for sustained success
+	hpQuickHonestFailureDamageFactor         = 0.6           // quick explicit streaming failure should be cheap
+	hpDelayedFailureDamageFactor             = 1.15          // delayed no-response failure is worse than an honest quick error
+	hpTimeoutFailureDamageFactor             = 1.75          // first-token timeout is the harshest signal
 )

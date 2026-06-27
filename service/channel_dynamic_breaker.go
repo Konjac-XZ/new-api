@@ -611,20 +611,32 @@ func RecordChannelProbeFailure(channel *model.Channel, err *types.NewAPIError) {
 }
 
 // RecordChannelProbeSuccess promotes an awaiting-probe channel into probation.
-// On promotion, HP is refilled to maxHP, the fail streak is cleared, and trip count is decremented.
+// On promotion, HP is partially refilled, the fail streak is cleared, and trip count is decremented.
+// A normal successful scheduled probe applies only weak HP recovery and does not
+// clear failure history or change the channel phase.
 func RecordChannelProbeSuccess(channel *model.Channel) bool {
 	if channel == nil {
 		return false
 	}
-	promoted, err := mutateChannelBreakerState(channel, func(current *model.Channel, now time.Time) bool {
+	promoted := false
+	_, err := mutateChannelBreakerState(channel, func(current *model.Channel, now time.Time) bool {
 		nowUnix := now.Unix()
 		isAwaitingProbe := current.IsBreakerAwaitingProbeAt(nowUnix)
-		if current.BreakerCooldownAt <= 0 || current.IsBreakerProbationAt(nowUnix) {
+		if current.IsBreakerCoolingAt(nowUnix) || current.IsBreakerProbationAt(nowUnix) {
 			return false
 		}
 		if !isAwaitingProbe {
-			return false
+			ensureHPInitialized(current)
+			applyHPPassiveRecovery(current, now)
+			maxHP := computeMaxHP(current)
+			if current.BreakerHP >= maxHP {
+				return false
+			}
+			current.BreakerHP = math.Min(current.BreakerHP+hpScheduledProbeSuccessRecovery, maxHP)
+			current.BreakerUpdatedAt = nowUnix
+			return true
 		}
+		promoted = true
 
 		applyBreakerDecay(current, now)
 		ensureHPInitialized(current)
