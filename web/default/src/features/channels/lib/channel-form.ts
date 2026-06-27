@@ -757,7 +757,6 @@ export function transformFormDataToUpdatePayload(
     dynamic_circuit_breaker: formData.dynamic_circuit_breaker === true,
     tolerance_coefficient: formData.tolerance_coefficient ?? null,
     auto_ban: formData.auto_ban ?? 1,
-    status: formData.status,
     status_code_mapping: formData.status_code_mapping || null,
     tag: formData.tag || null,
     remark: formData.remark || '',

@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -208,11 +209,11 @@ func AdminAuthForWebSocket() func(c *gin.Context) {
 
 		// Debug logging
 		// common.SysLog(fmt.Sprintf("WebSocket auth: username=%v, role=%v, id=%v, cookies=%v",
-			// username, role, id, c.Request.Header.Get("Cookie")))
+		// username, role, id, c.Request.Header.Get("Cookie")))
 
 		if username == nil {
 			// common.SysLog(fmt.Sprintf("WebSocket auth failed: no session; remote=%s cookies=%s path=%s",
-				// c.Request.RemoteAddr, c.Request.Header.Get("Cookie"), c.Request.URL.Path))
+			// c.Request.RemoteAddr, c.Request.Header.Get("Cookie"), c.Request.URL.Path))
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
 				"message": "未登录，无法访问监控页面",
@@ -223,7 +224,7 @@ func AdminAuthForWebSocket() func(c *gin.Context) {
 
 		if status != nil && status.(int) == common.UserStatusDisabled {
 			// common.SysLog(fmt.Sprintf("WebSocket auth failed: user disabled; username=%v id=%v remote=%s",
-				// username, id, c.Request.RemoteAddr))
+			// username, id, c.Request.RemoteAddr))
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"message": "用户已被封禁",
@@ -234,7 +235,7 @@ func AdminAuthForWebSocket() func(c *gin.Context) {
 
 		if role == nil || role.(int) < common.RoleAdminUser {
 			// common.SysLog(fmt.Sprintf("WebSocket auth failed: insufficient role; username=%v role=%v id=%v remote=%s",
-				// username, role, id, c.Request.RemoteAddr))
+			// username, role, id, c.Request.RemoteAddr))
 			c.JSON(http.StatusForbidden, gin.H{
 				"success": false,
 				"message": "无权访问，需要管理员权限",
@@ -247,6 +248,22 @@ func AdminAuthForWebSocket() func(c *gin.Context) {
 		c.Set("role", role)
 		c.Set("id", id)
 		c.Next()
+	}
+}
+
+func RequirePermission(permission authz.Permission) func(c *gin.Context) {
+	return func(c *gin.Context) {
+		role := c.GetInt("role")
+		userID := c.GetInt("id")
+		if authz.Can(userID, role, permission) {
+			c.Next()
+			return
+		}
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"message": common.TranslateMessage(c, i18n.MsgAuthInsufficientPrivilege),
+		})
+		c.Abort()
 	}
 }
 

@@ -247,28 +247,13 @@ func TestUpdateChannelPreservesExternalConfigWhenRequestOmitsFields(t *testing.T
 	}
 
 	payload := gin.H{
-		"id":                  channel.Id,
-		"name":                "preserve-external-channel-updated",
-		"type":                channel.Type,
-		"key":                 "",
-		"status":              common.ChannelStatusEnabled,
-		"group":               channel.Group,
-		"models":              channel.Models,
-		"priority":            priority,
-		"weight":              weight,
-		"auto_ban":            autoBan,
-		"base_url":            "",
-		"openai_organization": "",
-		"test_model":          "",
-		"tag":                 "",
-		"remark":              "",
-		"model_mapping":       "",
-		"status_code_mapping": "",
-		"param_override":      "",
-		"header_override":     "",
-		"setting":             "{}",
-		"settings":            "{}",
-		"other":               "",
+		"id":       channel.Id,
+		"name":     "preserve-external-channel-updated",
+		"group":    channel.Group,
+		"models":   channel.Models,
+		"priority": priority,
+		"weight":   weight,
+		"auto_ban": autoBan,
 	}
 	ctx, recorder := newAuthenticatedContext(t, http.MethodPut, "/api/channel/", payload, 1)
 
