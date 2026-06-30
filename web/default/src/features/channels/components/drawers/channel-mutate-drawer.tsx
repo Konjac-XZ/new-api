@@ -2707,14 +2707,18 @@ export function ChannelMutateDrawer({
                                               </Badge>
                                             )
                                           )}
-                                          {hiddenAdvancedCustomRouteTypeCount > 0 && (
+                                          {hiddenAdvancedCustomRouteTypeCount >
+                                            0 && (
                                             <Badge
                                               variant='outline'
                                               title={
                                                 advancedCustomRouteTypeTitle
                                               }
                                             >
-                                              +{hiddenAdvancedCustomRouteTypeCount}
+                                              +
+                                              {
+                                                hiddenAdvancedCustomRouteTypeCount
+                                              }
                                             </Badge>
                                           )}
                                           {!advancedCustomStats.valid && (
