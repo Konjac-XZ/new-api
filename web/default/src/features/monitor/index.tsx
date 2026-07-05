@@ -120,9 +120,46 @@ type MonitorColumnDefinition = {
   key: MonitorColumnId
   label: string
   header: React.ReactNode
+  layout: {
+    min: number
+    max: number
+    contentScale?: number
+  }
   headClassName?: string
   cellClassName?: string
   render: (record: MonitorRecord) => React.ReactNode
+  measure?: (record: MonitorRecord) => string
+}
+
+function getColumnWidthPercents(
+  columns: MonitorColumnDefinition[],
+  records: MonitorRecord[]
+): Record<MonitorColumnId, number> {
+  const columnScores = columns.map((column) => {
+    const measuredChars =
+      column.measure && records.length > 0
+        ? Math.max(
+            ...records.map((record) => column.measure?.(record).length ?? 0)
+          )
+        : column.label.length
+    const contentScore = Math.ceil(
+      measuredChars * (column.layout.contentScale ?? 1)
+    )
+    const score = Math.min(
+      column.layout.max,
+      Math.max(column.layout.min, contentScore)
+    )
+
+    return { key: column.key, score }
+  })
+  const totalScore = columnScores.reduce((sum, column) => sum + column.score, 0)
+
+  return Object.fromEntries(
+    columnScores.map((column) => [
+      column.key,
+      totalScore > 0 ? (column.score / totalScore) * 100 : 0,
+    ])
+  ) as Record<MonitorColumnId, number>
 }
 
 function getDefaultMonitorVisibleColumns(): MonitorVisibleColumns {
@@ -403,6 +440,10 @@ function MonitorTable(props: {
   onSelect: (record: MonitorRecord) => void
 }) {
   const { t } = useTranslation()
+  const columnWidthPercents = useMemo(
+    () => getColumnWidthPercents(props.columns, props.records),
+    [props.columns, props.records]
+  )
 
   if (props.records.length === 0) {
     return (
@@ -422,7 +463,15 @@ function MonitorTable(props: {
 
   return (
     <div className='h-full overflow-auto rounded-lg border'>
-      <Table className='min-w-[980px]'>
+      <Table className='min-w-[72rem] table-fixed'>
+        <colgroup>
+          {props.columns.map((column) => (
+            <col
+              key={column.key}
+              style={{ width: `${columnWidthPercents[column.key]}%` }}
+            />
+          ))}
+        </colgroup>
         <TableHeader className='bg-muted/50 sticky top-0 z-10'>
           <TableRow>
             {props.columns.map((column) => (
@@ -1156,16 +1205,18 @@ export function Monitor() {
         key: MONITOR_COLUMN_KEYS.TIME,
         label: t('Time'),
         header: t('Time'),
-        headClassName: 'w-[9.5rem]',
+        layout: { min: 12, max: 15, contentScale: 0.65 },
         cellClassName: 'text-muted-foreground',
         render: (record) =>
+          formatDateTime(record.start_time, record.start_time_ms),
+        measure: (record) =>
           formatDateTime(record.start_time, record.start_time_ms),
       },
       {
         key: MONITOR_COLUMN_KEYS.STATUS,
         label: t('Status'),
         header: t('Status'),
-        headClassName: 'w-[8rem]',
+        layout: { min: 7, max: 10 },
         render: (record) => {
           const displayStatus = deriveDisplayStatus(record)
           return (
@@ -1177,19 +1228,23 @@ export function Monitor() {
             </Badge>
           )
         },
+        measure: (record) => getStatusLabel(deriveDisplayStatus(record), t),
       },
       {
         key: MONITOR_COLUMN_KEYS.MODEL,
         label: t('Model'),
         header: t('Model'),
-        cellClassName: 'max-w-[18rem] truncate font-medium',
+        layout: { min: 16, max: 32, contentScale: 0.72 },
+        cellClassName: 'truncate font-medium',
         render: (record) => record.model || '-',
+        measure: (record) => record.model || '-',
       },
       {
         key: MONITOR_COLUMN_KEYS.CHANNEL,
         label: t('Channel'),
         header: t('Channel'),
-        cellClassName: 'max-w-[16rem] truncate',
+        layout: { min: 13, max: 24, contentScale: 0.72 },
+        cellClassName: 'truncate',
         render: (record) => {
           const retryCount = getRetryCount(record)
           return (
@@ -1203,27 +1258,43 @@ export function Monitor() {
             </>
           )
         },
+        measure: (record) => {
+          const retryCount = getRetryCount(record)
+          const channel = String(
+            record.channel_name || record.channel_id || '-'
+          )
+          return retryCount > 0 ? `${channel} +${retryCount}` : channel
+        },
       },
       {
         key: MONITOR_COLUMN_KEYS.TOKEN_USAGE,
         label: `${t('Input')} / ${t('Output')}`,
         header: `${t('Input')} / ${t('Output')}`,
-        headClassName: 'w-[9rem]',
+        layout: { min: 13, max: 15 },
         render: (record) => <TokenUsageBadge record={record} />,
+        measure: (record) => {
+          const tokenUsage = getMonitorTokenUsage(record)
+          return `${formatTokenCount(tokenUsage.promptTokens)} ${formatTokenCount(tokenUsage.completionTokens)}`
+        },
       },
       {
         key: MONITOR_COLUMN_KEYS.DURATION,
         label: t('Duration'),
         header: t('Duration'),
-        headClassName: 'w-[7rem]',
+        layout: { min: 7, max: 9 },
         render: (record) => formatDuration(getDurationMs(record, clientNowMs)),
+        measure: (record) => formatDuration(getDurationMs(record, clientNowMs)),
       },
       {
         key: MONITOR_COLUMN_KEYS.TTFT,
         label: 'TTFT',
         header: 'TTFT',
-        headClassName: 'w-[6rem]',
+        layout: { min: 6, max: 8 },
         render: (record) => {
+          const ttftMs = getTtftMs(record)
+          return ttftMs ? formatDuration(ttftMs) : '-'
+        },
+        measure: (record) => {
           const ttftMs = getTtftMs(record)
           return ttftMs ? formatDuration(ttftMs) : '-'
         },
@@ -1232,8 +1303,12 @@ export function Monitor() {
         key: MONITOR_COLUMN_KEYS.THROUGHPUT,
         label: t('Throughput'),
         header: t('Throughput'),
-        headClassName: 'w-[7rem]',
+        layout: { min: 9, max: 12 },
         render: (record) => {
+          const outputSpeed = getOutputSpeed(record, clientNowMs)
+          return outputSpeed ? `${outputSpeed.toFixed(1)}/s` : '-'
+        },
+        measure: (record) => {
           const outputSpeed = getOutputSpeed(record, clientNowMs)
           return outputSpeed ? `${outputSpeed.toFixed(1)}/s` : '-'
         },
