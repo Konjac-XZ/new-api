@@ -89,12 +89,7 @@ export function getDurationMs(
 
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return '-'
-  if (ms < MS_TO_SECONDS) return `${ms}ms`
-  const seconds = ms / MS_TO_SECONDS
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const minutes = Math.floor(seconds / 60)
-  const remaining = Math.floor(seconds % 60)
-  return `${minutes}m ${remaining}s`
+  return `${(ms / MS_TO_SECONDS).toFixed(1)}s`
 }
 
 export function formatDateTime(value?: string, valueMs?: number): string {
