@@ -97,7 +97,7 @@ import type { MonitorBodyType, MonitorRecord } from './types'
 import { useMonitorWs } from './use-monitor-ws'
 import { useRequestDetail } from './use-request-detail'
 
-const BODY_TABS: MonitorBodyType[] = ['downstream', 'upstream', 'response']
+const RESPONSE_BODY_TABS: MonitorBodyType[] = ['response']
 const MONITOR_COLUMN_STORAGE_KEY = 'monitor-table-columns'
 
 const MONITOR_COLUMN_KEYS = {
@@ -256,12 +256,6 @@ function TokenUsageBadge({ record }: { record: MonitorRecord }) {
       </span>
     </Badge>
   )
-}
-
-function getBodyTabLabel(type: MonitorBodyType, t: (key: string) => string) {
-  if (type === 'downstream') return t('Request')
-  if (type === 'upstream') return t('Upstream')
-  return t('Response')
 }
 
 function MonitorToolbar(props: {
@@ -457,6 +451,44 @@ function MonitorTable(props: {
   )
 }
 
+function BodyTabs(props: {
+  tabs: MonitorBodyType[]
+  defaultValue: MonitorBodyType
+  requestId: string
+}) {
+  const { t } = useTranslation()
+  const [bodyTab, setBodyTab] = useState<MonitorBodyType>(props.defaultValue)
+
+  useEffect(() => {
+    setBodyTab(props.defaultValue)
+  }, [props.defaultValue, props.requestId])
+
+  return (
+    <Tabs
+      value={bodyTab}
+      onValueChange={(value) => setBodyTab(value as MonitorBodyType)}
+    >
+      <TabsList
+        className={cn(
+          'grid w-full sm:w-72',
+          props.tabs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+        )}
+      >
+        {props.tabs.map((type) => (
+          <TabsTrigger key={type} value={type}>
+            {type === 'response' ? t('Body') : t('Request')}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      {props.tabs.map((type) => (
+        <TabsContent key={type} value={type} className='mt-3'>
+          <BodyPanel requestId={props.requestId} type={type} />
+        </TabsContent>
+      ))}
+    </Tabs>
+  )
+}
+
 function DetailCard(props: {
   icon: React.ReactNode
   title: string
@@ -594,7 +626,6 @@ function RequestDetail(props: {
   ) => Promise<{ success: boolean; error: string | null }>
 }) {
   const { t } = useTranslation()
-  const [bodyTab, setBodyTab] = useState<MonitorBodyType>('downstream')
 
   if (props.loading) {
     return (
@@ -901,6 +932,48 @@ function RequestDetail(props: {
         </Tabs>
       </DetailCard>
 
+      {props.record.upstream ? (
+        <DetailCard
+          icon={<ArrowDownToLine className='size-4' />}
+          title={t('Upstream Request')}
+        >
+          <div className='mb-3 flex flex-wrap gap-2'>
+            <DetailPill icon={<Globe2 className='size-3.5' />} label={t('URL')}>
+              <span className='truncate'>
+                {props.record.upstream.url || '-'}
+              </span>
+            </DetailPill>
+            <DetailPill
+              icon={<Route className='size-3.5' />}
+              label={t('Method')}
+            >
+              <span>{props.record.upstream.method || '-'}</span>
+            </DetailPill>
+            <DetailPill
+              icon={<Hash className='size-3.5' />}
+              label={t('Body Size')}
+            >
+              <span>{formatBytes(props.record.upstream.body_size || 0)}</span>
+            </DetailPill>
+          </div>
+          <Tabs defaultValue='headers'>
+            <TabsList className='grid w-full grid-cols-2 sm:w-72'>
+              <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
+              <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value='headers' className='mt-3'>
+              <HeadersViewer
+                headers={props.record.upstream.headers}
+                emptyLabel={t('No headers')}
+              />
+            </TabsContent>
+            <TabsContent value='body' className='mt-3'>
+              <BodyPanel requestId={recordId} type='upstream' />
+            </TabsContent>
+          </Tabs>
+        </DetailCard>
+      ) : null}
+
       <DetailCard
         icon={<ArrowDownToLine className='size-4' />}
         title={t('Response')}
@@ -949,22 +1022,24 @@ function RequestDetail(props: {
             </AlertDescription>
           </Alert>
         ) : null}
-        <Tabs
-          value={bodyTab}
-          onValueChange={(value) => setBodyTab(value as MonitorBodyType)}
-        >
-          <TabsList className='grid w-full grid-cols-3 sm:w-[28rem]'>
-            {BODY_TABS.map((type) => (
-              <TabsTrigger key={type} value={type}>
-                {getBodyTabLabel(type, t)}
-              </TabsTrigger>
-            ))}
+        <Tabs defaultValue='headers'>
+          <TabsList className='grid w-full grid-cols-2 sm:w-72'>
+            <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
+            <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
           </TabsList>
-          {BODY_TABS.map((type) => (
-            <TabsContent key={type} value={type} className='mt-3'>
-              <BodyPanel requestId={recordId} type={type} />
-            </TabsContent>
-          ))}
+          <TabsContent value='headers' className='mt-3'>
+            <HeadersViewer
+              headers={props.record.response?.headers}
+              emptyLabel={t('No headers')}
+            />
+          </TabsContent>
+          <TabsContent value='body' className='mt-3'>
+            <BodyTabs
+              tabs={RESPONSE_BODY_TABS}
+              defaultValue='response'
+              requestId={recordId}
+            />
+          </TabsContent>
         </Tabs>
       </DetailCard>
     </div>
