@@ -715,6 +715,11 @@ export function ChannelMutateDrawer({
   const currentPriority = form.watch('priority')
   const currentWeight = form.watch('weight')
   const currentTestModel = form.watch('test_model')
+  const currentTestCase = form.watch('test_case')
+  const currentExpectedAnswer = form.watch('expected_answer')
+  const currentMaxFirstTokenLatency = form.watch('max_first_token_latency')
+  const currentScheduledTestInterval = form.watch('scheduled_test_interval')
+  const currentMaxRetryAttempts = form.watch('max_retry_attempts')
   const currentAutoBan = form.watch('auto_ban')
   const currentTag = form.watch('tag')
   const currentRemark = form.watch('remark')
@@ -724,6 +729,11 @@ export function ChannelMutateDrawer({
   const currentForceFormat = form.watch('force_format')
   const currentThinkingToContent = form.watch('thinking_to_content')
   const currentPassThroughBodyEnabled = form.watch('pass_through_body_enabled')
+  const currentTreatEmptyReplyAsFailure = form.watch(
+    'treat_empty_reply_as_failure'
+  )
+  const currentDynamicCircuitBreaker = form.watch('dynamic_circuit_breaker')
+  const currentToleranceCoefficient = form.watch('tolerance_coefficient')
   const currentDisableTaskPollingSleep = form.watch(
     'disable_task_polling_sleep'
   )
@@ -918,6 +928,13 @@ export function ChannelMutateDrawer({
     currentPriority ||
     currentWeight ||
     currentTestModel?.trim() ||
+    currentTestCase?.trim() ||
+    currentExpectedAnswer?.trim() ||
+    currentMaxFirstTokenLatency ||
+    currentScheduledTestInterval ||
+    (currentMaxRetryAttempts ?? 1) !== 1 ||
+    currentDynamicCircuitBreaker ||
+    currentToleranceCoefficient != null ||
     (currentAutoBan ?? 1) !== 1
   )
   const internalNotesConfigured = Boolean(
@@ -932,6 +949,7 @@ export function ChannelMutateDrawer({
     currentForceFormat ||
     currentThinkingToContent ||
     currentPassThroughBodyEnabled ||
+    currentTreatEmptyReplyAsFailure ||
     currentDisableTaskPollingSleep ||
     currentProxy?.trim() ||
     currentSystemPrompt?.trim() ||
@@ -3695,6 +3713,209 @@ export function ChannelMutateDrawer({
                               )}
                             />
 
+                            <div className='grid gap-4 sm:grid-cols-2'>
+                              <FormField
+                                control={form.control}
+                                name='test_case'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Custom test case')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Textarea
+                                        rows={2}
+                                        placeholder={t(
+                                          'Leave empty to use default value "hi"'
+                                        )}
+                                        {...field}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Request content used when testing this channel'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name='expected_answer'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Expected answer')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Textarea
+                                        rows={2}
+                                        placeholder={t(
+                                          'Check whether the test response contains this string'
+                                        )}
+                                        {...field}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Leave empty to skip response content checks'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+
+                            <div className='grid gap-4 sm:grid-cols-2'>
+                              <FormField
+                                control={form.control}
+                                name='max_first_token_latency'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Max first token latency (seconds)')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type='number'
+                                        min={0}
+                                        placeholder='0'
+                                        value={field.value ?? ''}
+                                        onChange={(e) => {
+                                          const value = e.target.value
+                                          field.onChange(
+                                            value === ''
+                                              ? null
+                                              : Math.round(Number(value))
+                                          )
+                                        }}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Only applies to streaming requests. 0 disables this limit.'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name='scheduled_test_interval'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t(
+                                        'Independent scheduled test interval (minutes)'
+                                      )}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type='number'
+                                        min={0}
+                                        placeholder='0'
+                                        value={field.value ?? ''}
+                                        disabled={(currentAutoBan ?? 1) !== 1}
+                                        onChange={(e) => {
+                                          const value = e.target.value
+                                          field.onChange(
+                                            value === ''
+                                              ? null
+                                              : Math.round(Number(value))
+                                          )
+                                        }}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Requires Auto Ban. 0 disables scheduled independent tests.'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+
+                            <div className='grid gap-4 sm:grid-cols-2'>
+                              <FormField
+                                control={form.control}
+                                name='max_retry_attempts'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Single-channel max retries')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type='number'
+                                        min={1}
+                                        placeholder='1'
+                                        value={field.value ?? 1}
+                                        onChange={(e) => {
+                                          const value = Number(e.target.value)
+                                          field.onChange(
+                                            Number.isFinite(value)
+                                              ? Math.max(1, Math.round(value))
+                                              : 1
+                                          )
+                                        }}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Default is 1. The system switches channels only after this channel reaches the limit.'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name='tolerance_coefficient'
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormLabel>
+                                      {t('Tolerance coefficient')}
+                                    </FormLabel>
+                                    <FormControl>
+                                      <Input
+                                        type='number'
+                                        min={0.1}
+                                        max={10}
+                                        step={0.1}
+                                        placeholder='1.0'
+                                        value={field.value ?? ''}
+                                        disabled={
+                                          (currentAutoBan ?? 1) !== 1 ||
+                                          !currentDynamicCircuitBreaker
+                                        }
+                                        onChange={(e) => {
+                                          const value = e.target.value
+                                          field.onChange(
+                                            value === '' ? null : Number(value)
+                                          )
+                                        }}
+                                      />
+                                    </FormControl>
+                                    <FormDescription>
+                                      {t(
+                                        'Dynamic breaker tolerance from 0.1 to 10. Larger values allow more failures before cooldown.'
+                                      )}
+                                    </FormDescription>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
+
                             <FormField
                               control={form.control}
                               name='auto_ban'
@@ -3712,6 +3933,32 @@ export function ChannelMutateDrawer({
                                       onCheckedChange={(checked) =>
                                         field.onChange(checked ? 1 : 0)
                                       }
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='dynamic_circuit_breaker'
+                              render={({ field }) => (
+                                <FormItem className='flex items-center justify-between gap-3'>
+                                  <div className='space-y-0.5'>
+                                    <FormLabel>
+                                      {t('Dynamic circuit breaker cooldown')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(
+                                        'Requires Auto Ban. Temporarily removes unhealthy channels from candidates without changing priority or weight.'
+                                      )}
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    <Switch
+                                      checked={field.value}
+                                      disabled={(currentAutoBan ?? 1) !== 1}
+                                      onCheckedChange={field.onChange}
                                     />
                                   </FormControl>
                                 </FormItem>
@@ -4129,6 +4376,31 @@ export function ChannelMutateDrawer({
                                       <FormDescription>
                                         {t(
                                           'Pass request body directly to upstream'
+                                        )}
+                                      </FormDescription>
+                                    </div>
+                                    <FormControl>
+                                      <Switch
+                                        checked={field.value}
+                                        onCheckedChange={field.onChange}
+                                      />
+                                    </FormControl>
+                                  </FormItem>
+                                )}
+                              />
+
+                              <FormField
+                                control={form.control}
+                                name='treat_empty_reply_as_failure'
+                                render={({ field }) => (
+                                  <FormItem className='flex items-center justify-between px-4 py-3'>
+                                    <div className='space-y-0.5'>
+                                      <FormLabel>
+                                        {t('Treat empty reply as failure')}
+                                      </FormLabel>
+                                      <FormDescription>
+                                        {t(
+                                          'When upstream returns no content and no tool calls, treat it as a channel failure.'
                                         )}
                                       </FormDescription>
                                     </div>
