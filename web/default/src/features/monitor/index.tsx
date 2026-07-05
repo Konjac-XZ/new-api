@@ -1260,8 +1260,8 @@ export function Monitor() {
       },
       {
         key: MONITOR_COLUMN_KEYS.THROUGHPUT,
-        label: t('Tokens/s'),
-        header: t('Tokens/s'),
+        label: t('Throughput'),
+        header: t('Throughput'),
         layout: { min: 9, max: 13 },
         render: (record) => {
           const outputSpeed = getOutputSpeed(record, clientNowMs)
@@ -1363,15 +1363,15 @@ export function Monitor() {
                 value={recentLoadRecords.length}
               />
               <MetricCard
-                label={t('Monitor Memory')}
+                label={t('Memory Usage')}
                 value={formatBytes(monitorWs.stats.memory)}
               />
               <MetricCard
-                label={t('Concurrency')}
+                label={t('Current Concurrency')}
                 value={monitorWs.stats.load.active_requests}
               />
               <MetricCard
-                label={t('Recent Records')}
+                label={t('Current Records')}
                 value={monitorWs.stats.total}
               />
             </div>
