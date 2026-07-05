@@ -63,6 +63,7 @@ import {
 } from '../lib'
 import type { Channel, ChannelSortBy, ChannelSortRule } from '../types'
 import { ChannelCard } from './channel-card'
+import { ChannelAutoRefreshControl } from './channel-refresh-controls'
 import { useChannelsColumns } from './channels-columns'
 import { useChannels } from './channels-provider'
 import { DataTableBulkActions } from './data-table-bulk-actions'
@@ -99,6 +100,7 @@ export function ChannelsTable() {
     batchMode,
     sensitiveVisible,
     setSensitiveVisible,
+    setAutoRefreshBlocked,
   } = useChannels()
   const isMobile = useMediaQuery('(max-width: 640px)')
 
@@ -371,6 +373,12 @@ export function ChannelsTable() {
     }
   }, [batchMode, table])
 
+  const selectedRowCount = table.getSelectedRowModel().rows.length
+
+  useEffect(() => {
+    setAutoRefreshBlocked('row-selection', batchMode && selectedRowCount > 0)
+  }, [batchMode, selectedRowCount, setAutoRefreshBlocked])
+
   useEffect(() => {
     const firstRule = channelSortRules[0] as ChannelSortRule | undefined
     if (!firstRule || !CHANNEL_SORTABLE_COLUMNS.has(firstRule.field)) {
@@ -507,24 +515,27 @@ export function ChannelsTable() {
           },
         ],
         preActions: (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant='ghost'
-                  size='icon'
-                  onClick={() => setSensitiveVisible(!sensitiveVisible)}
-                  aria-label={sensitiveVisible ? t('Hide') : t('Show')}
-                  className='text-muted-foreground hover:text-foreground size-8'
-                />
-              }
-            >
-              {sensitiveVisible ? <Eye /> : <EyeOff />}
-            </TooltipTrigger>
-            <TooltipContent>
-              {sensitiveVisible ? t('Hide') : t('Show')}
-            </TooltipContent>
-          </Tooltip>
+          <>
+            <ChannelAutoRefreshControl />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    variant='ghost'
+                    size='icon'
+                    onClick={() => setSensitiveVisible(!sensitiveVisible)}
+                    aria-label={sensitiveVisible ? t('Hide') : t('Show')}
+                    className='text-muted-foreground hover:text-foreground size-8'
+                  />
+                }
+              >
+                {sensitiveVisible ? <Eye /> : <EyeOff />}
+              </TooltipTrigger>
+              <TooltipContent>
+                {sensitiveVisible ? t('Hide') : t('Show')}
+              </TooltipContent>
+            </Tooltip>
+          </>
         ),
       }}
       getRowClassName={(row, { isMobile }) => {

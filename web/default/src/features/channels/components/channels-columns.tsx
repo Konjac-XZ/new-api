@@ -250,6 +250,17 @@ function BreakerRuntimeBadge({
       cooldownAt > 0
         ? Math.max(0, cooldownAt - nowSeconds)
         : Math.max(0, Number(state.remaining_cooldown_seconds || 0))
+    if (remaining <= 0) {
+      return (
+        <StatusBadge
+          label={t('Awaiting probe')}
+          variant='warning'
+          size='sm'
+          copyable={false}
+        />
+      )
+    }
+
     const cooldownSeconds = Math.max(0, Number(state.cooldown_seconds || 0))
     const label =
       cooldownSeconds > 0

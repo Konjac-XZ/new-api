@@ -35,6 +35,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getChannelOps } from './api'
+import { ChannelManualRefreshButton } from './components/channel-refresh-controls'
 import { ChannelsDialogs } from './components/channels-dialogs'
 import { ChannelsPrimaryButtons } from './components/channels-primary-buttons'
 import { ChannelsProvider } from './components/channels-provider'
@@ -157,6 +158,7 @@ export function Channels() {
           </SectionPageLayout.Title>
           <SectionPageLayout.Actions>
             <ChannelsPrimaryButtons />
+            <ChannelManualRefreshButton />
             <Tooltip>
               <TooltipTrigger
                 render={

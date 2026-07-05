@@ -55,6 +55,23 @@ type DialogType =
 
 type UpstreamUpdateState = ReturnType<typeof useChannelUpstreamUpdates>
 
+type AutoRefreshBlocker = 'row-selection'
+
+type RefreshSkipReason =
+  | 'active-input'
+  | 'open-dialog'
+  | 'channel-operation'
+  | 'row-selection'
+
+type RefreshChannelsOptions = {
+  force?: boolean
+}
+
+type RefreshChannelsResult = {
+  refreshed: boolean
+  reason?: RefreshSkipReason
+}
+
 type ChannelsContextType = {
   open: DialogType
   setOpen: (open: DialogType) => void
@@ -71,6 +88,11 @@ type ChannelsContextType = {
   sensitiveVisible: boolean
   setSensitiveVisible: (visible: boolean) => void
   upstream: UpstreamUpdateState
+  refreshChannels: (
+    options?: RefreshChannelsOptions
+  ) => Promise<RefreshChannelsResult>
+  getAutoRefreshBlockReason: () => RefreshSkipReason | null
+  setAutoRefreshBlocked: (blocker: AutoRefreshBlocker, blocked: boolean) => void
 }
 
 // ============================================================================
@@ -80,6 +102,45 @@ type ChannelsContextType = {
 const ChannelsContext = createContext<ChannelsContextType | undefined>(
   undefined
 )
+
+function hasActiveTextInput(): boolean {
+  if (typeof document === 'undefined') {
+    return false
+  }
+
+  const activeElement = document.activeElement
+  if (!(activeElement instanceof HTMLElement)) {
+    return false
+  }
+
+  const tagName = activeElement.tagName.toLowerCase()
+  if (tagName === 'input' || tagName === 'textarea' || tagName === 'select') {
+    return true
+  }
+
+  if (activeElement.isContentEditable) {
+    return true
+  }
+
+  const role = activeElement.getAttribute('role')
+  return role === 'textbox' || role === 'spinbutton'
+}
+
+function hasVisibleBlockingOverlay(): boolean {
+  if (typeof document === 'undefined') {
+    return false
+  }
+
+  const overlays = document.querySelectorAll(
+    '[data-slot="dialog-content"], [data-slot="drawer-content"], [role="dialog"]'
+  )
+  return [...overlays].some((overlay) => {
+    if (!(overlay instanceof HTMLElement)) {
+      return false
+    }
+    return overlay.getClientRects().length > 0
+  })
+}
 
 // ============================================================================
 // Provider
@@ -97,6 +158,9 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
   )
   const [batchMode, setBatchMode] = useState(false)
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
+  const [autoRefreshBlockers, setAutoRefreshBlockers] = useState<
+    AutoRefreshBlocker[]
+  >([])
 
   const setChannelSortRules = useCallback((rules: ChannelSortRule[]) => {
     const normalized = normalizeChannelSortRules(rules)
@@ -105,11 +169,80 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const queryClient = useQueryClient()
-  const refreshChannels = useCallback(async () => {
+  const refreshChannelLists = useCallback(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: channelsQueryKeys.lists(),
+    })
+  }, [queryClient])
+  const refreshAllChannels = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: channelsQueryKeys.all })
   }, [queryClient])
-  const upstream = useChannelUpstreamUpdates(refreshChannels)
+  const upstream = useChannelUpstreamUpdates(refreshAllChannels)
 
+  const getAutoRefreshBlockReason =
+    useCallback((): RefreshSkipReason | null => {
+      if (open !== null || upstream.showModal || hasVisibleBlockingOverlay()) {
+        return 'open-dialog'
+      }
+
+      if (
+        upstream.applyLoading ||
+        upstream.detectAllLoading ||
+        upstream.applyAllLoading
+      ) {
+        return 'channel-operation'
+      }
+
+      if (autoRefreshBlockers.includes('row-selection')) {
+        return 'row-selection'
+      }
+
+      if (hasActiveTextInput()) {
+        return 'active-input'
+      }
+
+      return null
+    }, [
+      open,
+      upstream.showModal,
+      upstream.applyLoading,
+      upstream.detectAllLoading,
+      upstream.applyAllLoading,
+      autoRefreshBlockers,
+    ])
+
+  const refreshChannels = useCallback(
+    async (
+      options: RefreshChannelsOptions = {}
+    ): Promise<RefreshChannelsResult> => {
+      if (!options.force) {
+        const reason = getAutoRefreshBlockReason()
+        if (reason) {
+          return { refreshed: false, reason }
+        }
+      }
+
+      await refreshChannelLists()
+      return { refreshed: true }
+    },
+    [getAutoRefreshBlockReason, refreshChannelLists]
+  )
+
+  const setAutoRefreshBlocked = useCallback(
+    (blocker: AutoRefreshBlocker, blocked: boolean) => {
+      setAutoRefreshBlockers((previous) => {
+        const hasBlocker = previous.includes(blocker)
+        if (blocked && !hasBlocker) {
+          return [...previous, blocker]
+        }
+        if (!blocked && hasBlocker) {
+          return previous.filter((item) => item !== blocker)
+        }
+        return previous
+      })
+    },
+    []
+  )
   // useState setters are stable, so the context value only needs to change when
   // an actual state value changes. Memoizing avoids handing every consumer
   // (including all channel cards/cells) a brand-new object on each render.
@@ -130,6 +263,9 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       sensitiveVisible,
       setSensitiveVisible,
       upstream,
+      refreshChannels,
+      getAutoRefreshBlockReason,
+      setAutoRefreshBlocked,
     }),
     [
       open,
@@ -141,6 +277,9 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       batchMode,
       sensitiveVisible,
       upstream,
+      refreshChannels,
+      getAutoRefreshBlockReason,
+      setAutoRefreshBlocked,
     ]
   )
 
