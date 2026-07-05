@@ -243,16 +243,16 @@ function TokenUsageBadge({ record }: { record: MonitorRecord }) {
   return (
     <Badge
       variant='outline'
-      className='h-6 w-[8.5rem] justify-center gap-1 border-sky-200 bg-sky-50 px-1.5 text-sky-700 tabular-nums dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-300'
+      className='h-6 w-36 justify-center gap-2 border-sky-200 bg-sky-50 px-2 text-sky-700 tabular-nums dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-300'
     >
-      <span className='inline-grid w-[3.75rem] grid-cols-[0.75rem_1fr] items-center gap-1'>
+      <span className='inline-grid w-[3.875rem] grid-cols-[0.75rem_1fr] items-center gap-1'>
         <ArrowUpFromLine className='size-3 justify-self-start opacity-70' />
         <span className='text-right'>
           {formatTokenCount(tokenUsage.promptTokens)}
         </span>
       </span>
-      <span className='text-muted-foreground'>|</span>
-      <span className='inline-grid w-[3.75rem] grid-cols-[0.75rem_1fr] items-center gap-1'>
+      <span className='h-3.5 w-px bg-sky-200/50 dark:bg-sky-700/35' />
+      <span className='inline-grid w-[3.875rem] grid-cols-[0.75rem_1fr] items-center gap-1'>
         <ArrowDownToLine className='size-3 justify-self-start opacity-70' />
         <span className='text-right'>
           {formatTokenCount(tokenUsage.completionTokens)}
