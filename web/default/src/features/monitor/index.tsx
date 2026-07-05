@@ -1386,9 +1386,8 @@ export function Monitor() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         title={t('Request Details')}
-        contentClassName='h-[92vh] max-w-[calc(100vw-1rem)] gap-3 p-3 sm:max-w-[92vw] sm:p-4'
-        contentHeight='calc(92vh - 5rem)'
-        bodyClassName='py-0'
+        contentClassName='max-h-[92dvh] max-w-[calc(100vw-1rem)] gap-3 p-3 sm:max-w-[92vw] sm:p-4'
+        bodyClassName='py-1'
       >
         <RequestDetail
           record={selectedRecord}
