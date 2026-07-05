@@ -17,14 +17,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  Activity,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Clock3,
   Expand,
+  Globe2,
+  Hash,
+  History,
+  KeyRound,
   Minimize2,
+  Network,
   PauseCircle,
+  Radio,
   RefreshCw,
+  Route,
   Search,
+  Settings2,
   Timer,
+  User,
   Wifi,
   WifiOff,
 } from 'lucide-react'
@@ -32,13 +43,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { Dialog } from '@/components/dialog'
 import { SectionPageLayout } from '@/components/layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import {
   Table,
@@ -77,6 +98,67 @@ import { useMonitorWs } from './use-monitor-ws'
 import { useRequestDetail } from './use-request-detail'
 
 const BODY_TABS: MonitorBodyType[] = ['downstream', 'upstream', 'response']
+const MONITOR_COLUMN_STORAGE_KEY = 'monitor-table-columns'
+
+const MONITOR_COLUMN_KEYS = {
+  TIME: 'time',
+  STATUS: 'status',
+  MODEL: 'model',
+  CHANNEL: 'channel',
+  TOKEN_USAGE: 'token_usage',
+  DURATION: 'duration',
+  TTFT: 'ttft',
+  THROUGHPUT: 'throughput',
+} as const
+
+type MonitorColumnId =
+  (typeof MONITOR_COLUMN_KEYS)[keyof typeof MONITOR_COLUMN_KEYS]
+
+type MonitorVisibleColumns = Record<MonitorColumnId, boolean>
+
+type MonitorColumnDefinition = {
+  key: MonitorColumnId
+  label: string
+  header: React.ReactNode
+  headClassName?: string
+  cellClassName?: string
+  render: (record: MonitorRecord) => React.ReactNode
+}
+
+function getDefaultMonitorVisibleColumns(): MonitorVisibleColumns {
+  return {
+    [MONITOR_COLUMN_KEYS.TIME]: true,
+    [MONITOR_COLUMN_KEYS.STATUS]: true,
+    [MONITOR_COLUMN_KEYS.MODEL]: true,
+    [MONITOR_COLUMN_KEYS.CHANNEL]: true,
+    [MONITOR_COLUMN_KEYS.TOKEN_USAGE]: true,
+    [MONITOR_COLUMN_KEYS.DURATION]: true,
+    [MONITOR_COLUMN_KEYS.TTFT]: true,
+    [MONITOR_COLUMN_KEYS.THROUGHPUT]: true,
+  }
+}
+
+function getInitialMonitorVisibleColumns(): MonitorVisibleColumns {
+  const defaults = getDefaultMonitorVisibleColumns()
+
+  if (typeof localStorage === 'undefined') {
+    return defaults
+  }
+
+  const savedColumns = localStorage.getItem(MONITOR_COLUMN_STORAGE_KEY)
+  if (!savedColumns) {
+    return defaults
+  }
+
+  try {
+    return {
+      ...defaults,
+      ...JSON.parse(savedColumns),
+    }
+  } catch {
+    return defaults
+  }
+}
 
 function getStatusLabel(status: string, t: (key: string) => string): string {
   if (status === 'completed') return t('Completed')
@@ -100,6 +182,33 @@ function getStatusClassName(status: string): string {
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-300'
   }
   return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300'
+}
+
+function getAttemptStatusLabel(
+  status: string | undefined,
+  t: (key: string) => string
+): string {
+  if (status === 'waiting_upstream') return t('Waiting')
+  if (status === 'streaming') return t('Streaming')
+  if (status === 'failed') return t('Failed')
+  if (status === 'abandoned') return t('Abandoned')
+  if (status === 'succeeded') return t('Success')
+  if (status === 'completed') return t('Completed')
+  if (status === 'error') return t('Error')
+  return status || t('Unknown')
+}
+
+function getAttemptStatusClassName(status: string | undefined): string {
+  if (status === 'succeeded' || status === 'completed') {
+    return getStatusClassName('completed')
+  }
+  if (status === 'failed' || status === 'error' || status === 'abandoned') {
+    return getStatusClassName('error')
+  }
+  if (status === 'streaming') {
+    return getStatusClassName('streaming')
+  }
+  return getStatusClassName('waiting_upstream')
 }
 
 function MetricCard(props: {
@@ -159,11 +268,23 @@ function MonitorToolbar(props: {
   connected: boolean
   modelSearch: string
   isFullscreen: boolean
+  columns: MonitorColumnDefinition[]
+  visibleColumns: MonitorVisibleColumns
   onModelSearchChange: (value: string) => void
+  onColumnVisibilityChange: (
+    columnKey: MonitorColumnId,
+    checked: boolean
+  ) => void
+  onSelectAllColumns: (checked: boolean) => void
+  onResetColumns: () => void
   onReconnect: () => void
   onFullscreenToggle: () => void
 }) {
   const { t } = useTranslation()
+  const columnValues = Object.values(props.visibleColumns)
+  const allColumnsVisible = columnValues.every(Boolean)
+  const someColumnsVisible = columnValues.some(Boolean)
+
   return (
     <div className='flex flex-col gap-2 sm:flex-row sm:items-center'>
       <div className='relative min-w-0 flex-1 sm:w-72 sm:flex-none'>
@@ -192,6 +313,56 @@ function MonitorToolbar(props: {
           )}
           {props.connected ? t('Online') : t('Error')}
         </Badge>
+        <DropdownMenu modal={false}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant='outline'
+                      size='icon'
+                      aria-label={t('Toggle columns')}
+                    />
+                  }
+                />
+              }
+            >
+              <Settings2 />
+              <span className='sr-only'>{t('Toggle columns')}</span>
+            </TooltipTrigger>
+            <TooltipContent>{t('Toggle columns')}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align='end' className='w-52'>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{t('Toggle columns')}</DropdownMenuLabel>
+              <DropdownMenuCheckboxItem
+                checked={allColumnsVisible}
+                aria-checked={
+                  someColumnsVisible && !allColumnsVisible ? 'mixed' : undefined
+                }
+                onCheckedChange={props.onSelectAllColumns}
+              >
+                {t('Select all')}
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuItem onSelect={props.onResetColumns}>
+                {t('Reset')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {props.columns.map((column) => (
+                <DropdownMenuCheckboxItem
+                  key={column.key}
+                  checked={props.visibleColumns[column.key]}
+                  onCheckedChange={(checked) =>
+                    props.onColumnVisibilityChange(column.key, checked)
+                  }
+                >
+                  {column.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -230,7 +401,7 @@ function MonitorToolbar(props: {
 function MonitorTable(props: {
   records: MonitorRecord[]
   selectedId: string | null
-  clientNowMs: number
+  columns: MonitorColumnDefinition[]
   onSelect: (record: MonitorRecord) => void
 }) {
   const { t } = useTranslation()
@@ -243,84 +414,112 @@ function MonitorTable(props: {
     )
   }
 
+  if (props.columns.length === 0) {
+    return (
+      <div className='text-muted-foreground flex h-full min-h-48 items-center justify-center rounded-lg border border-dashed text-sm'>
+        {t('Toggle columns')}
+      </div>
+    )
+  }
+
   return (
     <div className='h-full overflow-auto rounded-lg border'>
       <Table className='min-w-[980px]'>
         <TableHeader className='bg-muted/50 sticky top-0 z-10'>
           <TableRow>
-            <TableHead className='w-[9.5rem]'>{t('Time')}</TableHead>
-            <TableHead className='w-[8rem]'>{t('Status')}</TableHead>
-            <TableHead>{t('Model')}</TableHead>
-            <TableHead>{t('Channel')}</TableHead>
-            <TableHead className='w-[9rem]'>
-              {t('Input')} / {t('Output')}
-            </TableHead>
-            <TableHead className='w-[7rem]'>{t('Duration')}</TableHead>
-            <TableHead className='w-[6rem]'>TTFT</TableHead>
-            <TableHead className='w-[7rem]'>{t('Throughput')}</TableHead>
+            {props.columns.map((column) => (
+              <TableHead key={column.key} className={column.headClassName}>
+                {column.header}
+              </TableHead>
+            ))}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {props.records.map((record) => {
-            const displayStatus = deriveDisplayStatus(record)
-            const retryCount = getRetryCount(record)
-            const ttftMs = getTtftMs(record)
-            const outputSpeed = getOutputSpeed(record, props.clientNowMs)
-            return (
-              <TableRow
-                key={record.id}
-                className={cn(
-                  'cursor-pointer',
-                  props.selectedId === record.id && 'bg-muted/70'
-                )}
-                onClick={() => props.onSelect(record)}
-              >
-                <TableCell className='text-muted-foreground'>
-                  {formatDateTime(record.start_time, record.start_time_ms)}
+          {props.records.map((record) => (
+            <TableRow
+              key={record.id}
+              className={cn(
+                'cursor-pointer',
+                props.selectedId === record.id && 'bg-muted/70'
+              )}
+              onClick={() => props.onSelect(record)}
+            >
+              {props.columns.map((column) => (
+                <TableCell key={column.key} className={column.cellClassName}>
+                  {column.render(record)}
                 </TableCell>
-                <TableCell>
-                  <Badge
-                    variant='outline'
-                    className={cn('h-6', getStatusClassName(displayStatus))}
-                  >
-                    {getStatusLabel(displayStatus, t)}
-                  </Badge>
-                </TableCell>
-                <TableCell className='max-w-[18rem] truncate font-medium'>
-                  {record.model || '-'}
-                </TableCell>
-                <TableCell className='max-w-[16rem] truncate'>
-                  <span>{record.channel_name || record.channel_id || '-'}</span>
-                  {retryCount > 0 ? (
-                    <Badge variant='outline' className='ml-2 h-5 px-1.5'>
-                      +{retryCount}
-                    </Badge>
-                  ) : null}
-                </TableCell>
-                <TableCell>
-                  <TokenUsageBadge record={record} />
-                </TableCell>
-                <TableCell>
-                  {formatDuration(getDurationMs(record, props.clientNowMs))}
-                </TableCell>
-                <TableCell>{ttftMs ? `${ttftMs}ms` : '-'}</TableCell>
-                <TableCell>
-                  {outputSpeed ? `${outputSpeed.toFixed(1)}/s` : '-'}
-                </TableCell>
-              </TableRow>
-            )
-          })}
+              ))}
+            </TableRow>
+          ))}
         </TableBody>
       </Table>
     </div>
   )
 }
 
-function DetailMeta(props: { label: string; value: React.ReactNode }) {
+function DetailCard(props: {
+  icon: React.ReactNode
+  title: string
+  children: React.ReactNode
+}) {
   return (
-    <div className='bg-muted/20 min-w-0 rounded-lg border px-3 py-2'>
-      <div className='text-muted-foreground text-xs'>{props.label}</div>
-      <div className='mt-1 truncate text-sm font-medium'>{props.value}</div>
+    <Card className='rounded-lg py-0'>
+      <CardContent className='p-3'>
+        <div className='mb-3 flex items-center gap-2 text-sm font-semibold'>
+          <span className='text-primary inline-flex'>{props.icon}</span>
+          <span>{props.title}</span>
+        </div>
+        {props.children}
+      </CardContent>
+    </Card>
+  )
+}
+
+function DetailPill(props: {
+  icon: React.ReactNode
+  label: string
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'bg-muted/35 inline-flex min-h-8 min-w-0 flex-[1_1_16rem] items-center gap-2 rounded-full px-3 py-1.5',
+        props.className
+      )}
+    >
+      <span className='text-muted-foreground inline-flex shrink-0'>
+        {props.icon}
+      </span>
+      <span className='text-muted-foreground shrink-0 text-xs'>
+        {props.label}
+      </span>
+      <span className='inline-flex min-w-0 items-center text-xs font-medium'>
+        {props.children}
+      </span>
+    </div>
+  )
+}
+
+function HeadersViewer(props: {
+  headers?: Record<string, string>
+  emptyLabel: string
+}) {
+  const entries = Object.entries(props.headers ?? {})
+  if (entries.length === 0) {
+    return (
+      <span className='text-muted-foreground text-sm'>{props.emptyLabel}</span>
+    )
+  }
+
+  return (
+    <div className='bg-muted/30 space-y-1 rounded-md border p-3 font-mono text-xs'>
+      {entries.map(([key, value]) => (
+        <div key={key} className='min-w-0 break-all'>
+          <span className='text-primary font-semibold'>{key}:</span>{' '}
+          <span>{value}</span>
+        </div>
+      ))}
     </div>
   )
 }
@@ -380,7 +579,7 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
     <Textarea
       readOnly
       value={body}
-      className='h-72 resize-none font-mono text-xs leading-relaxed'
+      className='h-80 resize-none font-mono text-xs leading-relaxed'
     />
   )
 }
@@ -399,7 +598,7 @@ function RequestDetail(props: {
 
   if (props.loading) {
     return (
-      <div className='flex h-full min-h-0 items-center justify-center rounded-lg border'>
+      <div className='flex min-h-96 items-center justify-center rounded-lg border'>
         <Spinner />
       </div>
     )
@@ -416,7 +615,7 @@ function RequestDetail(props: {
 
   if (!props.record) {
     return (
-      <div className='text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border border-dashed text-sm'>
+      <div className='text-muted-foreground flex min-h-96 items-center justify-center rounded-lg border border-dashed text-sm'>
         {t('Details')}
       </div>
     )
@@ -426,6 +625,13 @@ function RequestDetail(props: {
   const tokenUsage = getMonitorTokenUsage(props.record)
   const canInterrupt = isActiveStatus(displayStatus)
   const recordId = props.record.id
+  const activeAttemptIndex = (props.record.channel_attempts ?? [])
+    .map((attempt, index) => ({ attempt, index }))
+    .reverse()
+    .find(
+      ({ attempt }) =>
+        attempt.status === 'waiting_upstream' || attempt.status === 'streaming'
+    )?.index
 
   const handleInterrupt = async () => {
     const result = await props.onInterrupt(recordId)
@@ -437,81 +643,330 @@ function RequestDetail(props: {
   }
 
   return (
-    <div className='flex h-full min-h-0 flex-col gap-3'>
-      <div className='flex shrink-0 flex-wrap items-start justify-between gap-2'>
-        <div className='min-w-0'>
-          <div className='truncate text-sm font-semibold'>
-            {props.record.id}
-          </div>
-          <div className='text-muted-foreground mt-1 truncate text-xs'>
-            {props.record.model || '-'}
-          </div>
-        </div>
-        <Button
-          variant='destructive'
-          size='sm'
-          disabled={!canInterrupt || props.interrupting}
-          onClick={handleInterrupt}
-        >
-          {props.interrupting ? <Spinner /> : <PauseCircle />}
-          {t('Cancel')}
-        </Button>
-      </div>
-
-      <div className='grid shrink-0 grid-cols-2 gap-2 xl:grid-cols-3'>
-        <DetailMeta
-          label={t('Status')}
-          value={
+    <div className='space-y-3'>
+      <DetailCard
+        icon={<Network className='size-4' />}
+        title={t('Current Channel')}
+      >
+        <div className='flex flex-wrap gap-2'>
+          <DetailPill
+            icon={<Route className='size-3.5' />}
+            label={t('Channel')}
+          >
+            <span className='truncate'>
+              {props.record.current_channel?.name ||
+                props.record.channel_name ||
+                '-'}
+              {props.record.current_channel?.id
+                ? ` / ID ${props.record.current_channel.id}`
+                : ''}
+              {props.record.current_channel?.attempt
+                ? ` / ${t('Attempt {{num}}', {
+                    num: props.record.current_channel.attempt,
+                  })}`
+                : ''}
+            </span>
+          </DetailPill>
+          <DetailPill
+            icon={<Activity className='size-3.5' />}
+            label={t('Current Status')}
+          >
             <Badge
               variant='outline'
               className={cn('h-6', getStatusClassName(displayStatus))}
             >
               {getStatusLabel(displayStatus, t)}
             </Badge>
-          }
-        />
-        <DetailMeta
-          label={t('Token Name')}
-          value={props.record.token_name || '-'}
-        />
-        <DetailMeta
-          label={t('Channel')}
-          value={props.record.channel_name || '-'}
-        />
-        <DetailMeta
-          label={t('Input Tokens')}
-          value={formatTokenCount(tokenUsage.promptTokens)}
-        />
-        <DetailMeta
-          label={t('Output Tokens')}
-          value={formatTokenCount(tokenUsage.completionTokens)}
-        />
-        <DetailMeta
-          label={t('IP')}
-          value={props.record.downstream?.client_ip || '-'}
-        />
-      </div>
+          </DetailPill>
+          {canInterrupt ? (
+            <Button
+              variant='destructive'
+              size='sm'
+              disabled={props.interrupting}
+              onClick={handleInterrupt}
+              className='ml-auto'
+            >
+              {props.interrupting ? <Spinner /> : <PauseCircle />}
+              {t('Cancel')}
+            </Button>
+          ) : null}
+        </div>
 
-      <Tabs
-        value={bodyTab}
-        onValueChange={(value) => setBodyTab(value as MonitorBodyType)}
-        className='flex min-h-0 flex-1 flex-col'
+        <div className='mt-3 border-t pt-3'>
+          <div className='mb-2 flex items-center justify-between gap-2'>
+            <div className='flex items-center gap-1.5 text-sm font-medium'>
+              <History className='text-muted-foreground size-3.5' />
+              {t('Retry History')}
+            </div>
+            {props.record.channel_attempts?.length ? (
+              <Badge variant='outline' className='h-5'>
+                {props.record.channel_attempts.length}
+              </Badge>
+            ) : null}
+          </div>
+          {props.record.channel_attempts?.length ? (
+            <div className='space-y-2'>
+              {props.record.channel_attempts.map((attempt, index) => (
+                <div
+                  key={`${attempt.attempt ?? index}-${attempt.channel_id ?? '-'}-${attempt.started_at ?? ''}`}
+                  className='bg-muted/30 rounded-lg border px-3 py-2'
+                >
+                  <div className='flex flex-wrap items-center justify-between gap-2'>
+                    <div className='flex min-w-0 flex-wrap items-center gap-2'>
+                      <Badge variant='outline' className='h-6'>
+                        {t('Attempt {{num}}', {
+                          num: attempt.attempt ?? index + 1,
+                        })}
+                      </Badge>
+                      <span className='truncate text-sm'>
+                        {attempt.channel_name || t('Unknown Channel')}
+                        {attempt.channel_id
+                          ? ` (ID: ${attempt.channel_id})`
+                          : ''}
+                      </span>
+                      <Badge
+                        variant='outline'
+                        className={cn(
+                          'h-6',
+                          getAttemptStatusClassName(attempt.status)
+                        )}
+                      >
+                        {getAttemptStatusLabel(attempt.status, t)}
+                      </Badge>
+                    </div>
+                    {canInterrupt && activeAttemptIndex === index ? (
+                      <Button
+                        variant='destructive'
+                        size='sm'
+                        disabled={props.interrupting}
+                        onClick={handleInterrupt}
+                      >
+                        {props.interrupting ? <Spinner /> : <PauseCircle />}
+                        {t('Cancel')}
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className='text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs'>
+                    <span>
+                      {t('Started')}:{' '}
+                      {formatDateTime(
+                        attempt.started_at,
+                        attempt.started_at_ms
+                      )}
+                    </span>
+                    {attempt.ended_at || attempt.ended_at_ms ? (
+                      <span>
+                        {t('Ended')}:{' '}
+                        {formatDateTime(attempt.ended_at, attempt.ended_at_ms)}
+                      </span>
+                    ) : null}
+                    {attempt.reason ? (
+                      <span>
+                        {t('Reason')}: {attempt.reason}
+                      </span>
+                    ) : null}
+                    {attempt.error_code ? (
+                      <span>
+                        {t('Error Code')}: {attempt.error_code}
+                      </span>
+                    ) : null}
+                    {attempt.http_status ? (
+                      <span>HTTP {attempt.http_status}</span>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className='text-muted-foreground text-sm'>
+              {t('No retry records')}
+            </div>
+          )}
+        </div>
+      </DetailCard>
+
+      <DetailCard icon={<Hash className='size-4' />} title={t('Request Info')}>
+        <div className='flex flex-wrap gap-2'>
+          <DetailPill
+            icon={<Hash className='size-3.5' />}
+            label={t('Request ID')}
+            className='flex-[2_1_28rem] rounded-lg'
+          >
+            <span className='font-mono break-all'>{props.record.id}</span>
+          </DetailPill>
+          <DetailPill
+            icon={<Network className='size-3.5' />}
+            label={t('Model')}
+          >
+            <span className='truncate'>{props.record.model || '-'}</span>
+          </DetailPill>
+          <DetailPill
+            icon={<Activity className='size-3.5' />}
+            label={t('Status')}
+          >
+            <Badge
+              variant='outline'
+              className={cn('h-6', getStatusClassName(displayStatus))}
+            >
+              {getStatusLabel(displayStatus, t)}
+            </Badge>
+          </DetailPill>
+          <DetailPill icon={<Radio className='size-3.5' />} label={t('Stream')}>
+            {props.record.is_stream ? (
+              <Badge variant='outline' className='h-6'>
+                {t('Yes')}
+              </Badge>
+            ) : (
+              <span>{t('No')}</span>
+            )}
+          </DetailPill>
+          <DetailPill icon={<Clock3 className='size-3.5' />} label={t('Time')}>
+            <span>
+              {formatDateTime(
+                props.record.start_time,
+                props.record.start_time_ms
+              )}
+            </span>
+          </DetailPill>
+          <DetailPill
+            icon={<Clock3 className='size-3.5' />}
+            label={t('Duration')}
+          >
+            <span>
+              {formatDuration(getDurationMs(props.record, Date.now()))}
+            </span>
+          </DetailPill>
+          <DetailPill icon={<User className='size-3.5' />} label={t('User ID')}>
+            <span>{props.record.user_id || '-'}</span>
+          </DetailPill>
+          <DetailPill
+            icon={<KeyRound className='size-3.5' />}
+            label={t('Token Name')}
+          >
+            <span className='truncate'>{props.record.token_name || '-'}</span>
+          </DetailPill>
+          <DetailPill
+            icon={<ArrowUpFromLine className='size-3.5' />}
+            label={t('Input Tokens')}
+          >
+            <span>{formatTokenCount(tokenUsage.promptTokens)}</span>
+          </DetailPill>
+          <DetailPill
+            icon={<ArrowDownToLine className='size-3.5' />}
+            label={t('Output Tokens')}
+          >
+            <span>{formatTokenCount(tokenUsage.completionTokens)}</span>
+          </DetailPill>
+        </div>
+      </DetailCard>
+
+      <DetailCard
+        icon={<ArrowUpFromLine className='size-4' />}
+        title={t('Downstream Request')}
       >
-        <TabsList className='shrink-0'>
-          {BODY_TABS.map((type) => (
-            <TabsTrigger key={type} value={type}>
-              {getBodyTabLabel(type, t)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {BODY_TABS.map((type) => (
-          <TabsContent key={type} value={type} className='min-h-0 flex-1'>
-            <ScrollArea className='h-full'>
-              <BodyPanel requestId={recordId} type={type} />
-            </ScrollArea>
+        <div className='mb-3 flex flex-wrap gap-2'>
+          <DetailPill icon={<Route className='size-3.5' />} label={t('Path')}>
+            <span className='truncate'>
+              {props.record.downstream?.method || '-'}{' '}
+              {props.record.downstream?.path || '-'}
+            </span>
+          </DetailPill>
+          <DetailPill
+            icon={<Globe2 className='size-3.5' />}
+            label={t('Client IP')}
+          >
+            <span>{props.record.downstream?.client_ip || '-'}</span>
+          </DetailPill>
+          <DetailPill
+            icon={<Hash className='size-3.5' />}
+            label={t('Body Size')}
+          >
+            <span>{formatBytes(props.record.downstream?.body_size || 0)}</span>
+          </DetailPill>
+        </div>
+        <Tabs defaultValue='headers'>
+          <TabsList className='grid w-full grid-cols-2 sm:w-72'>
+            <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
+            <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
+          </TabsList>
+          <TabsContent value='headers' className='mt-3'>
+            <HeadersViewer
+              headers={props.record.downstream?.headers}
+              emptyLabel={t('No headers')}
+            />
           </TabsContent>
-        ))}
-      </Tabs>
+          <TabsContent value='body' className='mt-3'>
+            <BodyPanel requestId={recordId} type='downstream' />
+          </TabsContent>
+        </Tabs>
+      </DetailCard>
+
+      <DetailCard
+        icon={<ArrowDownToLine className='size-4' />}
+        title={t('Response')}
+      >
+        <div className='mb-3 flex flex-wrap gap-2'>
+          <DetailPill
+            icon={<Hash className='size-3.5' />}
+            label={t('Status Code')}
+          >
+            <Badge
+              variant='outline'
+              className={cn(
+                'h-6',
+                Number(
+                  props.record.response?.status_code || props.record.status_code
+                ) >= 400
+                  ? getStatusClassName('error')
+                  : getStatusClassName('completed')
+              )}
+            >
+              {props.record.response?.status_code ||
+                props.record.status_code ||
+                '-'}
+            </Badge>
+          </DetailPill>
+          <DetailPill
+            icon={<ArrowUpFromLine className='size-3.5' />}
+            label={t('Input Tokens')}
+          >
+            <span>{formatTokenCount(tokenUsage.promptTokens)}</span>
+          </DetailPill>
+          <DetailPill
+            icon={<ArrowDownToLine className='size-3.5' />}
+            label={t('Output Tokens')}
+          >
+            <span>{formatTokenCount(tokenUsage.completionTokens)}</span>
+          </DetailPill>
+        </div>
+        {props.record.response?.error && props.record.status !== 'abandoned' ? (
+          <Alert variant='destructive' className='mb-3'>
+            <AlertTitle>{t('Error')}</AlertTitle>
+            <AlertDescription>
+              {props.record.response.error.message ||
+                props.record.response.error.code ||
+                '-'}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+        <Tabs
+          value={bodyTab}
+          onValueChange={(value) => setBodyTab(value as MonitorBodyType)}
+        >
+          <TabsList className='grid w-full grid-cols-3 sm:w-[28rem]'>
+            {BODY_TABS.map((type) => (
+              <TabsTrigger key={type} value={type}>
+                {getBodyTabLabel(type, t)}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          {BODY_TABS.map((type) => (
+            <TabsContent key={type} value={type} className='mt-3'>
+              <BodyPanel requestId={recordId} type={type} />
+            </TabsContent>
+          ))}
+        </Tabs>
+      </DetailCard>
     </div>
   )
 }
@@ -570,8 +1025,12 @@ function useFullscreenWakeLock(
 export function Monitor() {
   const { t } = useTranslation()
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState('')
   const [clientNowMs, setClientNowMs] = useState(Date.now())
+  const [visibleColumns, setVisibleColumns] = useState(
+    getInitialMonitorVisibleColumns
+  )
   const fullscreenRef = useRef<HTMLDivElement | null>(null)
   const { isFullscreen, toggleFullscreen } =
     useFullscreenWakeLock(fullscreenRef)
@@ -612,8 +1071,139 @@ export function Monitor() {
     monitorWs.summaries.find((record) => record.id === selectedId) ||
     null
 
+  const monitorColumns = useMemo<MonitorColumnDefinition[]>(
+    () => [
+      {
+        key: MONITOR_COLUMN_KEYS.TIME,
+        label: t('Time'),
+        header: t('Time'),
+        headClassName: 'w-[9.5rem]',
+        cellClassName: 'text-muted-foreground',
+        render: (record) =>
+          formatDateTime(record.start_time, record.start_time_ms),
+      },
+      {
+        key: MONITOR_COLUMN_KEYS.STATUS,
+        label: t('Status'),
+        header: t('Status'),
+        headClassName: 'w-[8rem]',
+        render: (record) => {
+          const displayStatus = deriveDisplayStatus(record)
+          return (
+            <Badge
+              variant='outline'
+              className={cn('h-6', getStatusClassName(displayStatus))}
+            >
+              {getStatusLabel(displayStatus, t)}
+            </Badge>
+          )
+        },
+      },
+      {
+        key: MONITOR_COLUMN_KEYS.MODEL,
+        label: t('Model'),
+        header: t('Model'),
+        cellClassName: 'max-w-[18rem] truncate font-medium',
+        render: (record) => record.model || '-',
+      },
+      {
+        key: MONITOR_COLUMN_KEYS.CHANNEL,
+        label: t('Channel'),
+        header: t('Channel'),
+        cellClassName: 'max-w-[16rem] truncate',
+        render: (record) => {
+          const retryCount = getRetryCount(record)
+          return (
+            <>
+              <span>{record.channel_name || record.channel_id || '-'}</span>
+              {retryCount > 0 ? (
+                <Badge variant='outline' className='ml-2 h-5 px-1.5'>
+                  +{retryCount}
+                </Badge>
+              ) : null}
+            </>
+          )
+        },
+      },
+      {
+        key: MONITOR_COLUMN_KEYS.TOKEN_USAGE,
+        label: `${t('Input')} / ${t('Output')}`,
+        header: `${t('Input')} / ${t('Output')}`,
+        headClassName: 'w-[9rem]',
+        render: (record) => <TokenUsageBadge record={record} />,
+      },
+      {
+        key: MONITOR_COLUMN_KEYS.DURATION,
+        label: t('Duration'),
+        header: t('Duration'),
+        headClassName: 'w-[7rem]',
+        render: (record) => formatDuration(getDurationMs(record, clientNowMs)),
+      },
+      {
+        key: MONITOR_COLUMN_KEYS.TTFT,
+        label: 'TTFT',
+        header: 'TTFT',
+        headClassName: 'w-[6rem]',
+        render: (record) => {
+          const ttftMs = getTtftMs(record)
+          return ttftMs ? `${ttftMs}ms` : '-'
+        },
+      },
+      {
+        key: MONITOR_COLUMN_KEYS.THROUGHPUT,
+        label: t('Throughput'),
+        header: t('Throughput'),
+        headClassName: 'w-[7rem]',
+        render: (record) => {
+          const outputSpeed = getOutputSpeed(record, clientNowMs)
+          return outputSpeed ? `${outputSpeed.toFixed(1)}/s` : '-'
+        },
+      },
+    ],
+    [clientNowMs, t]
+  )
+
+  const visibleMonitorColumns = useMemo(
+    () => monitorColumns.filter((column) => visibleColumns[column.key]),
+    [monitorColumns, visibleColumns]
+  )
+
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') {
+      return
+    }
+    localStorage.setItem(
+      MONITOR_COLUMN_STORAGE_KEY,
+      JSON.stringify(visibleColumns)
+    )
+  }, [visibleColumns])
+
+  const handleColumnVisibilityChange = useCallback(
+    (columnKey: MonitorColumnId, checked: boolean) => {
+      setVisibleColumns((previous) => ({
+        ...previous,
+        [columnKey]: checked,
+      }))
+    },
+    []
+  )
+
+  const handleSelectAllColumns = useCallback((checked: boolean) => {
+    const defaults = getDefaultMonitorVisibleColumns()
+    setVisibleColumns(
+      Object.fromEntries(
+        Object.keys(defaults).map((key) => [key, checked])
+      ) as MonitorVisibleColumns
+    )
+  }, [])
+
+  const handleResetColumns = useCallback(() => {
+    setVisibleColumns(getDefaultMonitorVisibleColumns())
+  }, [])
+
   const handleSelect = (record: MonitorRecord) => {
     setSelectedId(record.id)
+    setDetailOpen(true)
     void detail.fetchDetail(record.id)
   }
 
@@ -632,7 +1222,12 @@ export function Monitor() {
             connected={monitorWs.connected}
             modelSearch={modelSearch}
             isFullscreen={isFullscreen}
+            columns={monitorColumns}
+            visibleColumns={visibleColumns}
             onModelSearchChange={setModelSearch}
+            onColumnVisibilityChange={handleColumnVisibilityChange}
+            onSelectAllColumns={handleSelectAllColumns}
+            onResetColumns={handleResetColumns}
             onReconnect={monitorWs.reconnect}
             onFullscreenToggle={toggleFullscreen}
           />
@@ -665,28 +1260,33 @@ export function Monitor() {
               </Alert>
             ) : null}
 
-            <div className='grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(420px,0.65fr)]'>
+            <div className='min-h-0 flex-1'>
               <MonitorTable
                 records={records}
                 selectedId={selectedId}
-                clientNowMs={clientNowMs}
+                columns={visibleMonitorColumns}
                 onSelect={handleSelect}
               />
-              <Card className='min-h-0 rounded-lg py-0'>
-                <CardContent className='h-full min-h-0 p-3'>
-                  <RequestDetail
-                    record={selectedRecord}
-                    loading={detail.loading}
-                    error={detail.error}
-                    interrupting={detail.interrupting}
-                    onInterrupt={detail.interruptRequest}
-                  />
-                </CardContent>
-              </Card>
             </div>
           </div>
         </SectionPageLayout.Content>
       </SectionPageLayout>
+      <Dialog
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+        title={t('Request Details')}
+        contentClassName='h-[92vh] max-w-[calc(100vw-1rem)] gap-3 p-3 sm:max-w-[92vw] sm:p-4'
+        contentHeight='calc(92vh - 5rem)'
+        bodyClassName='py-0'
+      >
+        <RequestDetail
+          record={selectedRecord}
+          loading={detail.loading}
+          error={detail.error}
+          interrupting={detail.interrupting}
+          onInterrupt={detail.interruptRequest}
+        />
+      </Dialog>
     </div>
   )
 }
