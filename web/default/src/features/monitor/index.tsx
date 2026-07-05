@@ -97,7 +97,6 @@ import type { MonitorBodyType, MonitorRecord } from './types'
 import { useMonitorWs } from './use-monitor-ws'
 import { useRequestDetail } from './use-request-detail'
 
-const RESPONSE_BODY_TABS: MonitorBodyType[] = ['response']
 const MONITOR_COLUMN_STORAGE_KEY = 'monitor-table-columns'
 
 const MONITOR_COLUMN_KEYS = {
@@ -501,44 +500,6 @@ function MonitorTable(props: {
         </TableBody>
       </Table>
     </div>
-  )
-}
-
-function BodyTabs(props: {
-  tabs: MonitorBodyType[]
-  defaultValue: MonitorBodyType
-  requestId: string
-}) {
-  const { t } = useTranslation()
-  const [bodyTab, setBodyTab] = useState<MonitorBodyType>(props.defaultValue)
-
-  useEffect(() => {
-    setBodyTab(props.defaultValue)
-  }, [props.defaultValue, props.requestId])
-
-  return (
-    <Tabs
-      value={bodyTab}
-      onValueChange={(value) => setBodyTab(value as MonitorBodyType)}
-    >
-      <TabsList
-        className={cn(
-          'grid w-full sm:w-72',
-          props.tabs.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
-        )}
-      >
-        {props.tabs.map((type) => (
-          <TabsTrigger key={type} value={type}>
-            {type === 'response' ? t('Body') : t('Request')}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-      {props.tabs.map((type) => (
-        <TabsContent key={type} value={type} className='mt-3'>
-          <BodyPanel requestId={props.requestId} type={type} />
-        </TabsContent>
-      ))}
-    </Tabs>
   )
 }
 
@@ -1087,11 +1048,7 @@ function RequestDetail(props: {
             />
           </TabsContent>
           <TabsContent value='body' className='mt-3'>
-            <BodyTabs
-              tabs={RESPONSE_BODY_TABS}
-              defaultValue='response'
-              requestId={recordId}
-            />
+            <BodyPanel requestId={recordId} type='response' />
           </TabsContent>
         </Tabs>
       </DetailCard>
