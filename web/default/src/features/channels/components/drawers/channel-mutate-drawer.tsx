@@ -148,11 +148,13 @@ import {
   getAdvancedCustomStats,
   transformChannelToFormDefaults,
   type ChannelFormValues,
+  type ChannelConnectionConfig,
   deduplicateKeys,
   getChannelTypeIcon,
   getKeyPromptForType,
   parseModelsString,
   formatModelsArray,
+  parseChannelConnectionString,
   extractRedirectModels,
   extractMappingSourceModels,
   hasModelConfigChanged,
@@ -626,6 +628,8 @@ export function ChannelMutateDrawer({
   const [paramOverrideEditorOpen, setParamOverrideEditorOpen] = useState(false)
   const [advancedCustomEditorOpen, setAdvancedCustomEditorOpen] =
     useState(false)
+  const [clipboardConfig, setClipboardConfig] =
+    useState<ChannelConnectionConfig | null>(null)
 
   const isEditing = Boolean(currentRow)
   const channelId = currentRow?.id ?? null
@@ -1174,6 +1178,25 @@ export function ChannelMutateDrawer({
     }
   }, [isEditing, channelData, form])
 
+  useEffect(() => {
+    setClipboardConfig(null)
+
+    if (!open || sensitiveLocked || isChannelDetailLoading) return
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) {
+      return
+    }
+
+    navigator.clipboard
+      .readText()
+      .then((text) => {
+        const parsed = parseChannelConnectionString(text)
+        if (parsed) {
+          setClipboardConfig(parsed)
+        }
+      })
+      .catch(() => undefined)
+  }, [open, channelId, sensitiveLocked, isChannelDetailLoading])
+
   // Handle type change - set default values for specific types
   useEffect(() => {
     if (isEditing) return // Don't auto-set defaults when editing
@@ -1258,6 +1281,44 @@ export function ChannelMutateDrawer({
       )
     }
   }
+
+  const applyClipboardConfig = useCallback(
+    (config: ChannelConnectionConfig | null) => {
+      if (!config || sensitiveLocked) return
+
+      form.setValue('key', config.key, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      form.setValue('base_url', config.url, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      setClipboardConfig(null)
+      toast.success(t('Connection info filled'))
+    },
+    [form, sensitiveLocked, t]
+  )
+
+  const pasteFromClipboard = useCallback(async () => {
+    if (sensitiveLocked) return
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.readText) {
+      toast.error(t('Cannot read clipboard'))
+      return
+    }
+
+    try {
+      const text = await navigator.clipboard.readText()
+      const parsed = parseChannelConnectionString(text)
+      if (parsed) {
+        applyClipboardConfig(parsed)
+      } else {
+        toast.info(t('No connection info found in clipboard'))
+      }
+    } catch {
+      toast.error(t('Cannot read clipboard'))
+    }
+  }, [applyClipboardConfig, sensitiveLocked, t])
 
   const fetchChannelKey = useCallback(async () => {
     if (!channelId) {
@@ -1739,6 +1800,7 @@ export function ChannelMutateDrawer({
       onOpenChange(v)
       if (!v) {
         form.reset(CHANNEL_FORM_DEFAULT_VALUES)
+        setClipboardConfig(null)
         advancedNavScrollPendingRef.current = false
         setActiveEditorSectionId(CHANNEL_EDITOR_SECTION_IDS.identity)
         setExpandedEditorNavItemId(undefined)
@@ -1753,17 +1815,32 @@ export function ChannelMutateDrawer({
       <Sheet open={open} onOpenChange={handleOpenChange}>
         <SheetContent className={sideDrawerContentClassName('sm:max-w-5xl')}>
           <SheetHeader className={sideDrawerHeaderClassName()}>
-            <SheetTitle className='flex items-center gap-3'>
-              <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-md'>
-                <ChannelTypeLogo type={currentType} size={22} />
-              </span>
-              <span>
-                {isEditing ? t('Edit Channel') : t('Create Channel')}
-                <span className='text-muted-foreground ml-2 text-sm font-normal'>
-                  {t(currentTypeLabel)}
+            <div className='flex items-start justify-between gap-3'>
+              <SheetTitle className='flex min-w-0 items-center gap-3'>
+                <span className='bg-muted flex size-9 shrink-0 items-center justify-center rounded-md'>
+                  <ChannelTypeLogo type={currentType} size={22} />
                 </span>
-              </span>
-            </SheetTitle>
+                <span className='min-w-0'>
+                  {isEditing ? t('Edit Channel') : t('Create Channel')}
+                  <span className='text-muted-foreground ml-2 text-sm font-normal'>
+                    {t(currentTypeLabel)}
+                  </span>
+                </span>
+              </SheetTitle>
+              {!sensitiveLocked && (
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='shrink-0'
+                  disabled={isChannelDetailLoading}
+                  onClick={pasteFromClipboard}
+                >
+                  <Wand2 className='h-4 w-4' />
+                  {t('Paste config from clipboard')}
+                </Button>
+              )}
+            </div>
             <SheetDescription>
               {isEditing
                 ? t(
@@ -1784,6 +1861,32 @@ export function ChannelMutateDrawer({
                 {t(
                   'You can still edit non-sensitive operations fields such as models, groups, priority, and weight.'
                 )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {!sensitiveLocked && clipboardConfig && !isChannelDetailLoading && (
+            <Alert className='mx-4 mt-4 sm:mx-6'>
+              <AlertCircle className='h-4 w-4' />
+              <AlertDescription className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                <span>{t('Connection info detected in clipboard')}</span>
+                <span className='flex shrink-0 gap-2'>
+                  <Button
+                    type='button'
+                    size='sm'
+                    onClick={() => applyClipboardConfig(clipboardConfig)}
+                  >
+                    {t('Fill automatically')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() => setClipboardConfig(null)}
+                  >
+                    {t('Ignore')}
+                  </Button>
+                </span>
               </AlertDescription>
             </Alert>
           )}

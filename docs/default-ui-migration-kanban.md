@@ -27,7 +27,7 @@ Default UI. Keep implementation style aligned with `web/default`.
 - [x] Channel table multi-rule sorting UI and request parameters.
 - [x] Channel editable remark clear/persist behavior.
 - [x] Channel breaker status card/dialog and inactive-channel badge behavior.
-- [ ] Channel edit-mode clipboard quick-paste parity.
+- [x] Channel edit-mode clipboard quick-paste parity.
 - [ ] Channel external configuration fields and advanced settings parity.
 - [ ] Default UI polish for any Classic custom filters in logs, models, tokens,
       users, and redemption tables.
