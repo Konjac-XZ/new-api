@@ -25,7 +25,7 @@ Default UI. Keep implementation style aligned with `web/default`.
 ## Pending
 
 - [x] Channel table multi-rule sorting UI and request parameters.
-- [ ] Channel editable remark clear/persist behavior.
+- [x] Channel editable remark clear/persist behavior.
 - [ ] Channel breaker status card/dialog and inactive-channel badge behavior.
 - [ ] Channel edit-mode clipboard quick-paste parity.
 - [ ] Channel external configuration fields and advanced settings parity.

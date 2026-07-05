@@ -200,27 +200,30 @@ export async function handleDeleteChannel(
 }
 
 /**
- * Update a specific channel field (e.g., priority, weight)
+ * Update a specific channel field (e.g., priority, weight, remark)
  */
 export async function handleUpdateChannelField(
   id: number,
   fieldName: string,
-  value: number,
+  value: number | string,
   queryClient?: QueryClient,
   onSuccess?: () => void
 ): Promise<void> {
   try {
     const response = await updateChannel(id, { [fieldName]: value })
     if (response.success) {
-      // Show success toast with field name
-      const fieldLabel =
-        fieldName.charAt(0).toUpperCase() + fieldName.slice(1).toLowerCase()
-      toast.success(
-        i18next.t('{{field}} updated to {{value}}', {
-          field: fieldLabel,
-          value,
-        })
-      )
+      if (typeof value === 'number') {
+        const fieldLabel =
+          fieldName.charAt(0).toUpperCase() + fieldName.slice(1).toLowerCase()
+        toast.success(
+          i18next.t('{{field}} updated to {{value}}', {
+            field: fieldLabel,
+            value,
+          })
+        )
+      } else {
+        toast.success(i18next.t(SUCCESS_MESSAGES.UPDATED))
+      }
       queryClient?.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
       onSuccess?.()
     } else {

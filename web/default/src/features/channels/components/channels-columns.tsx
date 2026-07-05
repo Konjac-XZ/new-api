@@ -28,7 +28,7 @@ import {
   SlidersHorizontal,
   Zap,
 } from 'lucide-react'
-import { useState, useMemo, useContext } from 'react'
+import { useState, useMemo, useContext, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -41,6 +41,7 @@ import { TableId } from '@/components/table-id'
 import { TruncatedText } from '@/components/truncated-text'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import {
   Tooltip,
   TooltipContent,
@@ -53,7 +54,6 @@ import {
   getCurrencyLabel,
 } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
-import { truncateText } from '@/lib/utils'
 
 import { getCodexUsage } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
@@ -194,6 +194,57 @@ function DynamicBreakerIndicator({ channel }: { channel: Channel }) {
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>
+  )
+}
+
+function RemarkCell({ channel }: { channel: Channel }) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const [value, setValue] = useState(channel.remark || '')
+  const [focused, setFocused] = useState(false)
+
+  useEffect(() => {
+    setValue(channel.remark || '')
+  }, [channel.remark])
+
+  if (isTagAggregateRow(channel)) {
+    return null
+  }
+
+  const submitRemark = () => {
+    const nextRemark = value.trim()
+    const currentRemark = (channel.remark || '').trim()
+    if (nextRemark === currentRemark) {
+      setValue(channel.remark || '')
+      return
+    }
+
+    handleUpdateChannelField(channel.id, 'remark', nextRemark, queryClient)
+  }
+
+  return (
+    <Input
+      value={value}
+      maxLength={255}
+      aria-label={t('Remark')}
+      onFocus={() => setFocused(true)}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => {
+        setFocused(false)
+        submitRemark()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.currentTarget.blur()
+        } else if (event.key === 'Escape') {
+          setValue(channel.remark || '')
+          event.currentTarget.blur()
+        }
+      }}
+      className='text-muted-foreground hover:border-input hover:bg-background focus-visible:border-ring focus-visible:bg-background border-transparent bg-transparent px-0 text-xs shadow-none focus-visible:px-2'
+      placeholder={focused ? t('Remark') : undefined}
+    />
   )
 }
 
@@ -694,22 +745,7 @@ export function useChannelsColumns(
                   <DynamicBreakerIndicator channel={channel} />
                   <UpstreamUpdateTags channel={channel} />
                 </div>
-                {channel.remark && (
-                  <TooltipProvider delay={200}>
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <span className='text-muted-foreground text-xs' />
-                        }
-                      >
-                        {truncateText(channel.remark, 40)}
-                      </TooltipTrigger>
-                      <TooltipContent side='bottom' className='max-w-xs'>
-                        {channel.remark}
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
+                <RemarkCell channel={channel} />
               </div>
             </div>
           )
