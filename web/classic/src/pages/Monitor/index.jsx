@@ -119,18 +119,22 @@ const MONITOR_COLUMN_KEYS = {
   STATUS: 'status',
   MODEL: 'model',
   CHANNEL: 'channel',
+  TOKEN_USAGE: 'token_usage',
   DURATION: 'duration',
   TTFT: 'ttft',
   THROUGHPUT: 'throughput',
 };
 
 const MIN_OUTPUT_TOKENS_FOR_THROUGHPUT = 100;
+const TOKEN_USAGE_TAG_WIDTH = 128;
+const TOKEN_USAGE_SIDE_WIDTH = 52;
 
 const getDefaultMonitorVisibleColumns = () => ({
   [MONITOR_COLUMN_KEYS.TIME]: true,
   [MONITOR_COLUMN_KEYS.STATUS]: true,
   [MONITOR_COLUMN_KEYS.MODEL]: true,
   [MONITOR_COLUMN_KEYS.CHANNEL]: true,
+  [MONITOR_COLUMN_KEYS.TOKEN_USAGE]: true,
   [MONITOR_COLUMN_KEYS.DURATION]: true,
   [MONITOR_COLUMN_KEYS.TTFT]: true,
   [MONITOR_COLUMN_KEYS.THROUGHPUT]: true,
@@ -246,6 +250,68 @@ const getOutputSpeed = (record) => {
   return completionTokens / (generationMs / MS_TO_SECONDS);
 };
 
+const getOptionalTokenCount = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  const tokenCount = Number(value);
+  if (!Number.isFinite(tokenCount) || tokenCount < 0) {
+    return null;
+  }
+
+  return Math.floor(tokenCount);
+};
+
+const isSuccessfulTokenResponse = (record) => {
+  if (!record || record.status !== 'completed') {
+    return false;
+  }
+
+  if (record.has_error || record.response?.error) {
+    return false;
+  }
+
+  const statusCode = Number(
+    record?.response?.status_code ?? record?.status_code,
+  );
+  return !Number.isFinite(statusCode) || statusCode <= 0 || statusCode < 400;
+};
+
+const getMonitorTokenUsage = (record) => {
+  const promptTokens =
+    getOptionalTokenCount(record?.response?.prompt_tokens) ??
+    getOptionalTokenCount(record?.prompt_tokens) ??
+    0;
+
+  if (!isSuccessfulTokenResponse(record)) {
+    return {
+      promptTokens,
+      completionTokens: null,
+    };
+  }
+
+  return {
+    promptTokens,
+    completionTokens:
+      getOptionalTokenCount(record?.response?.completion_tokens) ??
+      getOptionalTokenCount(record?.completion_tokens) ??
+      0,
+  };
+};
+
+const formatMonitorTokenCount = (value) => {
+  if (!Number.isFinite(value)) {
+    return '-';
+  }
+
+  if (value > 1000) {
+    return `${(value / 1000).toFixed(1)}K`;
+  }
+
+  return String(value);
+};
+
 const getSyncedNowMs = (record, clientNowMs) => {
   const serverNowMs = record?.server_now_ms;
   const receivedAtMs = record?._receivedAtMs;
@@ -325,7 +391,91 @@ const renderThroughputTag = (tokensPerSecond) => {
 
   return (
     <Tag color={color} shape='circle'>
-      {tokensPerSecond.toFixed(1)} Token/s
+      {tokensPerSecond.toFixed(1)} Tokens/s
+    </Tag>
+  );
+};
+
+const renderTokenUsageTag = (record) => {
+  const displayStatus = record?.displayStatus || deriveDisplayStatus(record);
+  if (!isTerminalStatus(displayStatus)) {
+    return <Text type='tertiary'>-</Text>;
+  }
+
+  const { promptTokens, completionTokens } = getMonitorTokenUsage(record);
+  const outputLabel =
+    completionTokens === null ? '-' : formatMonitorTokenCount(completionTokens);
+
+  return (
+    <Tag
+      color='blue'
+      shape='circle'
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        width: TOKEN_USAGE_TAG_WIDTH,
+        justifyContent: 'center',
+        padding: '0 6px',
+      }}
+    >
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: '100%',
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 3,
+            width: TOKEN_USAGE_SIDE_WIDTH,
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-flex',
+              width: 10,
+              justifyContent: 'center',
+              opacity: 0.72,
+            }}
+          >
+            <ArrowUpFromLine size={9} strokeWidth={2.4} />
+          </span>
+          <span style={{ minWidth: 34, textAlign: 'right' }}>
+            {formatMonitorTokenCount(promptTokens)}
+          </span>
+        </span>
+        <span style={{ width: 8, textAlign: 'center', opacity: 0.38 }}>|</span>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 3,
+            width: TOKEN_USAGE_SIDE_WIDTH,
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-flex',
+              width: 10,
+              justifyContent: 'center',
+              opacity: 0.72,
+            }}
+          >
+            <ArrowDownToLine size={9} strokeWidth={2.4} />
+          </span>
+          <span style={{ minWidth: 34, textAlign: 'right' }}>
+            {outputLabel}
+          </span>
+        </span>
+      </span>
     </Tag>
   );
 };
@@ -825,6 +975,10 @@ const RequestDetail = ({
   const skipNextEnsureVisibleRef = useRef(false);
   const detailPanelHeaderRefs = useRef({});
   const stopwatch = useStopwatch(record, t);
+  const responseTokenUsage = useMemo(
+    () => getMonitorTokenUsage(record),
+    [record],
+  );
 
   useEffect(() => {
     setActiveDetailPanelKey('');
@@ -1147,7 +1301,7 @@ const RequestDetail = ({
                     size='small'
                     style={{
                       fontFamily:
-                        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "PingFang SC", "Microsoft YaHei"',
+                        '"Segoe UI", "Microsoft YaHei", Arial, sans-serif',
                       color: 'var(--semi-color-text-1)',
                     }}
                   >
@@ -1544,17 +1698,23 @@ const RequestDetail = ({
                 </Tag>
               </MetaPill>
               <MetaPill
-                icon={<ArrowDownToLine size={14} />}
+                icon={<ArrowUpFromLine size={14} />}
                 label={t('提示词 Tokens')}
               >
-                <Text size='small'>{record.response.prompt_tokens || 0}</Text>
+                <Text size='small'>
+                  {formatMonitorTokenCount(responseTokenUsage.promptTokens)}
+                </Text>
               </MetaPill>
               <MetaPill
-                icon={<ArrowUpFromLine size={14} />}
+                icon={<ArrowDownToLine size={14} />}
                 label={t('补全 Tokens')}
               >
                 <Text size='small'>
-                  {record.response.completion_tokens || 0}
+                  {responseTokenUsage.completionTokens === null
+                    ? '-'
+                    : formatMonitorTokenCount(
+                        responseTokenUsage.completionTokens,
+                      )}
                 </Text>
               </MetaPill>
             </div>
@@ -1934,6 +2094,13 @@ const Monitor = () => {
             </Space>
           );
         },
+      },
+      {
+        title: t('输入/输出'),
+        key: MONITOR_COLUMN_KEYS.TOKEN_USAGE,
+        dataIndex: 'prompt_tokens',
+        width: isCompact ? 140 : 150,
+        render: (_, record) => renderTokenUsageTag(record),
       },
       {
         title: t('耗时'),

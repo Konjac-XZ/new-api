@@ -123,7 +123,7 @@ func monitorBody(body []byte) (MonitorBody, bool) {
 
 // RecordStart records the start of a request
 // Returns the record ID for subsequent updates
-func RecordStart(c *gin.Context, requestBody []byte) string {
+func RecordStart(c *gin.Context, requestBody []byte, promptTokens int) string {
 	if !GetManager().IsEnabled() || GetManager().GetStore() == nil {
 		return ""
 	}
@@ -155,10 +155,11 @@ func RecordStart(c *gin.Context, requestBody []byte) string {
 			BodyTruncated: truncated,
 			ClientIP:      c.ClientIP(),
 		},
-		UserId:    userId,
-		TokenId:   tokenId,
-		TokenName: tokenName,
-		Model:     model,
+		UserId:       userId,
+		TokenId:      tokenId,
+		TokenName:    tokenName,
+		Model:        model,
+		PromptTokens: promptTokens,
 	}
 	record.StartTimeMs = timeToUnixMilli(record.StartTime)
 

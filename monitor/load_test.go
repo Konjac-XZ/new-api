@@ -76,7 +76,7 @@ func TestRecordLifecycleUpdatesLoadState(t *testing.T) {
 	c.Request = request
 	c.Set(common.RequestIdKey, "req-lifecycle")
 
-	recordID := RecordStart(c, []byte("request body"))
+	recordID := RecordStart(c, []byte("request body"), 1)
 	require.Equal(t, "req-lifecycle", recordID)
 
 	snapshot := GetLoadSnapshot()

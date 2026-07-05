@@ -19,15 +19,23 @@
   --sidebar-width: 180px;
   --sidebar-width-collapsed: 60px;
   --sidebar-current-width: var(--sidebar-width);
+  --classic-font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
 }
 
 body.sidebar-collapsed {
   --sidebar-current-width: var(--sidebar-width-collapsed);
 }
 
+body,
+body[theme-mode='dark'] .semi-always-light,
+:host,
+:host .semi-always-light,
+body [class^='semi-'],
+body [class*=' semi-'] {
+  font-family: var(--classic-font-family);
+}
+
 body {
-  font-family:
-    Lato, 'Helvetica Neue', Arial, Helvetica, 'Microsoft YaHei', sans-serif;
   color: var(--semi-color-text-0);
   background-color: var(--semi-color-bg-0);
 }

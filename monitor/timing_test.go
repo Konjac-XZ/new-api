@@ -129,6 +129,27 @@ func TestRequestSummaryOmitsRetryCountForFirstAttempt(t *testing.T) {
 	}
 }
 
+func TestRequestSummaryIncludesPromptTokensBeforeResponse(t *testing.T) {
+	startTime := time.Unix(1711456789, 123000000)
+
+	record := &RequestRecord{
+		ID:           "req-summary-prompt-tokens",
+		Status:       StatusProcessing,
+		StartTime:    startTime,
+		StartTimeMs:  startTime.UnixMilli(),
+		Downstream:   DownstreamInfo{},
+		PromptTokens: 1234,
+	}
+
+	summary := record.ToSummary()
+	if summary.PromptTokens != 1234 {
+		t.Fatalf("expected prompt_tokens 1234 before response, got %d", summary.PromptTokens)
+	}
+	if summary.CompletionTokens != 0 {
+		t.Fatalf("expected completion_tokens 0 before response, got %d", summary.CompletionTokens)
+	}
+}
+
 func TestMarkChannelPhaseStreamingSetsStreamingStartedTiming(t *testing.T) {
 	resetMonitorManagerForTest()
 	store := GetManager().GetStore()

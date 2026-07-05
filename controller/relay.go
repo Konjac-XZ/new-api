@@ -219,7 +219,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	// Record request start for monitoring
 	if monitor.IsEnabled() && shouldMonitorRequest(relayInfo, relayFormat) {
 		bodyBytes, _ := requestBodyStorage.Bytes()
-		monitorID = monitor.RecordStart(c, bodyBytes)
+		monitorID = monitor.RecordStart(c, bodyBytes, tokens)
 		if monitorID != "" {
 			c.Set("monitor_id", monitorID)
 			responseCaptureDegradationGeneration := monitor.DegradationGeneration()

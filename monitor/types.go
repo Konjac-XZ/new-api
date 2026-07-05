@@ -66,13 +66,14 @@ type RequestRecord struct {
 	Response *ResponseInfo `json:"response,omitempty"`
 
 	// Metadata
-	UserId      int    `json:"user_id"`
-	TokenId     int    `json:"token_id"`
-	TokenName   string `json:"token_name"`
-	ChannelId   int    `json:"channel_id"`
-	ChannelName string `json:"channel_name"`
-	Model       string `json:"model"`
-	IsStream    bool   `json:"is_stream"`
+	UserId       int    `json:"user_id"`
+	TokenId      int    `json:"token_id"`
+	TokenName    string `json:"token_name"`
+	ChannelId    int    `json:"channel_id"`
+	ChannelName  string `json:"channel_name"`
+	Model        string `json:"model"`
+	IsStream     bool   `json:"is_stream"`
+	PromptTokens int    `json:"prompt_tokens,omitempty"`
 
 	// Channel switching / retry info
 	CurrentPhase    string           `json:"current_phase,omitempty"`
@@ -238,6 +239,7 @@ type recordSnapshot struct {
 	ChannelName                        string
 	Model                              string
 	IsStream                           bool
+	PromptTokens                       int
 	CurrentPhase                       string
 	RetryCount                         int
 	CurrentAttemptStartedAtMs          int64
@@ -253,7 +255,6 @@ type recordSnapshot struct {
 	HasResponse      bool
 	StatusCode       int
 	HasError         bool
-	PromptTokens     int
 	CompletionTokens int
 }
 
@@ -279,6 +280,7 @@ func snapshotRecord(r *RequestRecord) recordSnapshot {
 		ChannelName:  r.ChannelName,
 		Model:        r.Model,
 		IsStream:     r.IsStream,
+		PromptTokens: r.PromptTokens,
 		CurrentPhase: r.CurrentPhase,
 	}
 	if len(r.ChannelAttempts) > 0 {
@@ -299,7 +301,9 @@ func snapshotRecord(r *RequestRecord) recordSnapshot {
 		snap.HasResponse = true
 		snap.StatusCode = r.Response.StatusCode
 		snap.HasError = r.Response.Error != nil
-		snap.PromptTokens = r.Response.PromptTokens
+		if r.Response.PromptTokens > 0 {
+			snap.PromptTokens = r.Response.PromptTokens
+		}
 		snap.CompletionTokens = r.Response.CompletionTokens
 	}
 	return snap
@@ -327,6 +331,7 @@ func (snap *recordSnapshot) toSummary() *RequestSummary {
 		ChannelName:                        snap.ChannelName,
 		Model:                              snap.Model,
 		IsStream:                           snap.IsStream,
+		PromptTokens:                       snap.PromptTokens,
 		CurrentPhase:                       snap.CurrentPhase,
 		RetryCount:                         snap.RetryCount,
 		CurrentAttemptStartedAtMs:          snap.CurrentAttemptStartedAtMs,
@@ -369,6 +374,7 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 		ChannelName:    r.ChannelName,
 		Model:          r.Model,
 		IsStream:       r.IsStream,
+		PromptTokens:   r.PromptTokens,
 		CurrentPhase:   r.CurrentPhase,
 		CurrentChannel: cloneCurrentChannel(r.CurrentChannel),
 	}
@@ -384,7 +390,9 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 	if r.Response != nil {
 		summary.StatusCode = r.Response.StatusCode
 		summary.HasError = r.Response.Error != nil
-		summary.PromptTokens = r.Response.PromptTokens
+		if r.Response.PromptTokens > 0 {
+			summary.PromptTokens = r.Response.PromptTokens
+		}
 		summary.CompletionTokens = r.Response.CompletionTokens
 	}
 
