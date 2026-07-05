@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { Plus, Trash2, Save } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -60,6 +59,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { getBgColorClass } from '@/lib/colors'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import { SettingsSwitchField } from '../components/settings-form-layout'
 import { SettingsSection } from '../components/settings-section'

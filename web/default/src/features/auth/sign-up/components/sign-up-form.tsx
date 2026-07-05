@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -51,6 +50,7 @@ import {
 } from '@/features/auth/lib/storage'
 import { useStatus } from '@/hooks/use-status'
 import { cn } from '@/lib/utils'
+import { zodResolver } from '@/lib/zod-resolver'
 
 export function SignUpForm({
   className,

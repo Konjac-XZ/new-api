@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { type Table } from '@tanstack/react-table'
+import type { Table } from '@tanstack/react-table'
 import * as React from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -40,13 +40,7 @@ export function DataTableViewOptions<TData>({
   const { t } = useTranslation()
 
   const hideableColumns = React.useMemo(
-    () =>
-      table
-        .getAllColumns()
-        .filter(
-          (column) =>
-            typeof column.accessorFn !== 'undefined' && column.getCanHide()
-        ),
+    () => table.getAllLeafColumns().filter((column) => column.getCanHide()),
     [table]
   )
 

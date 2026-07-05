@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import type { Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
@@ -40,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { zodResolver } from '@/lib/zod-resolver'
 import { DEFAULT_CURRENCY_CONFIG } from '@/stores/system-config-store'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'

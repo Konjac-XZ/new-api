@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
@@ -118,6 +117,7 @@ import {
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
+import { zodResolver } from '@/lib/zod-resolver'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
@@ -61,6 +60,7 @@ import {
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import {
   createPlan,

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertTriangle, Save } from 'lucide-react'
 import {
   forwardRef,
@@ -62,6 +61,7 @@ import {
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import {
   EMPTY_LANE_ENABLED,

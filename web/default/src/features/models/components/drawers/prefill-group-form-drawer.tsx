@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -63,6 +62,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import { createPrefillGroup, updatePrefillGroup } from '../../api'
 import { ENDPOINT_TEMPLATES } from '../../constants'

@@ -35,6 +35,7 @@ type DataTableRowProps<TData> = {
   className?: string
   getColumnClassName?: DataTableColumnClassName
   cellRenderColumns?: TanstackTable<TData>['options']['columns']
+  visibleColumnIds?: string
 } & Omit<React.ComponentProps<typeof TableRow>, 'children'>
 
 type DataTableRowInnerProps<TData> = DataTableRowProps<TData> & {
@@ -47,11 +48,17 @@ function DataTableRowInner<TData>({
   className,
   getColumnClassName,
   cellRenderColumns,
+  visibleColumnIds,
   ...rowProps
 }: DataTableRowInnerProps<TData>) {
   // Destructured only to keep it out of `rowProps` (it is not a valid DOM attr)
   // and to feed the memo comparator below; it is intentionally unused here.
   void cellRenderColumns
+  void visibleColumnIds
+
+  const visibleCells = row
+    .getAllCells()
+    .filter((cell) => cell.column.getIsVisible())
 
   return (
     <TableRow
@@ -59,7 +66,7 @@ function DataTableRowInner<TData>({
       className={className}
       {...rowProps}
     >
-      {row.getVisibleCells().map((cell) => {
+      {visibleCells.map((cell) => {
         const renderedCell = renderCellContent(cell)
 
         return (
@@ -93,7 +100,8 @@ const MemoizedDataTableRow = React.memo(DataTableRowInner, (prev, next) => {
     prev.className === next.className &&
     prev.isSelected === next.isSelected &&
     prev.getColumnClassName === next.getColumnClassName &&
-    prev.cellRenderColumns === next.cellRenderColumns
+    prev.cellRenderColumns === next.cellRenderColumns &&
+    prev.visibleColumnIds === next.visibleColumnIds
   )
 }) as typeof DataTableRowInner
 

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -38,6 +37,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { testDeploymentConnectionWithKey } from '@/features/models/api'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import {
   SettingsForm,

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { Link } from '@tanstack/react-router'
 import { Loader2, LogIn, KeyRound } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -54,6 +53,7 @@ import {
   isPasskeySupported as detectPasskeySupport,
 } from '@/lib/passkey'
 import { cn } from '@/lib/utils'
+import { zodResolver } from '@/lib/zod-resolver'
 
 export function UserAuthForm({
   className,

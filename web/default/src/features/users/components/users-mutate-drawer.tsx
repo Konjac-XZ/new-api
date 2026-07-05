@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { Pencil } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -72,6 +71,7 @@ import {
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
+import { zodResolver } from '@/lib/zod-resolver'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {

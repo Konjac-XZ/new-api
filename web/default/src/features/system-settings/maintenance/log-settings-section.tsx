@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -61,6 +60,7 @@ import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { formatTimestampToDate } from '@/lib/format'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import {
   getCurrentLogCleanupTask,

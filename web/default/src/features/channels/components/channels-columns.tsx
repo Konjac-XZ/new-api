@@ -760,12 +760,21 @@ export function useChannelsColumns(
                   <DynamicBreakerIndicator channel={channel} />
                   <UpstreamUpdateTags channel={channel} />
                 </div>
-                <RemarkCell channel={channel} />
               </div>
             </div>
           )
         },
         minSize: 200,
+      },
+
+      // Remark column
+      {
+        accessorKey: 'remark',
+        header: t('Remark'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => <RemarkCell channel={row.original} />,
+        size: 180,
+        enableSorting: false,
       },
 
       // Type column

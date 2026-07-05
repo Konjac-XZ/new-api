@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -37,10 +36,15 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import { createVendor, updateVendor } from '../../api'
 import { vendorsQueryKeys, modelsQueryKeys } from '../../lib'
-import { vendorFormSchema, type Vendor } from '../../types'
+import {
+  vendorFormSchema,
+  type Vendor,
+  type VendorFormValues,
+} from '../../types'
 
 type VendorMutateDialogProps = {
   open: boolean
@@ -60,7 +64,7 @@ export function VendorMutateDialog({
   const isEdit = Boolean(currentVendor?.id)
   const [isSaving, setIsSaving] = useState(false)
 
-  const form = useForm({
+  const form = useForm<VendorFormValues>({
     resolver: zodResolver(vendorFormSchema),
     defaultValues: {
       name: '',

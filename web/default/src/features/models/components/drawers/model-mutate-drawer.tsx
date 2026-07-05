@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, Loader2 } from 'lucide-react'
 import { useEffect, useState, useCallback, useMemo } from 'react'
@@ -80,6 +79,7 @@ import { useUpdateOption } from '@/features/system-settings/hooks/use-update-opt
 import { normalizeJsonString } from '@/features/system-settings/models/utils'
 import type { ModelSettings } from '@/features/system-settings/types'
 import { safeJsonParse } from '@/features/system-settings/utils/json-parser'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import { createModel, updateModel, getModel, getVendors } from '../../api'
 import { getNameRuleOptions, ENDPOINT_TEMPLATES } from '../../constants'

@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -43,6 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { CreemProduct } from '@/features/wallet/types'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import { safeNumberFieldProps } from '../utils/numeric-field'
 

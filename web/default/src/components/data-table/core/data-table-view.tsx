@@ -319,13 +319,19 @@ function renderDefaultRow<TData>(
   row: Row<TData>,
   getColumnClassName: DataTableColumnClassName
 ) {
+  const visibleColumnIds = props.table
+    .getVisibleLeafColumns()
+    .map((column) => column.id)
+    .join('\u001f')
+
   return (
     <DataTableRow
-      key={row.id}
+      key={`${row.id}:${visibleColumnIds}`}
       row={row}
       className={cn(props.tableBodyRowClassName, props.getRowClassName?.(row))}
       getColumnClassName={getColumnClassName}
       cellRenderColumns={props.table.options.columns}
+      visibleColumnIds={visibleColumnIds}
     />
   )
 }

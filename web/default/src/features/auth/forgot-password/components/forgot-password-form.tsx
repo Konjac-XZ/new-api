@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowRight, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -43,6 +42,7 @@ import {
 import { useTurnstile } from '@/features/auth/hooks/use-turnstile'
 import { useCountdown } from '@/hooks/use-countdown'
 import { cn } from '@/lib/utils'
+import { zodResolver } from '@/lib/zod-resolver'
 
 export function ForgotPasswordForm({
   className,

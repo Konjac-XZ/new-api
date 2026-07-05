@@ -16,7 +16,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { zodResolver } from '@hookform/resolvers/zod'
 import { type FormEvent, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -53,6 +52,7 @@ import {
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
 import { addTimeToDate } from '@/lib/time'
+import { zodResolver } from '@/lib/zod-resolver'
 
 import { createRedemption, updateRedemption, getRedemption } from '../api'
 import { SUCCESS_MESSAGES } from '../constants'
