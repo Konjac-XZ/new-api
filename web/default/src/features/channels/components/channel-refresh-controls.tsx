@@ -23,13 +23,14 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Tooltip,
   TooltipContent,
@@ -184,75 +185,80 @@ export function ChannelAutoRefreshControl() {
       className='flex items-center gap-1.5'
       data-channel-auto-refresh-control
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type='button'
-              variant={enabled ? 'default' : 'outline'}
-              size='sm'
-              onClick={() => setEnabled((previous) => !previous)}
-              aria-pressed={enabled}
-              aria-label={t('Auto refresh')}
-              className='gap-1.5 px-2'
-            />
-          }
-        >
-          <RefreshCw
-            className={cn(
-              'h-4 w-4',
-              enabled && !blockReason && 'animate-spin [animation-duration:2s]'
-            )}
-          />
-          <span className='hidden lg:inline'>{t('Auto refresh')}</span>
-          {enabled && (
-            <span className='text-primary-foreground/80 font-mono text-xs tabular-nums'>
-              {remainingSeconds}s
-            </span>
-          )}
-        </TooltipTrigger>
-        <TooltipContent className='max-w-xs'>
-          <div className='space-y-1'>
-            <div>{tooltip}</div>
-            <div className='text-muted-foreground text-xs'>
-              {t(
-                'Auto refresh pauses while channel edits, dialogs, selected rows, or focused inputs could conflict.'
+      <DropdownMenu modal={false}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type='button'
+                    variant={enabled ? 'default' : 'outline'}
+                    size='sm'
+                    aria-pressed={enabled}
+                    aria-label={t('Auto refresh')}
+                    className='gap-1.5 px-2'
+                  />
+                }
+              />
+            }
+          >
+            <RefreshCw
+              className={cn(
+                'h-4 w-4',
+                enabled &&
+                  !blockReason &&
+                  'animate-spin [animation-duration:2s]'
               )}
+            />
+            <span className='hidden lg:inline'>{t('Auto refresh')}</span>
+            {enabled && (
+              <span className='text-primary-foreground/80 font-mono text-xs tabular-nums'>
+                {remainingSeconds}s
+              </span>
+            )}
+          </TooltipTrigger>
+          <TooltipContent className='max-w-xs'>
+            <div className='space-y-1'>
+              <div>{tooltip}</div>
+              <div className='text-muted-foreground text-xs'>
+                {t(
+                  'Auto refresh pauses while channel edits, dialogs, selected rows, or focused inputs could conflict.'
+                )}
+              </div>
             </div>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-
-      <Select
-        value={String(intervalSeconds)}
-        onValueChange={(value) => {
-          const next = Number(value)
-          if (
-            AUTO_REFRESH_INTERVAL_SECONDS.includes(
-              next as (typeof AUTO_REFRESH_INTERVAL_SECONDS)[number]
-            )
-          ) {
-            setIntervalSeconds(next)
-          }
-        }}
-      >
-        <SelectTrigger
-          size='sm'
-          className='w-[74px]'
-          aria-label={t('Refresh interval')}
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent alignItemWithTrigger={false}>
-          <SelectGroup>
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align='end' className='w-52'>
+          <DropdownMenuCheckboxItem
+            checked={enabled}
+            onCheckedChange={(checked) => setEnabled(Boolean(checked))}
+          >
+            <RefreshCw className='h-4 w-4' />
+            {t('Enable auto refresh')}
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup
+            value={String(intervalSeconds)}
+            onValueChange={(value) => {
+              const next = Number(value)
+              if (
+                AUTO_REFRESH_INTERVAL_SECONDS.includes(
+                  next as (typeof AUTO_REFRESH_INTERVAL_SECONDS)[number]
+                )
+              ) {
+                setIntervalSeconds(next)
+              }
+            }}
+          >
             {AUTO_REFRESH_INTERVAL_SECONDS.map((seconds) => (
-              <SelectItem key={seconds} value={String(seconds)}>
+              <DropdownMenuRadioItem key={seconds} value={String(seconds)}>
                 {formatIntervalLabel(seconds)}
-              </SelectItem>
+              </DropdownMenuRadioItem>
             ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
