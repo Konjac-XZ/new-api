@@ -3989,6 +3989,7 @@
     "单渠道最大重试次数": "Maximum retries per channel",
     "同一渠道失败后的最大重试次数": "Maximum retries after failures on the same channel",
     "默认 1（仅请求一次）。超过该次数后才切换到下一个渠道": "Default is 1 (send only once). Switch to the next channel only after this count is exceeded.",
+    "动态熔断": "Dynamic breaker",
     "启用动态熔断冷却": "Enable dynamic circuit breaker cooldown",
     "仅在开启自动禁用时生效。根据真实请求的近期失败、连续失败和恢复情况，临时将该渠道移出候选列表；不改变现有优先级和权重机制。": "Only takes effect when automatic disabling is enabled. Based on recent failures, consecutive failures, and recovery from real requests, temporarily removes this channel from the candidate list without changing the existing priority and weight mechanism.",
     "容错系数": "Tolerance coefficient",

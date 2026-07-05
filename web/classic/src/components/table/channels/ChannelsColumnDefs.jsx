@@ -183,11 +183,11 @@ const RemarkEditor = ({ record, manageChannel }) => {
       return;
     }
     submittedValueRef.current = nextRemark;
-    Promise.resolve(manageChannel(record.id, 'remark', record, nextRemark)).finally(
-      () => {
-        submittedValueRef.current = null;
-      },
-    );
+    Promise.resolve(
+      manageChannel(record.id, 'remark', record, nextRemark),
+    ).finally(() => {
+      submittedValueRef.current = null;
+    });
   };
 
   const handleBlur = (nextValue) => {
@@ -554,7 +554,11 @@ export const getChannelsColumns = ({
             <span>{text}</span>
           );
 
-        if (!passThroughEnabled && !showUpstreamUpdateTag && !dynamicBreakerEnabled) {
+        if (
+          !passThroughEnabled &&
+          !showUpstreamUpdateTag &&
+          !dynamicBreakerEnabled
+        ) {
           return nameNode;
         }
 
@@ -562,10 +566,7 @@ export const getChannelsColumns = ({
           <Space spacing={6} align='center'>
             {nameNode}
             {dynamicBreakerEnabled && (
-              <Tooltip
-                content={t('已开启动态熔断保护，点击查看详情')}
-                position='top'
-              >
+              <Tooltip content={t('动态熔断')} position='top'>
                 <span
                   className='inline-flex items-center cursor-pointer'
                   style={{ color: 'var(--semi-color-link)' }}

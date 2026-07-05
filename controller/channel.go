@@ -93,12 +93,15 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	return query
 }
 
-func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm.DB {
+func buildChannelListQuery(group string, statusFilter int, typeFilter int, dynamicBreakerOnly bool) *gorm.DB {
 	query := model.DB.Model(&model.Channel{})
 	query = model.ApplyChannelGroupFilter(query, group)
 	query = applyChannelStatusFilter(query, statusFilter)
 	if typeFilter >= 0 {
 		query = query.Where("type = ?", typeFilter)
+	}
+	if dynamicBreakerOnly {
+		query = query.Joins("JOIN channel_breaker_states ON channel_breaker_states.channel_id = channels.id AND channel_breaker_states.dynamic_circuit_breaker = ?", true)
 	}
 	return query
 }
@@ -119,6 +122,7 @@ func GetAllChannels(c *gin.Context) {
 	statusParam := c.Query("status")
 	// statusFilter: -1 all, 1 enabled, 0 disabled (include auto & manual)
 	statusFilter := parseStatusFilter(statusParam)
+	dynamicBreakerOnly, _ := strconv.ParseBool(c.Query("dynamic_breaker"))
 	// type filter
 	typeStr := c.Query("type")
 	typeFilter := -1
@@ -131,13 +135,13 @@ func GetAllChannels(c *gin.Context) {
 	var total int64
 
 	if enableTagMode {
-		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+		tags, err := model.GetPaginatedChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, dynamicBreakerOnly), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 		if err != nil {
 			common.SysError("failed to get paginated tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签失败，请稍后重试"})
 			return
 		}
-		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter))
+		total, err = model.CountChannelTags(buildChannelListQuery(groupFilter, statusFilter, typeFilter, dynamicBreakerOnly))
 		if err != nil {
 			common.SysError("failed to count tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签数量失败，请稍后重试"})
@@ -148,7 +152,7 @@ func GetAllChannels(c *gin.Context) {
 				continue
 			}
 			var tagChannels []*model.Channel
-			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter).Where("tag = ?", *tag)).
+			err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, dynamicBreakerOnly).Where("tag = ?", *tag)).
 				Omit("key").
 				Find(&tagChannels).Error
 			if err != nil {
@@ -164,13 +168,13 @@ func GetAllChannels(c *gin.Context) {
 			channelData = append(channelData, tagChannels...)
 		}
 	} else {
-		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter).Count(&total).Error; err != nil {
+		if err := buildChannelListQuery(groupFilter, statusFilter, typeFilter, dynamicBreakerOnly).Count(&total).Error; err != nil {
 			common.SysError("failed to count channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道数量失败，请稍后重试"})
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
+		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter, dynamicBreakerOnly)).
 			Limit(pageInfo.GetPageSize()).
 			Offset(pageInfo.GetStartIdx()).
 			Omit("key").
@@ -192,7 +196,7 @@ func GetAllChannels(c *gin.Context) {
 	}
 	items := buildChannelListItems(channelData)
 
-	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1)
+	countQuery := buildChannelListQuery(groupFilter, statusFilter, -1, dynamicBreakerOnly)
 	var results []struct {
 		Type  int64
 		Count int64
@@ -324,6 +328,7 @@ func SearchChannels(c *gin.Context) {
 	modelKeyword := c.Query("model")
 	statusParam := c.Query("status")
 	statusFilter := parseStatusFilter(statusParam)
+	dynamicBreakerOnly, _ := strconv.ParseBool(c.Query("dynamic_breaker"))
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	sortOptions := parseChannelSortOptions(c, idSort)
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
@@ -340,7 +345,7 @@ func SearchChannels(c *gin.Context) {
 		for _, tag := range tags {
 			if tag != nil && *tag != "" {
 				var tagChannels []*model.Channel
-				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1).Where("tag = ?", *tag)).
+				err := sortOptions.Apply(buildChannelListQuery(group, -1, -1, dynamicBreakerOnly).Where("tag = ?", *tag)).
 					Omit("key").
 					Find(&tagChannels).Error
 				if err != nil {
@@ -382,6 +387,16 @@ func SearchChannels(c *gin.Context) {
 				continue
 			}
 			filtered = append(filtered, ch)
+		}
+		channelData = filtered
+	}
+
+	if dynamicBreakerOnly && !enableTagMode {
+		filtered := make([]*model.Channel, 0, len(channelData))
+		for _, ch := range channelData {
+			if ch.IsDynamicCircuitBreakerEnabled() {
+				filtered = append(filtered, ch)
+			}
 		}
 		channelData = filtered
 	}

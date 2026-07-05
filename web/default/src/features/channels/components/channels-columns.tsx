@@ -75,7 +75,7 @@ import {
   type TagRow,
 } from '../lib'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
-import type { Channel } from '../types'
+import type { Channel, ChannelBreakerState } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
@@ -210,6 +210,94 @@ function DynamicBreakerIndicator({ channel }: { channel: Channel }) {
       </Tooltip>
     </TooltipProvider>
   )
+}
+
+function formatBreakerDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds))
+  const minutes = Math.floor(seconds / 60)
+  const restSeconds = seconds % 60
+  return `${minutes}:${String(restSeconds).padStart(2, '0')}`
+}
+
+function BreakerRuntimeBadge({
+  state,
+}: {
+  state?: ChannelBreakerState | null
+}) {
+  const { t } = useTranslation()
+  const [nowSeconds, setNowSeconds] = useState(() =>
+    Math.floor(Date.now() / 1000)
+  )
+  const shouldTick = state?.phase === 'cooling' && Number(state.cooldown_at) > 0
+
+  useEffect(() => {
+    if (!shouldTick) {
+      return undefined
+    }
+    const timer = window.setInterval(() => {
+      setNowSeconds(Math.floor(Date.now() / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [shouldTick])
+
+  if (!state?.dynamic_enabled) {
+    return null
+  }
+
+  if (state.phase === 'cooling') {
+    const cooldownAt = Number(state.cooldown_at || 0)
+    const remaining =
+      cooldownAt > 0
+        ? Math.max(0, cooldownAt - nowSeconds)
+        : Math.max(0, Number(state.remaining_cooldown_seconds || 0))
+    const cooldownSeconds = Math.max(0, Number(state.cooldown_seconds || 0))
+    const label =
+      cooldownSeconds > 0
+        ? `${formatBreakerDuration(remaining)}/${formatBreakerDuration(cooldownSeconds)}`
+        : formatBreakerDuration(remaining)
+
+    return (
+      <TooltipProvider delay={100}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <StatusBadge
+                label={label}
+                variant='danger'
+                size='sm'
+                copyable={false}
+              />
+            }
+          />
+          <TooltipContent side='top'>{t('Cooldown')}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
+
+  if (state.phase === 'awaiting_probe') {
+    return (
+      <StatusBadge
+        label={t('Awaiting probe')}
+        variant='warning'
+        size='sm'
+        copyable={false}
+      />
+    )
+  }
+
+  if (state.phase === 'observation') {
+    return (
+      <StatusBadge
+        label={t('Observation')}
+        variant='warning'
+        size='sm'
+        copyable={false}
+      />
+    )
+  }
+
+  return null
 }
 
 function RemarkCell({ channel }: { channel: Channel }) {
@@ -912,6 +1000,22 @@ export function useChannelsColumns(
         enableSorting: false,
       },
 
+      {
+        id: 'dynamic_breaker',
+        header: t('Dynamic Breaker'),
+        accessorFn: (channel) =>
+          channel.breaker_state?.dynamic_enabled === true
+            ? 'enabled'
+            : 'disabled',
+        filterFn: (row, id, value) => {
+          if (!value || value.length === 0 || value.includes('all')) {
+            return true
+          }
+          return value.includes(String(row.getValue(id)))
+        },
+        enableHiding: false,
+      },
+
       // Status column
       {
         accessorKey: 'status',
@@ -966,6 +1070,14 @@ export function useChannelsColumns(
             isMultiKey && keySize > 0
               ? `${t(config.label)} (${enabledCount}/${keySize})`
               : t(config.label)
+          const statusBadge = (
+            <StatusBadge
+              label={label}
+              variant={config.variant}
+              size='sm'
+              copyable={false}
+            />
+          )
 
           // Auto-disabled: show reason and time tooltip
           if (status === 3) {
@@ -990,12 +1102,7 @@ export function useChannelsColumns(
                 <TooltipProvider delay={100}>
                   <Tooltip>
                     <TooltipTrigger render={<span />}>
-                      <StatusBadge
-                        label={label}
-                        variant={config.variant}
-                        size='sm'
-                        copyable={false}
-                      />
+                      {statusBadge}
                     </TooltipTrigger>
                     <TooltipContent side='top' className='max-w-xs'>
                       <div className='space-y-1 text-xs'>
@@ -1017,13 +1124,24 @@ export function useChannelsColumns(
             }
           }
 
+          const breakerBadge =
+            status === 1 ? (
+              <BreakerRuntimeBadge state={channel.breaker_state} />
+            ) : null
+
+          if (breakerBadge) {
+            return (
+              <div className='-ml-1.5 flex max-w-full min-w-0 flex-wrap items-center gap-1'>
+                {statusBadge}
+                {breakerBadge}
+              </div>
+            )
+          }
+
           return (
-            <StatusBadge
-              label={label}
-              variant={config.variant}
-              size='sm'
-              copyable={false}
-            />
+            <div className='-ml-1.5 flex max-w-full min-w-0 items-center'>
+              {statusBadge}
+            </div>
           )
         },
         filterFn: (row, id, value) => {
@@ -1039,7 +1157,7 @@ export function useChannelsColumns(
           }
           return false
         },
-        size: 120,
+        size: 180,
         enableSorting: false,
       },
 

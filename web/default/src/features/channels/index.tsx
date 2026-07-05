@@ -18,17 +18,20 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Settings2 } from 'lucide-react'
+import { Expand, Minimize2, Settings2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { ROLE } from '@/lib/roles'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getChannelOps } from './api'
@@ -37,8 +40,58 @@ import { ChannelsPrimaryButtons } from './components/channels-primary-buttons'
 import { ChannelsProvider } from './components/channels-provider'
 import { ChannelsTable } from './components/channels-table'
 
+function useFullscreenWakeLock() {
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null)
+
+  useEffect(() => {
+    const handleChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+    }
+    document.addEventListener('fullscreenchange', handleChange)
+    handleChange()
+    return () => document.removeEventListener('fullscreenchange', handleChange)
+  }, [])
+
+  useEffect(() => {
+    if (!isFullscreen || !navigator.wakeLock?.request) return
+    let cancelled = false
+    void navigator.wakeLock
+      .request('screen')
+      .then((lock) => {
+        if (cancelled) {
+          void lock.release()
+          return
+        }
+        wakeLockRef.current = lock
+        lock.addEventListener('release', () => {
+          wakeLockRef.current = null
+        })
+      })
+      .catch(() => undefined)
+
+    return () => {
+      cancelled = true
+      const lock = wakeLockRef.current
+      wakeLockRef.current = null
+      void lock?.release().catch(() => undefined)
+    }
+  }, [isFullscreen])
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen()
+      return
+    }
+    void document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+  }, [])
+
+  return { isFullscreen, toggleFullscreen }
+}
+
 export function Channels() {
   const { t } = useTranslation()
+  const { isFullscreen, toggleFullscreen } = useFullscreenWakeLock()
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )
@@ -86,20 +139,47 @@ export function Channels() {
 
   return (
     <ChannelsProvider>
-      <SectionPageLayout fixedContent>
-        <SectionPageLayout.Title>
-          <span className='flex min-w-0 items-center gap-2'>
-            <span className='truncate'>{t('Channels')}</span>
-            {retryBadge}
-          </span>
-        </SectionPageLayout.Title>
-        <SectionPageLayout.Actions>
-          <ChannelsPrimaryButtons />
-        </SectionPageLayout.Actions>
-        <SectionPageLayout.Content>
-          <ChannelsTable />
-        </SectionPageLayout.Content>
-      </SectionPageLayout>
+      <div
+        className={cn(
+          'bg-background flex h-full min-h-0 flex-col',
+          isFullscreen && 'fixed inset-0 z-50 p-3'
+        )}
+      >
+        <SectionPageLayout fixedContent>
+          <SectionPageLayout.Title>
+            <span className='flex min-w-0 items-center gap-2'>
+              <span className='truncate'>{t('Channels')}</span>
+              {retryBadge}
+            </span>
+          </SectionPageLayout.Title>
+          <SectionPageLayout.Actions>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='icon'
+                    onClick={toggleFullscreen}
+                  />
+                }
+              >
+                {isFullscreen ? <Minimize2 /> : <Expand />}
+                <span className='sr-only'>
+                  {isFullscreen ? t('Exit fullscreen') : t('Enter fullscreen')}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isFullscreen ? t('Exit fullscreen') : t('Enter fullscreen')}
+              </TooltipContent>
+            </Tooltip>
+            <ChannelsPrimaryButtons />
+          </SectionPageLayout.Actions>
+          <SectionPageLayout.Content>
+            <ChannelsTable />
+          </SectionPageLayout.Content>
+        </SectionPageLayout>
+      </div>
 
       <ChannelsDialogs />
     </ChannelsProvider>

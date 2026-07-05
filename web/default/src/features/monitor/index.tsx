@@ -249,10 +249,7 @@ function getAttemptStatusClassName(status: string | undefined): string {
   return getStatusClassName('waiting_upstream')
 }
 
-function MetricCard(props: {
-  label: string
-  value: string | number
-}) {
+function MetricCard(props: { label: string; value: string | number }) {
   return (
     <Card className='rounded-lg py-3' size='sm'>
       <CardContent className='px-3'>
@@ -1052,9 +1049,7 @@ function RequestDetail(props: {
   )
 }
 
-function useFullscreenWakeLock(
-  targetRef: React.RefObject<HTMLDivElement | null>
-) {
+function useFullscreenWakeLock() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
 
@@ -1097,8 +1092,8 @@ function useFullscreenWakeLock(
       void document.exitFullscreen()
       return
     }
-    void targetRef.current?.requestFullscreen({ navigationUI: 'hide' })
-  }, [targetRef])
+    void document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+  }, [])
 
   return { isFullscreen, toggleFullscreen }
 }
@@ -1112,9 +1107,7 @@ export function Monitor() {
   const [visibleColumns, setVisibleColumns] = useState(
     getInitialMonitorVisibleColumns
   )
-  const fullscreenRef = useRef<HTMLDivElement | null>(null)
-  const { isFullscreen, toggleFullscreen } =
-    useFullscreenWakeLock(fullscreenRef)
+  const { isFullscreen, toggleFullscreen } = useFullscreenWakeLock()
   const detail = useRequestDetail()
   const monitorWs = useMonitorWs({ focusedRequestId: selectedId })
 
@@ -1332,9 +1325,8 @@ export function Monitor() {
 
   return (
     <div
-      ref={fullscreenRef}
       className={cn(
-        'bg-background h-full min-h-0',
+        'bg-background flex h-full min-h-0 flex-col',
         isFullscreen && 'fixed inset-0 z-50 p-3'
       )}
     >

@@ -213,6 +213,42 @@ func TestGetAllChannelsLoadsExternalBreakerConfig(t *testing.T) {
 	}
 }
 
+func TestGetAllChannelsFiltersDynamicBreakerChannels(t *testing.T) {
+	setupChannelBreakerDetailTestDB(t)
+
+	dynamicChannel := &model.Channel{
+		Name:                  "dynamic-breaker-channel",
+		Key:                   "sk-dynamic-breaker",
+		Status:                common.ChannelStatusEnabled,
+		Group:                 "default",
+		Models:                "gpt-4o-mini",
+		DynamicCircuitBreaker: true,
+	}
+	require.NoError(t, dynamicChannel.Insert())
+
+	plainChannel := &model.Channel{
+		Name:   "plain-channel",
+		Key:    "sk-plain",
+		Status: common.ChannelStatusEnabled,
+		Group:  "default",
+		Models: "gpt-4o-mini",
+	}
+	require.NoError(t, plainChannel.Insert())
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/channel/?p=1&page_size=20&dynamic_breaker=true", nil, 1)
+	GetAllChannels(ctx)
+
+	response := decodeAPIResponse(t, recorder)
+	require.True(t, response.Success, "expected success response, got message: %s", response.Message)
+
+	var list channelListResponse
+	require.NoError(t, common.Unmarshal(response.Data, &list))
+	require.Equal(t, int64(1), list.Total)
+	require.Len(t, list.Items, 1)
+	assert.Equal(t, dynamicChannel.Id, list.Items[0].Id)
+	assert.True(t, list.Items[0].BreakerState.DynamicEnabled)
+}
+
 func TestUpdateChannelPreservesExternalConfigWhenRequestOmitsFields(t *testing.T) {
 	setupChannelBreakerDetailTestDB(t)
 

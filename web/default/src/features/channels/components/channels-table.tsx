@@ -133,6 +133,11 @@ export function ChannelsTable() {
           return stored === 'enabled' || stored === 'disabled' ? [stored] : []
         },
       },
+      {
+        columnId: 'dynamic_breaker',
+        searchKey: 'dynamic_breaker',
+        type: 'array',
+      },
       { columnId: 'type', searchKey: 'type', type: 'array' },
       { columnId: 'group', searchKey: 'group', type: 'array' },
       { columnId: 'model', searchKey: 'model', type: 'string' },
@@ -158,6 +163,11 @@ export function ChannelsTable() {
   // Extract filters from column filters
   const statusFilter =
     (columnFilters.find((f) => f.id === 'status')?.value as string[]) || []
+  const dynamicBreakerFilter =
+    (columnFilters.find((f) => f.id === 'dynamic_breaker')?.value as
+      | string[]
+      | undefined) || []
+  const dynamicBreakerOnly = dynamicBreakerFilter.includes('enabled')
   const typeFilter = useMemo(
     () => (columnFilters.find((f) => f.id === 'type')?.value as string[]) || [],
     [columnFilters]
@@ -235,6 +245,7 @@ export function ChannelsTable() {
         statusFilter.length > 0 && !statusFilter.includes('all')
           ? statusFilter[0]
           : undefined,
+      dynamic_breaker: dynamicBreakerOnly || undefined,
       type:
         typeFilter.length > 0 && !typeFilter.includes('all')
           ? Number(typeFilter[0])
@@ -257,6 +268,7 @@ export function ChannelsTable() {
             statusFilter.length > 0 && !statusFilter.includes('all')
               ? statusFilter[0]
               : undefined,
+          dynamic_breaker: dynamicBreakerOnly || undefined,
           type:
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
@@ -276,6 +288,7 @@ export function ChannelsTable() {
             statusFilter.length > 0 && !statusFilter.includes('all')
               ? statusFilter[0]
               : undefined,
+          dynamic_breaker: dynamicBreakerOnly || undefined,
           type:
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
@@ -314,6 +327,7 @@ export function ChannelsTable() {
     totalCount,
     sorting,
     initialColumnVisibility: {
+      dynamic_breaker: false,
       models: false,
       tag: false,
     },
@@ -451,6 +465,17 @@ export function ChannelsTable() {
             columnId: 'status',
             title: t('Status'),
             options: [...CHANNEL_STATUS_OPTIONS],
+            singleSelect: true,
+          },
+          {
+            columnId: 'dynamic_breaker',
+            title: t('Dynamic Breaker'),
+            options: [
+              {
+                value: 'enabled',
+                label: 'Dynamic circuit breaker enabled',
+              },
+            ],
             singleSelect: true,
           },
           {

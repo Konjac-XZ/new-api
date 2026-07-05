@@ -28,6 +28,7 @@ const channelsSearchSchema = z.object({
   pageSize: z.number().optional().catch(undefined),
   filter: z.string().optional().catch(''),
   status: z.array(z.string()).optional().catch([]),
+  dynamic_breaker: z.array(z.string()).optional().catch([]),
   type: z.array(z.string()).optional().catch([]),
   group: z.array(z.string()).optional().catch([]),
   model: z.string().optional().catch(''),

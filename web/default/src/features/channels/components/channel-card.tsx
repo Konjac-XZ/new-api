@@ -96,8 +96,16 @@ function ChannelCardComponent({
   // In card view the enable/disable state is already conveyed by the inline
   // power toggle, so the plain "Enabled"/"Disabled" badge is redundant. Keep
   // only the informative states (e.g. auto-disabled, unknown) and tag rows.
+  const dynamicBreakerPhase = row.original.breaker_state?.phase
+  const showDynamicBreakerStatus =
+    row.original.status === CHANNEL_STATUS.ENABLED &&
+    row.original.breaker_state?.dynamic_enabled === true &&
+    (dynamicBreakerPhase === 'cooling' ||
+      dynamicBreakerPhase === 'awaiting_probe' ||
+      dynamicBreakerPhase === 'observation')
   const showStatusBadge =
     isTagRow ||
+    showDynamicBreakerStatus ||
     (row.original.status !== CHANNEL_STATUS.ENABLED &&
       row.original.status !== CHANNEL_STATUS.MANUAL_DISABLED)
 
