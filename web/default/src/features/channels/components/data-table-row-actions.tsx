@@ -33,6 +33,7 @@ import {
   Trash2,
   RefreshCw,
   Loader2,
+  HeartPulse,
 } from 'lucide-react'
 import { useContext, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -141,6 +142,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const handleManageKeys = () => {
     setCurrentRow(channel)
     setOpen('multi-key-manage')
+  }
+
+  const handleBreakerStatus = () => {
+    setCurrentRow(channel)
+    setOpen('breaker-status')
   }
 
   const handleToggleStatus = async (
@@ -361,6 +367,13 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               </DropdownMenuShortcut>
             </DropdownMenuItem>
           )}
+
+          <DropdownMenuItem onClick={handleBreakerStatus}>
+            {t('Dynamic Breaker')}
+            <DropdownMenuShortcut>
+              <HeartPulse size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
 
           <DropdownMenuSeparator />
 

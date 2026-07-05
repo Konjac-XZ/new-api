@@ -170,9 +170,9 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
 
 function DynamicBreakerIndicator({ channel }: { channel: Channel }) {
   const { t } = useTranslation()
+  const { setCurrentRow, setOpen } = useChannels()
   const dynamicEnabled =
-    channel.breaker_state?.dynamic_enabled === true ||
-    (channel.auto_ban === 1 && channel.dynamic_circuit_breaker === true)
+    channel.status === 1 && channel.breaker_state?.dynamic_enabled === true
 
   if (!dynamicEnabled) {
     return null
@@ -184,8 +184,23 @@ function DynamicBreakerIndicator({ channel }: { channel: Channel }) {
         <TooltipTrigger
           render={
             <Zap
-              className='text-info h-3.5 w-3.5 flex-shrink-0 fill-current'
-              aria-hidden='true'
+              className='text-info h-3.5 w-3.5 flex-shrink-0 cursor-pointer fill-current'
+              role='button'
+              tabIndex={0}
+              aria-label={t('Dynamic circuit breaker enabled')}
+              onClick={(event) => {
+                event.stopPropagation()
+                setCurrentRow(channel)
+                setOpen('breaker-status')
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setCurrentRow(channel)
+                  setOpen('breaker-status')
+                }
+              }}
             />
           }
         />

@@ -25,6 +25,7 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelBreakerDetailResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
   CopyChannelParams,
@@ -35,6 +36,7 @@ import type {
   GetChannelsResponse,
   MultiKeyManageParams,
   MultiKeyStatusResponse,
+  ResetChannelBreakerResponse,
   SearchChannelsParams,
   SearchChannelsResponse,
   TagOperationParams,
@@ -102,6 +104,32 @@ export async function searchChannels(
  */
 export async function getChannel(id: number): Promise<GetChannelResponse> {
   const res = await api.get(`/api/channel/${id}`)
+  return res.data
+}
+
+/**
+ * Get dynamic breaker runtime detail for one channel.
+ */
+export async function getChannelBreakerDetail(
+  id: number
+): Promise<ChannelBreakerDetailResponse> {
+  const res = await api.get(`/api/channel/${id}/breaker/detail`, {
+    params: { p: 1, page_size: 5 },
+  })
+  return res.data
+}
+
+/**
+ * Reset dynamic breaker runtime state for one channel.
+ */
+export async function resetChannelBreaker(
+  id: number
+): Promise<ResetChannelBreakerResponse> {
+  const res = await api.post(
+    `/api/channel/${id}/breaker/reset`,
+    null,
+    channelActionConfig()
+  )
   return res.data
 }
 

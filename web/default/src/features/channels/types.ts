@@ -206,6 +206,57 @@ export interface GetChannelResponse {
   data?: Channel
 }
 
+export interface BreakerPenaltyTraceDetail {
+  id: number
+  created_at: number
+  event_type: string
+  failure_kind: string
+  was_in_probation: boolean
+  was_awaiting_probe: boolean
+  force_cooldown: boolean
+  triggered_cooldown: boolean
+  cooldown_at_before: number
+  cooldown_at_after: number
+  pressure_before: number
+  pressure_after: number
+  fail_streak_before: number
+  fail_streak_after: number
+  trip_count_before: number
+  trip_count_after: number
+  hp_before: number
+  hp_damage: number
+  hp_after: number
+  base_cooldown_seconds: number
+  cooldown_multiplier: number
+  chronic_floor_seconds: number
+  final_cooldown_seconds: number
+  calculation_inputs: Record<string, unknown>
+  calculation_steps: string[]
+  calculation_result: Record<string, unknown>
+}
+
+export interface ChannelBreakerDetailResponse {
+  success: boolean
+  message?: string
+  data?: Channel & {
+    breaker_state?: ChannelBreakerState | null
+    trace_page?: {
+      items: BreakerPenaltyTraceDetail[]
+      total: number
+      page: number
+      page_size: number
+    }
+  }
+}
+
+export interface ResetChannelBreakerResponse {
+  success: boolean
+  message?: string
+  data?: {
+    channel_id?: number
+  }
+}
+
 export interface ChannelOpsResponse {
   success: boolean
   message?: string
