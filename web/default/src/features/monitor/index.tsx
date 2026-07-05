@@ -89,9 +89,11 @@ import {
   getMonitorTokenUsage,
   getOutputSpeed,
   getRetryCount,
+  getStartTimeMs,
   getTtftMs,
   isActiveStatus,
   isTerminalStatus,
+  SUMMARY_RETENTION_WINDOW_MS,
 } from './lib'
 import type { MonitorBodyType, MonitorRecord } from './types'
 import { useMonitorWs } from './use-monitor-ws'
@@ -250,7 +252,6 @@ function getAttemptStatusClassName(status: string | undefined): string {
 function MetricCard(props: {
   label: string
   value: string | number
-  description?: string
 }) {
   return (
     <Card className='rounded-lg py-3' size='sm'>
@@ -259,11 +260,6 @@ function MetricCard(props: {
         <div className='mt-1 text-lg font-semibold tabular-nums'>
           {props.value}
         </div>
-        {props.description ? (
-          <div className='text-muted-foreground mt-1 truncate text-xs'>
-            {props.description}
-          </div>
-        ) : null}
       </CardContent>
     </Card>
   )
@@ -1285,6 +1281,16 @@ export function Monitor() {
     [monitorColumns, visibleColumns]
   )
 
+  const loadWindowStartMs = clientNowMs - SUMMARY_RETENTION_WINDOW_MS
+  const recentLoadRecords = useMemo(
+    () =>
+      monitorWs.summaries.filter((record) => {
+        const startMs = getStartTimeMs(record)
+        return startMs >= loadWindowStartMs && startMs <= clientNowMs
+      }),
+    [clientNowMs, loadWindowStartMs, monitorWs.summaries]
+  )
+
   useEffect(() => {
     if (typeof localStorage === 'undefined') {
       return
@@ -1352,18 +1358,21 @@ export function Monitor() {
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-3'>
             <div className='grid shrink-0 grid-cols-2 gap-2 md:grid-cols-4'>
-              <MetricCard label={t('Total')} value={monitorWs.stats.total} />
-              <MetricCard label={t('Active')} value={monitorWs.stats.active} />
               <MetricCard
-                label={t('Memory')}
+                label={t('5m Load')}
+                value={recentLoadRecords.length}
+              />
+              <MetricCard
+                label={t('Monitor Memory')}
                 value={formatBytes(monitorWs.stats.memory)}
               />
               <MetricCard
-                label={t('Requests')}
-                value={`${monitorWs.stats.load.active_requests}/${monitorWs.stats.load.capacity}`}
-                description={
-                  monitorWs.stats.load.degraded ? t('Warning') : undefined
-                }
+                label={t('Concurrency')}
+                value={monitorWs.stats.load.active_requests}
+              />
+              <MetricCard
+                label={t('Recent Records')}
+                value={monitorWs.stats.total}
               />
             </div>
 

@@ -18,8 +18,9 @@ const (
 	UnregisterChanSize = 64
 
 	// Store limits
-	MaxRecords                 = 100
-	MonitorDegradeActiveLimit  = MaxRecords
-	MonitorRecoverActiveLimit  = MaxRecords * 8 / 10
+	MonitorMinRecords          = 100
+	MonitorRetentionWindow     = 5 * time.Minute
+	MonitorDegradeActiveLimit  = MonitorMinRecords
+	MonitorRecoverActiveLimit  = MonitorMinRecords * 8 / 10
 	MonitorBodyCaptureMaxBytes = 40 * 1024
 )

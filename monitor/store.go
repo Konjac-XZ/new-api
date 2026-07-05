@@ -22,14 +22,12 @@ type StoreEvent struct {
 	Payload interface{}
 }
 
-// Store is a ring buffer storage for request records.
-// Uses a global index lock plus per-slot locks to reduce contention.
+// Store keeps recent request records in chronological order.
+// Retention is time-window based with a minimum record floor.
 type Store struct {
-	records  []*recordSlot
-	index    map[string]int // ID -> position mapping
+	records  []*recordEntry
+	index    map[string]*recordEntry
 	mu       sync.RWMutex
-	head     int
-	count    int
 	events   chan StoreEvent
 	eventsMu sync.RWMutex
 
@@ -38,20 +36,16 @@ type Store struct {
 	realtimeEnabled atomic.Bool
 }
 
-type recordSlot struct {
+type recordEntry struct {
 	mu     sync.RWMutex
 	record *RequestRecord
 }
 
 // NewStore creates a new Store instance
 func NewStore() *Store {
-	records := make([]*recordSlot, MaxRecords)
-	for i := range records {
-		records[i] = &recordSlot{}
-	}
 	s := &Store{
-		records: records,
-		index:   make(map[string]int),
+		records: make([]*recordEntry, 0, MonitorMinRecords),
+		index:   make(map[string]*recordEntry),
 		events:  make(chan StoreEvent, 100),
 	}
 	// Zero-impact default: do not build/emit websocket payloads until a
@@ -67,6 +61,39 @@ func (s *Store) SetRealtimeEnabled(enabled bool) {
 
 func (s *Store) shouldEmitRealtime() bool {
 	return s.realtimeEnabled.Load()
+}
+
+func (s *Store) pruneLocked(now time.Time) {
+	if len(s.records) <= MonitorMinRecords {
+		return
+	}
+
+	cutoff := now.Add(-MonitorRetentionWindow)
+	removeCount := 0
+	for _, entry := range s.records {
+		if len(s.records)-removeCount <= MonitorMinRecords {
+			break
+		}
+		entry.mu.RLock()
+		record := entry.record
+		if record == nil {
+			entry.mu.RUnlock()
+			removeCount++
+			continue
+		}
+		if !record.StartTime.Before(cutoff) {
+			entry.mu.RUnlock()
+			break
+		}
+		delete(s.index, record.ID)
+		entry.mu.RUnlock()
+		removeCount++
+	}
+	if removeCount > 0 {
+		copy(s.records, s.records[removeCount:])
+		clear(s.records[len(s.records)-removeCount:])
+		s.records = s.records[:len(s.records)-removeCount]
+	}
 }
 
 func shouldEmitSummaryWhenDegraded(summary *RequestSummary) bool {
@@ -102,33 +129,30 @@ func (s *Store) emitEvent(eventType StoreEventType, payload interface{}) {
 // Add adds a new record to the store
 func (s *Store) Add(record *RequestRecord) {
 	emitRealtime := s.shouldEmitRealtime()
+	entry := &recordEntry{record: record}
 
 	s.mu.Lock()
-	slot := s.records[s.head]
-	slot.mu.Lock()
-
-	// If we're overwriting an existing record, remove it from the index
-	if slot.record != nil {
-		delete(s.index, slot.record.ID)
+	if existing := s.index[record.ID]; existing != nil {
+		for i, item := range s.records {
+			if item == existing {
+				s.records = append(s.records[:i], s.records[i+1:]...)
+				break
+			}
+		}
 	}
-
-	// Store the new record
-	slot.record = record
-	s.index[record.ID] = s.head
-
-	// Move head forward
-	s.head = (s.head + 1) % MaxRecords
-	if s.count < MaxRecords {
-		s.count++
+	s.records = append(s.records, entry)
+	s.index[record.ID] = entry
+	pruneAt := record.StartTime
+	if pruneAt.IsZero() {
+		pruneAt = time.Now()
 	}
+	s.pruneLocked(pruneAt)
+	s.mu.Unlock()
 
 	var snap recordSnapshot
 	if emitRealtime {
-		// Snapshot under slot lock (flat copy, no heap allocs)
 		snap = snapshotRecord(record)
 	}
-	slot.mu.Unlock()
-	s.mu.Unlock()
 
 	if emitRealtime {
 		// Build summary outside lock
@@ -143,29 +167,26 @@ func (s *Store) Update(id string, updater func(*RequestRecord)) {
 	emitRealtime := s.shouldEmitRealtime()
 
 	s.mu.RLock()
-	pos, exists := s.index[id]
-	if !exists {
+	entry := s.index[id]
+	if entry == nil {
 		s.mu.RUnlock()
 		return
 	}
-	slot := s.records[pos]
 	s.mu.RUnlock()
 
-	slot.mu.Lock()
-	record := slot.record
+	entry.mu.Lock()
+	record := entry.record
 	if record == nil || record.ID != id {
-		slot.mu.Unlock()
+		entry.mu.Unlock()
 		return
 	}
-
 	updater(record)
 
 	var snap recordSnapshot
 	if emitRealtime {
-		// Snapshot under slot lock (flat copy, no heap allocs)
 		snap = snapshotRecord(record)
 	}
-	slot.mu.Unlock()
+	entry.mu.Unlock()
 
 	if emitRealtime {
 		// Build summary outside lock
@@ -181,23 +202,21 @@ func (s *Store) UpdateIfChanged(id string, updater func(*RequestRecord) bool) {
 	emitRealtime := s.shouldEmitRealtime()
 
 	s.mu.RLock()
-	pos, exists := s.index[id]
-	if !exists {
+	entry := s.index[id]
+	if entry == nil {
 		s.mu.RUnlock()
 		return
 	}
-	slot := s.records[pos]
 	s.mu.RUnlock()
 
-	slot.mu.Lock()
-	record := slot.record
+	entry.mu.Lock()
+	record := entry.record
 	if record == nil || record.ID != id {
-		slot.mu.Unlock()
+		entry.mu.Unlock()
 		return
 	}
-
 	if !updater(record) {
-		slot.mu.Unlock()
+		entry.mu.Unlock()
 		return
 	}
 
@@ -205,7 +224,7 @@ func (s *Store) UpdateIfChanged(id string, updater func(*RequestRecord) bool) {
 	if emitRealtime {
 		snap = snapshotRecord(record)
 	}
-	slot.mu.Unlock()
+	entry.mu.Unlock()
 
 	if emitRealtime {
 		summary := snap.toSummary()
@@ -222,21 +241,19 @@ func (s *Store) UpdateAndBroadcastChannel(id string, updater func(*RequestRecord
 	emitRealtime := s.shouldEmitRealtime()
 
 	s.mu.RLock()
-	pos, exists := s.index[id]
-	if !exists {
+	entry := s.index[id]
+	if entry == nil {
 		s.mu.RUnlock()
 		return
 	}
-	slot := s.records[pos]
 	s.mu.RUnlock()
 
-	slot.mu.Lock()
-	record := slot.record
+	entry.mu.Lock()
+	record := entry.record
 	if record == nil || record.ID != id {
-		slot.mu.Unlock()
+		entry.mu.Unlock()
 		return
 	}
-
 	updater(record)
 
 	var snap recordSnapshot
@@ -252,7 +269,7 @@ func (s *Store) UpdateAndBroadcastChannel(id string, updater func(*RequestRecord
 			ChannelAttempts: cloneChannelAttemptsForUpdate(record.ChannelAttempts),
 		}
 	}
-	slot.mu.Unlock()
+	entry.mu.Unlock()
 
 	if emitRealtime {
 		// Emit both events outside the lock
@@ -272,23 +289,21 @@ func (s *Store) UpdateAndBroadcastChannelIfChanged(id string, updater func(*Requ
 	emitRealtime := s.shouldEmitRealtime()
 
 	s.mu.RLock()
-	pos, exists := s.index[id]
-	if !exists {
+	entry := s.index[id]
+	if entry == nil {
 		s.mu.RUnlock()
 		return
 	}
-	slot := s.records[pos]
 	s.mu.RUnlock()
 
-	slot.mu.Lock()
-	record := slot.record
+	entry.mu.Lock()
+	record := entry.record
 	if record == nil || record.ID != id {
-		slot.mu.Unlock()
+		entry.mu.Unlock()
 		return
 	}
-
 	if !updater(record) {
-		slot.mu.Unlock()
+		entry.mu.Unlock()
 		return
 	}
 
@@ -304,7 +319,7 @@ func (s *Store) UpdateAndBroadcastChannelIfChanged(id string, updater func(*Requ
 			ChannelAttempts: cloneChannelAttemptsForUpdate(record.ChannelAttempts),
 		}
 	}
-	slot.mu.Unlock()
+	entry.mu.Unlock()
 
 	if emitRealtime {
 		summary := snap.toSummary()
@@ -323,21 +338,19 @@ func (s *Store) BatchUpdate(id string, broadcastChannel bool, updaters ...func(*
 	emitRealtime := s.shouldEmitRealtime()
 
 	s.mu.RLock()
-	pos, exists := s.index[id]
-	if !exists {
+	entry := s.index[id]
+	if entry == nil {
 		s.mu.RUnlock()
 		return
 	}
-	slot := s.records[pos]
 	s.mu.RUnlock()
 
-	slot.mu.Lock()
-	record := slot.record
+	entry.mu.Lock()
+	record := entry.record
 	if record == nil || record.ID != id {
-		slot.mu.Unlock()
+		entry.mu.Unlock()
 		return
 	}
-
 	for _, updater := range updaters {
 		updater(record)
 	}
@@ -356,7 +369,7 @@ func (s *Store) BatchUpdate(id string, broadcastChannel bool, updaters ...func(*
 			ChannelAttempts: cloneChannelAttemptsForUpdate(record.ChannelAttempts),
 		}
 	}
-	slot.mu.Unlock()
+	entry.mu.Unlock()
 
 	if emitRealtime {
 		summary := snap.toSummary()
@@ -372,22 +385,21 @@ func (s *Store) BatchUpdate(id string, broadcastChannel bool, updaters ...func(*
 // Get retrieves a record by ID
 func (s *Store) Get(id string) *RequestRecord {
 	s.mu.RLock()
-	pos, exists := s.index[id]
-	if !exists {
+	entry := s.index[id]
+	if entry == nil {
 		s.mu.RUnlock()
 		return nil
 	}
-	slot := s.records[pos]
 	s.mu.RUnlock()
 
-	slot.mu.RLock()
-	record := slot.record
+	entry.mu.RLock()
+	record := entry.record
 	if record == nil || record.ID != id {
-		slot.mu.RUnlock()
+		entry.mu.RUnlock()
 		return nil
 	}
 	cloned := cloneRecord(record)
-	slot.mu.RUnlock()
+	entry.mu.RUnlock()
 	return cloned
 }
 
@@ -395,18 +407,17 @@ func (s *Store) Get(id string) *RequestRecord {
 // cloning only CurrentChannel and ChannelAttempts (no bodies/headers).
 func (s *Store) GetChannelUpdate(id string) *ChannelUpdate {
 	s.mu.RLock()
-	pos, exists := s.index[id]
-	if !exists {
+	entry := s.index[id]
+	if entry == nil {
 		s.mu.RUnlock()
 		return nil
 	}
-	slot := s.records[pos]
 	s.mu.RUnlock()
 
-	slot.mu.RLock()
-	r := slot.record
+	entry.mu.RLock()
+	r := entry.record
 	if r == nil || r.ID != id {
-		slot.mu.RUnlock()
+		entry.mu.RUnlock()
 		return nil
 	}
 	update := &ChannelUpdate{
@@ -416,7 +427,7 @@ func (s *Store) GetChannelUpdate(id string) *ChannelUpdate {
 		CurrentChannel:  cloneCurrentChannel(r.CurrentChannel),
 		ChannelAttempts: cloneChannelAttemptsForUpdate(r.ChannelAttempts),
 	}
-	slot.mu.RUnlock()
+	entry.mu.RUnlock()
 	return update
 }
 
@@ -437,83 +448,51 @@ func (s *Store) BroadcastChannelUpdate(id string) {
 // GetAll returns all stored records in chronological order (oldest first)
 func (s *Store) GetAll() []*RequestRecord {
 	s.mu.RLock()
-	count := s.count
-	head := s.head
+	entries := append([]*recordEntry(nil), s.records...)
 	s.mu.RUnlock()
 
-	result := make([]*RequestRecord, 0, count)
-
-	appendIfPresent := func(slot *recordSlot) {
-		slot.mu.RLock()
-		record := slot.record
-		if record != nil {
-			result = append(result, cloneRecord(record))
+	result := make([]*RequestRecord, 0, len(entries))
+	for _, entry := range entries {
+		entry.mu.RLock()
+		if entry.record != nil {
+			result = append(result, cloneRecord(entry.record))
 		}
-		slot.mu.RUnlock()
+		entry.mu.RUnlock()
 	}
-
-	if count < MaxRecords {
-		// Buffer not full yet, start from 0
-		for i := 0; i < count; i++ {
-			appendIfPresent(s.records[i])
-		}
-	} else {
-		// Buffer is full, start from head (oldest)
-		for i := 0; i < MaxRecords; i++ {
-			pos := (head + i) % MaxRecords
-			appendIfPresent(s.records[pos])
-		}
-	}
-
 	return result
 }
 
 // GetAllSummaries returns lightweight summaries of all stored records in chronological order
 func (s *Store) GetAllSummaries() []*RequestSummary {
 	s.mu.RLock()
-	count := s.count
-	head := s.head
+	entries := append([]*recordEntry(nil), s.records...)
 	s.mu.RUnlock()
 
-	result := make([]*RequestSummary, 0, count)
-
-	appendIfPresent := func(slot *recordSlot) {
-		slot.mu.RLock()
-		record := slot.record
-		if record != nil {
-			result = append(result, record.ToSummary())
+	result := make([]*RequestSummary, 0, len(entries))
+	for _, entry := range entries {
+		entry.mu.RLock()
+		if entry.record != nil {
+			result = append(result, entry.record.ToSummary())
 		}
-		slot.mu.RUnlock()
+		entry.mu.RUnlock()
 	}
-
-	if count < MaxRecords {
-		// Buffer not full yet, start from 0
-		for i := 0; i < count; i++ {
-			appendIfPresent(s.records[i])
-		}
-	} else {
-		// Buffer is full, start from head (oldest)
-		for i := 0; i < MaxRecords; i++ {
-			pos := (head + i) % MaxRecords
-			appendIfPresent(s.records[pos])
-		}
-	}
-
 	return result
 }
 
 // GetActive returns all records with status "processing"
 func (s *Store) GetActive() []*RequestRecord {
-	result := make([]*RequestRecord, 0)
-	for _, slot := range s.records {
-		slot.mu.RLock()
-		record := slot.record
-		if record != nil && record.Status == StatusProcessing {
-			result = append(result, cloneRecord(record))
-		}
-		slot.mu.RUnlock()
-	}
+	s.mu.RLock()
+	entries := append([]*recordEntry(nil), s.records...)
+	s.mu.RUnlock()
 
+	result := make([]*RequestRecord, 0)
+	for _, entry := range entries {
+		entry.mu.RLock()
+		if entry.record != nil && entry.record.Status == StatusProcessing {
+			result = append(result, cloneRecord(entry.record))
+		}
+		entry.mu.RUnlock()
+	}
 	return result
 }
 
@@ -523,23 +502,29 @@ func (s *Store) GetActive() []*RequestRecord {
 func (s *Store) GetStats() MonitorStats {
 	stats := MonitorStats{}
 
-	for _, slot := range s.records {
-		slot.mu.RLock()
-		record := slot.record
-		if record != nil {
-			stats.TotalRequests++
-			switch record.Status {
-			case StatusProcessing:
-				stats.ActiveRequests++
-			case StatusCompleted:
-				stats.Completed++
-			case StatusError:
-				stats.Errors++
-			case StatusAbandoned:
-				stats.Abandoned++
-			}
+	s.mu.RLock()
+	entries := append([]*recordEntry(nil), s.records...)
+	s.mu.RUnlock()
+
+	for _, entry := range entries {
+		entry.mu.RLock()
+		record := entry.record
+		if record == nil {
+			entry.mu.RUnlock()
+			continue
 		}
-		slot.mu.RUnlock()
+		stats.TotalRequests++
+		switch record.Status {
+		case StatusProcessing:
+			stats.ActiveRequests++
+		case StatusCompleted:
+			stats.Completed++
+		case StatusError:
+			stats.Errors++
+		case StatusAbandoned:
+			stats.Abandoned++
+		}
+		entry.mu.RUnlock()
 	}
 
 	// ReadMemStats triggers a STW pause — do it with no lock held.

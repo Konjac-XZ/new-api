@@ -21,7 +21,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { getMonitorStats } from './api'
 import {
-  MAX_SUMMARY_ITEMS,
+  MIN_SUMMARY_ITEMS,
+  SUMMARY_RETENTION_WINDOW_MS,
   getStartTimeMs,
   normalizeMonitorPayload,
 } from './lib'
@@ -42,7 +43,7 @@ const DEFAULT_STATS: MonitorStatsPayload = {
   memory: 0,
   load: {
     active_requests: 0,
-    capacity: MAX_SUMMARY_ITEMS,
+    capacity: MIN_SUMMARY_ITEMS,
     degraded: false,
   },
 }
@@ -92,11 +93,18 @@ function getRetryCountFromChannelUpdate(payload: ChannelUpdate): number {
 }
 
 function trimSummaries(list: MonitorRecord[]): MonitorRecord[] {
-  if (list.length <= MAX_SUMMARY_ITEMS) return list
-  const sortedByTime = [...list].sort(
-    (a, b) => getStartTimeMs(a) - getStartTimeMs(b)
-  )
-  return sortedByTime.slice(sortedByTime.length - MAX_SUMMARY_ITEMS)
+  if (list.length <= MIN_SUMMARY_ITEMS) return list
+
+  const cutoffMs = Date.now() - SUMMARY_RETENTION_WINDOW_MS
+  let removeCount = 0
+  for (const record of list) {
+    if (list.length - removeCount <= MIN_SUMMARY_ITEMS) break
+    const startMs = getStartTimeMs(record)
+    if (!startMs || startMs >= cutoffMs) break
+    removeCount++
+  }
+
+  return removeCount > 0 ? list.slice(removeCount) : list
 }
 
 type UseMonitorWsOptions = {

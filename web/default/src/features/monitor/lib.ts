@@ -19,7 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 
 import type { MonitorRecord } from './types'
 
-export const MAX_SUMMARY_ITEMS = 100
+export const MIN_SUMMARY_ITEMS = 100
+export const SUMMARY_RETENTION_WINDOW_MS = 5 * 60 * 1000
 export const MS_TO_SECONDS = 1000
 export const MIN_OUTPUT_TOKENS_FOR_THROUGHPUT = 100
 

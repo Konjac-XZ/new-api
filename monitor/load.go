@@ -2,7 +2,7 @@ package monitor
 
 import "sync"
 
-// LoadState tracks monitor pressure independently from the 100-item display
+// LoadState tracks monitor pressure independently from the retained display
 // buffer. It intentionally stores only request IDs so high concurrency does
 // not add body/detail memory pressure.
 type LoadState struct {
@@ -27,7 +27,7 @@ func NewLoadState() *LoadState {
 
 func (s *LoadState) Start(id string) LoadSnapshot {
 	if s == nil || id == "" {
-		return LoadSnapshot{Capacity: MaxRecords}
+		return LoadSnapshot{Capacity: MonitorDegradeActiveLimit}
 	}
 
 	s.mu.Lock()
@@ -41,7 +41,7 @@ func (s *LoadState) Start(id string) LoadSnapshot {
 
 func (s *LoadState) Finish(id string) LoadSnapshot {
 	if s == nil || id == "" {
-		return LoadSnapshot{Capacity: MaxRecords}
+		return LoadSnapshot{Capacity: MonitorDegradeActiveLimit}
 	}
 
 	s.mu.Lock()
@@ -55,7 +55,7 @@ func (s *LoadState) Finish(id string) LoadSnapshot {
 
 func (s *LoadState) Snapshot() LoadSnapshot {
 	if s == nil {
-		return LoadSnapshot{Capacity: MaxRecords}
+		return LoadSnapshot{Capacity: MonitorDegradeActiveLimit}
 	}
 
 	s.mu.Lock()

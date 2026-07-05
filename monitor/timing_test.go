@@ -1,8 +1,12 @@
 package monitor
 
 import (
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func resetMonitorManagerForTest() *Manager {
@@ -59,6 +63,66 @@ func TestRequestSummaryIncludesMillisecondTimingFields(t *testing.T) {
 	if summary.CurrentAttemptStreamingStartedAtMs != streamingStartedAt.UnixMilli() {
 		t.Fatalf("expected current_attempt_streaming_started_at_ms %d, got %d", streamingStartedAt.UnixMilli(), summary.CurrentAttemptStreamingStartedAtMs)
 	}
+}
+
+func TestStoreRetentionKeepsMinimumRecords(t *testing.T) {
+	store := NewStore()
+	baseTime := time.Unix(1711456789, 0)
+
+	for i := 0; i < MonitorMinRecords+20; i++ {
+		startTime := baseTime.Add(time.Duration(i) * time.Second)
+		store.Add(&RequestRecord{
+			ID:          fmt.Sprintf("req-retention-min-%03d", i),
+			Status:      StatusCompleted,
+			StartTime:   startTime,
+			StartTimeMs: startTime.UnixMilli(),
+			Downstream:  DownstreamInfo{},
+		})
+	}
+	store.Add(&RequestRecord{
+		ID:          "req-retention-min-latest",
+		Status:      StatusCompleted,
+		StartTime:   baseTime.Add(30 * time.Minute),
+		StartTimeMs: baseTime.Add(30 * time.Minute).UnixMilli(),
+		Downstream:  DownstreamInfo{},
+	})
+
+	summaries := store.GetAllSummaries()
+	require.Len(t, summaries, MonitorMinRecords)
+	assert.Equal(t, "req-retention-min-021", summaries[0].ID)
+	assert.Equal(t, "req-retention-min-latest", summaries[len(summaries)-1].ID)
+}
+
+func TestStoreRetentionKeepsWindowWhenAboveMinimum(t *testing.T) {
+	store := NewStore()
+	baseTime := time.Unix(1711456789, 0)
+	windowStart := baseTime.Add(30 * time.Minute)
+
+	for i := 0; i < 80; i++ {
+		startTime := baseTime.Add(time.Duration(i) * time.Second)
+		store.Add(&RequestRecord{
+			ID:          fmt.Sprintf("old-%03d", i),
+			Status:      StatusCompleted,
+			StartTime:   startTime,
+			StartTimeMs: startTime.UnixMilli(),
+			Downstream:  DownstreamInfo{},
+		})
+	}
+	for i := 0; i < MonitorMinRecords+30; i++ {
+		startTime := windowStart.Add(time.Duration(i) * time.Second)
+		store.Add(&RequestRecord{
+			ID:          fmt.Sprintf("window-%03d", i),
+			Status:      StatusCompleted,
+			StartTime:   startTime,
+			StartTimeMs: startTime.UnixMilli(),
+			Downstream:  DownstreamInfo{},
+		})
+	}
+
+	summaries := store.GetAllSummaries()
+	require.Len(t, summaries, MonitorMinRecords+30)
+	assert.Equal(t, "window-000", summaries[0].ID)
+	assert.Equal(t, "window-129", summaries[len(summaries)-1].ID)
 }
 
 func TestRequestSummaryIncludesRetryCount(t *testing.T) {
