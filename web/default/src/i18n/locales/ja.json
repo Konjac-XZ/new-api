@@ -4506,6 +4506,7 @@
     "Tokens per minute": "1分あたりのトークン",
     "Tokens since launch": "リリース以降のトークン",
     "Tokens-only mode will show raw quota values regardless of this toggle.": "トークンのみモードでは、このトグルに関係なく生のクォータ値が表示されます。",
+    "Tokens/s": "Tokens/s",
     "Tolerance": "Tolerance",
     "Tolerance coefficient": "Tolerance coefficient",
     "Too many files. Some were not added.": "ファイルが多すぎます。一部は追加されませんでした。",

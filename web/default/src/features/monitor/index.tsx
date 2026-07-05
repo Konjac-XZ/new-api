@@ -1201,18 +1201,24 @@ export function Monitor() {
         label: t('Channel'),
         header: t('Channel'),
         layout: { min: 13, max: 24, contentScale: 0.72 },
-        cellClassName: 'truncate',
+        cellClassName: 'min-w-0',
         render: (record) => {
           const retryCount = getRetryCount(record)
           return (
-            <>
-              <span>{record.channel_name || record.channel_id || '-'}</span>
+            <div className='flex min-w-0 items-center gap-2'>
+              <span className='min-w-0 truncate'>
+                {record.channel_name || record.channel_id || '-'}
+              </span>
               {retryCount > 0 ? (
-                <Badge variant='outline' className='ml-2 h-5 px-1.5'>
+                <Badge
+                  variant='outline'
+                  aria-label={`${t('Retry')} ${retryCount}`}
+                  className='h-5 shrink-0 border-amber-200/70 bg-amber-50/70 px-1.5 text-[11px] font-semibold text-amber-700 tabular-nums dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-300'
+                >
                   +{retryCount}
                 </Badge>
               ) : null}
-            </>
+            </div>
           )
         },
         measure: (record) => {
@@ -1258,16 +1264,16 @@ export function Monitor() {
       },
       {
         key: MONITOR_COLUMN_KEYS.THROUGHPUT,
-        label: t('Throughput'),
-        header: t('Throughput'),
-        layout: { min: 9, max: 12 },
+        label: t('Tokens/s'),
+        header: t('Tokens/s'),
+        layout: { min: 9, max: 13 },
         render: (record) => {
           const outputSpeed = getOutputSpeed(record, clientNowMs)
-          return outputSpeed ? `${outputSpeed.toFixed(1)}/s` : '-'
+          return outputSpeed ? `${outputSpeed.toFixed(1)} Tokens/s` : '-'
         },
         measure: (record) => {
           const outputSpeed = getOutputSpeed(record, clientNowMs)
-          return outputSpeed ? `${outputSpeed.toFixed(1)}/s` : '-'
+          return outputSpeed ? `${outputSpeed.toFixed(1)} Tokens/s` : '-'
         },
       },
     ],
