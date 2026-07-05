@@ -58,8 +58,10 @@ import {
   isTagAggregateRow,
   getChannelTypeIcon,
   getChannelTypeLabel,
+  DEFAULT_CHANNEL_SORT_RULES,
+  serializeChannelSortRules,
 } from '../lib'
-import type { Channel, ChannelSortBy } from '../types'
+import type { Channel, ChannelSortBy, ChannelSortRule } from '../types'
 import { ChannelCard } from './channel-card'
 import { useChannelsColumns } from './channels-columns'
 import { useChannels } from './channels-provider'
@@ -74,6 +76,7 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'id',
   'name',
   'priority',
+  'weight',
   'balance',
   'response_time',
   'test_time',
@@ -89,7 +92,8 @@ export function ChannelsTable() {
   const { t } = useTranslation()
   const {
     enableTagMode,
-    idSort,
+    channelSortRules,
+    setChannelSortRules,
     batchMode,
     sensitiveVisible,
     setSensitiveVisible,
@@ -176,24 +180,25 @@ export function ChannelsTable() {
   // Determine whether to use search or regular list API
   const shouldSearch = Boolean(globalFilter?.trim() || modelFilter.trim())
 
-  const sortParams = useMemo(() => {
-    const activeSort = sorting[0]
-    if (
-      !activeSort ||
-      !CHANNEL_SORTABLE_COLUMNS.has(activeSort.id as ChannelSortBy)
-    ) {
-      return {}
-    }
-
-    return {
-      sort_by: activeSort.id as ChannelSortBy,
-      sort_order: activeSort.desc ? 'desc' : 'asc',
-    } as const
-  }, [sorting])
+  const sortRulesParam = useMemo(
+    () => serializeChannelSortRules(channelSortRules),
+    [channelSortRules]
+  )
 
   const handleSortingChange: OnChangeFn<SortingState> = (updater) => {
     setSorting((previous) => {
       const next = typeof updater === 'function' ? updater(previous) : updater
+      const activeSort = next[0]
+      if (!activeSort) {
+        setChannelSortRules(DEFAULT_CHANNEL_SORT_RULES)
+      } else if (CHANNEL_SORTABLE_COLUMNS.has(activeSort.id as ChannelSortBy)) {
+        setChannelSortRules([
+          {
+            field: activeSort.id as ChannelSortBy,
+            order: activeSort.desc ? 'desc' : 'asc',
+          },
+        ])
+      }
       if (pagination.pageIndex > 0) {
         onPaginationChange({ ...pagination, pageIndex: 0 })
       }
@@ -235,8 +240,7 @@ export function ChannelsTable() {
           ? Number(typeFilter[0])
           : undefined,
       tag_mode: enableTagMode,
-      id_sort: idSort,
-      ...sortParams,
+      sort_rules: sortRulesParam,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
     }),
@@ -258,8 +262,7 @@ export function ChannelsTable() {
               ? Number(typeFilter[0])
               : undefined,
           tag_mode: enableTagMode,
-          id_sort: idSort,
-          ...sortParams,
+          sort_rules: sortRulesParam,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
         })
@@ -278,8 +281,7 @@ export function ChannelsTable() {
               ? Number(typeFilter[0])
               : undefined,
           tag_mode: enableTagMode,
-          id_sort: idSort,
-          ...sortParams,
+          sort_rules: sortRulesParam,
           p: pagination.pageIndex + 1,
           page_size: pagination.pageSize,
         })
@@ -339,6 +341,16 @@ export function ChannelsTable() {
       table.resetRowSelection()
     }
   }, [batchMode, table])
+
+  useEffect(() => {
+    const firstRule = channelSortRules[0] as ChannelSortRule | undefined
+    if (!firstRule || !CHANNEL_SORTABLE_COLUMNS.has(firstRule.field)) {
+      setSorting([])
+      return
+    }
+
+    setSorting([{ id: firstRule.field, desc: firstRule.order === 'desc' }])
+  }, [channelSortRules])
 
   // Prepare filter options from existing channel types only.
   const typeFilterOptions = useMemo(() => {

@@ -26,7 +26,7 @@ import {
   TestTube,
   DollarSign,
   ListChecks,
-  SortAsc,
+  ArrowDownUp,
   RefreshCw,
   ArrowUpFromLine,
 } from 'lucide-react'
@@ -59,11 +59,13 @@ import {
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
+  getChannelSortSummary,
   handleDeleteAllDisabled,
   handleFixAbilities,
   handleTestAllChannels,
   handleUpdateAllBalances,
 } from '../lib'
+import { ChannelSortDialog } from './channel-sort-dialog'
 import { useChannels } from './channels-provider'
 
 export function ChannelsPrimaryButtons() {
@@ -73,8 +75,8 @@ export function ChannelsPrimaryButtons() {
     setCurrentRow,
     enableTagMode,
     setEnableTagMode,
-    idSort,
-    setIdSort,
+    channelSortRules,
+    setChannelSortRules,
     batchMode,
     setBatchMode,
     upstream,
@@ -82,6 +84,7 @@ export function ChannelsPrimaryButtons() {
   const queryClient = useQueryClient()
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showConsistencyDialog, setShowConsistencyDialog] = useState(false)
+  const [showSortDialog, setShowSortDialog] = useState(false)
   const [isRepairingConsistency, setIsRepairingConsistency] = useState(false)
   const currentUser = useAuthStore((s) => s.auth.user)
   const canEditSensitive = hasPermission(
@@ -95,14 +98,11 @@ export function ChannelsPrimaryButtons() {
     setEnableTagMode(checked)
   }
 
-  const handleIdSortToggle = (checked: boolean) => {
-    localStorage.setItem('channels-id-sort', String(checked))
-    setIdSort(checked)
-  }
-
   const handleBatchModeToggle = (checked: boolean) => {
     setBatchMode(checked)
   }
+
+  const sortSummary = getChannelSortSummary(channelSortRules, t)
 
   return (
     <>
@@ -135,16 +135,19 @@ export function ChannelsPrimaryButtons() {
           />
         </div>
 
-        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
-          <SortAsc className='text-muted-foreground h-4 w-4' />
-          <Label htmlFor='id-sort' className='cursor-pointer text-sm'>
-            {t('Sort by ID')}
-          </Label>
-          <Switch
-            id='id-sort'
-            checked={idSort}
-            onCheckedChange={handleIdSortToggle}
-          />
+        <div className='hidden items-center gap-2 sm:flex'>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() => setShowSortDialog(true)}
+          >
+            <ArrowDownUp className='h-4 w-4' />
+            {t('Sort')} {t('Rules')}
+            <span className='text-muted-foreground max-w-52 truncate text-xs font-normal'>
+              {sortSummary}
+            </span>
+          </Button>
         </div>
 
         {/* Create Channel */}
@@ -196,14 +199,16 @@ export function ChannelsPrimaryButtons() {
               {t('Tag Mode')}
             </DropdownMenuCheckboxItem>
 
-            <DropdownMenuCheckboxItem
+            <DropdownMenuItem
               className='sm:hidden'
-              checked={idSort}
-              onCheckedChange={handleIdSortToggle}
+              onSelect={(event) => {
+                event.preventDefault()
+                setShowSortDialog(true)
+              }}
             >
-              <SortAsc className='mr-2 h-4 w-4' />
-              {t('Sort by ID')}
-            </DropdownMenuCheckboxItem>
+              <ArrowDownUp className='mr-2 h-4 w-4' />
+              {t('Sort')} {t('Rules')}
+            </DropdownMenuItem>
 
             <DropdownMenuSeparator className='sm:hidden' />
 
@@ -324,6 +329,13 @@ export function ChannelsPrimaryButtons() {
             setIsRepairingConsistency(false)
           }
         }}
+      />
+
+      <ChannelSortDialog
+        open={showSortDialog}
+        onOpenChange={setShowSortDialog}
+        rules={channelSortRules}
+        onApply={setChannelSortRules}
       />
     </>
   )

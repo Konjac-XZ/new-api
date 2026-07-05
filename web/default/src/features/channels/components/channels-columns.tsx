@@ -1082,7 +1082,6 @@ export function useChannelsColumns(
         meta: { mobileHidden: true },
         cell: ({ row }) => <WeightCell channel={row.original} />,
         size: 90,
-        enableSorting: false,
       },
 
       // Balance column (Used/Remaining)

@@ -292,11 +292,17 @@ export type ChannelSortBy =
   | 'id'
   | 'name'
   | 'priority'
+  | 'weight'
   | 'balance'
   | 'response_time'
   | 'test_time'
 
 export type ChannelSortOrder = 'asc' | 'desc'
+
+export type ChannelSortRule = {
+  field: ChannelSortBy
+  order: ChannelSortOrder
+}
 
 export interface GetChannelsParams {
   p?: number
@@ -308,6 +314,7 @@ export interface GetChannelsParams {
   tag_mode?: boolean
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
+  sort_rules?: string
 }
 
 export interface SearchChannelsParams {
@@ -320,6 +327,7 @@ export interface SearchChannelsParams {
   tag_mode?: boolean
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
+  sort_rules?: string
   p?: number
   page_size?: number
 }

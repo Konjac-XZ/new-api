@@ -27,8 +27,13 @@ import React, {
 } from 'react'
 
 import { useChannelUpstreamUpdates } from '../hooks/use-channel-upstream-updates'
-import { channelsQueryKeys } from '../lib'
-import type { Channel } from '../types'
+import {
+  channelsQueryKeys,
+  loadStoredChannelSortRules,
+  normalizeChannelSortRules,
+  persistChannelSortRules,
+} from '../lib'
+import type { Channel, ChannelSortRule } from '../types'
 
 // ============================================================================
 // Types
@@ -58,8 +63,8 @@ type ChannelsContextType = {
   setCurrentTag: (tag: string | null) => void
   enableTagMode: boolean
   setEnableTagMode: (enabled: boolean) => void
-  idSort: boolean
-  setIdSort: (enabled: boolean) => void
+  channelSortRules: ChannelSortRule[]
+  setChannelSortRules: (rules: ChannelSortRule[]) => void
   batchMode: boolean
   setBatchMode: (enabled: boolean) => void
   sensitiveVisible: boolean
@@ -86,11 +91,17 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
   const [enableTagMode, setEnableTagMode] = useState(() => {
     return localStorage.getItem('enable-tag-mode') === 'true'
   })
-  const [idSort, setIdSort] = useState(() => {
-    return localStorage.getItem('channels-id-sort') === 'true'
-  })
+  const [channelSortRules, setChannelSortRulesState] = useState(
+    loadStoredChannelSortRules
+  )
   const [batchMode, setBatchMode] = useState(false)
   const [sensitiveVisible, setSensitiveVisible] = useState(true)
+
+  const setChannelSortRules = useCallback((rules: ChannelSortRule[]) => {
+    const normalized = normalizeChannelSortRules(rules)
+    persistChannelSortRules(normalized)
+    setChannelSortRulesState(normalized)
+  }, [])
 
   const queryClient = useQueryClient()
   const refreshChannels = useCallback(async () => {
@@ -111,8 +122,8 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       setCurrentTag,
       enableTagMode,
       setEnableTagMode,
-      idSort,
-      setIdSort,
+      channelSortRules,
+      setChannelSortRules,
       batchMode,
       setBatchMode,
       sensitiveVisible,
@@ -124,7 +135,8 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
       currentRow,
       currentTag,
       enableTagMode,
-      idSort,
+      channelSortRules,
+      setChannelSortRules,
       batchMode,
       sensitiveVisible,
       upstream,
