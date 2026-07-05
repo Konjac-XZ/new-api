@@ -29,7 +29,7 @@ Default UI. Keep implementation style aligned with `web/default`.
 - [x] Channel breaker status card/dialog and inactive-channel badge behavior.
 - [x] Channel edit-mode clipboard quick-paste parity.
 - [x] Channel external configuration fields and advanced settings parity.
-- [ ] Default UI polish for any Classic custom filters in logs, models, tokens,
+- [x] Default UI polish for any Classic custom filters in logs, models, tokens,
       users, and redemption tables.
 - [ ] Final end-to-end audit against `upstream/main...HEAD` classic/default diff.
 - [ ] Final validation: relevant Go tests, Default UI lint/type/build, and diff
