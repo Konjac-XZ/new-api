@@ -1049,7 +1049,9 @@ function RequestDetail(props: {
   )
 }
 
-function useFullscreenWakeLock() {
+function useFullscreenWakeLock(
+  targetRef: React.RefObject<HTMLDivElement | null>
+) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
 
@@ -1092,8 +1094,8 @@ function useFullscreenWakeLock() {
       void document.exitFullscreen()
       return
     }
-    void document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-  }, [])
+    void targetRef.current?.requestFullscreen({ navigationUI: 'hide' })
+  }, [targetRef])
 
   return { isFullscreen, toggleFullscreen }
 }
@@ -1107,7 +1109,9 @@ export function Monitor() {
   const [visibleColumns, setVisibleColumns] = useState(
     getInitialMonitorVisibleColumns
   )
-  const { isFullscreen, toggleFullscreen } = useFullscreenWakeLock()
+  const fullscreenRef = useRef<HTMLDivElement | null>(null)
+  const { isFullscreen, toggleFullscreen } =
+    useFullscreenWakeLock(fullscreenRef)
   const detail = useRequestDetail()
   const monitorWs = useMonitorWs({ focusedRequestId: selectedId })
 
@@ -1325,6 +1329,7 @@ export function Monitor() {
 
   return (
     <div
+      ref={fullscreenRef}
       className={cn(
         'bg-background flex h-full min-h-0 flex-col',
         isFullscreen && 'fixed inset-0 z-50 p-3'

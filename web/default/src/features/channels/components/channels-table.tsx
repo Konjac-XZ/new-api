@@ -71,6 +71,8 @@ const route = getRouteApi('/_authenticated/channels/')
 const CHANNELS_COLUMN_VISIBILITY_STORAGE_KEY = 'channels:column-visibility'
 const CHANNELS_VIEW_MODE_STORAGE_KEY = 'channels:view-mode'
 const CHANNELS_STATUS_FILTER_STORAGE_KEY = 'channel-status-filter'
+const CHANNELS_DYNAMIC_BREAKER_FILTER_STORAGE_KEY =
+  'channel-dynamic-breaker-filter'
 
 const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'id',
@@ -137,6 +139,13 @@ export function ChannelsTable() {
         columnId: 'dynamic_breaker',
         searchKey: 'dynamic_breaker',
         type: 'array',
+        deserialize: (value) => {
+          if (value !== undefined) return value
+          const stored = localStorage.getItem(
+            CHANNELS_DYNAMIC_BREAKER_FILTER_STORAGE_KEY
+          )
+          return stored === 'enabled' ? [stored] : []
+        },
       },
       { columnId: 'type', searchKey: 'type', type: 'array' },
       { columnId: 'group', searchKey: 'group', type: 'array' },
@@ -155,6 +164,12 @@ export function ChannelsTable() {
       localStorage.setItem(
         CHANNELS_STATUS_FILTER_STORAGE_KEY,
         status?.[0] ?? 'all'
+      )
+      const dynamicBreaker = next.find((f) => f.id === 'dynamic_breaker')
+        ?.value as string[] | undefined
+      localStorage.setItem(
+        CHANNELS_DYNAMIC_BREAKER_FILTER_STORAGE_KEY,
+        dynamicBreaker?.[0] ?? 'all'
       )
       return next
     })

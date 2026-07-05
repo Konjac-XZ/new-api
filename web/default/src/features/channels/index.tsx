@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Expand, Minimize2, Settings2 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -40,7 +40,7 @@ import { ChannelsPrimaryButtons } from './components/channels-primary-buttons'
 import { ChannelsProvider } from './components/channels-provider'
 import { ChannelsTable } from './components/channels-table'
 
-function useFullscreenWakeLock() {
+function useFullscreenWakeLock(targetRef: RefObject<HTMLDivElement | null>) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const wakeLockRef = useRef<WakeLockSentinel | null>(null)
 
@@ -83,15 +83,17 @@ function useFullscreenWakeLock() {
       void document.exitFullscreen()
       return
     }
-    void document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-  }, [])
+    void targetRef.current?.requestFullscreen({ navigationUI: 'hide' })
+  }, [targetRef])
 
   return { isFullscreen, toggleFullscreen }
 }
 
 export function Channels() {
   const { t } = useTranslation()
-  const { isFullscreen, toggleFullscreen } = useFullscreenWakeLock()
+  const fullscreenRef = useRef<HTMLDivElement | null>(null)
+  const { isFullscreen, toggleFullscreen } =
+    useFullscreenWakeLock(fullscreenRef)
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )
@@ -140,6 +142,7 @@ export function Channels() {
   return (
     <ChannelsProvider>
       <div
+        ref={fullscreenRef}
         className={cn(
           'bg-background flex h-full min-h-0 flex-col',
           isFullscreen && 'fixed inset-0 z-50 p-3'
@@ -153,6 +156,7 @@ export function Channels() {
             </span>
           </SectionPageLayout.Title>
           <SectionPageLayout.Actions>
+            <ChannelsPrimaryButtons />
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -173,7 +177,6 @@ export function Channels() {
                 {isFullscreen ? t('Exit fullscreen') : t('Enter fullscreen')}
               </TooltipContent>
             </Tooltip>
-            <ChannelsPrimaryButtons />
           </SectionPageLayout.Actions>
           <SectionPageLayout.Content>
             <ChannelsTable />
