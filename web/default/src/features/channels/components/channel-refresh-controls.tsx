@@ -99,7 +99,7 @@ export function ChannelManualRefreshButton() {
           <Button
             type='button'
             variant='outline'
-            size='icon'
+            size='icon-sm'
             aria-label={t('Refresh')}
             onClick={handleRefresh}
             disabled={isRefreshing}

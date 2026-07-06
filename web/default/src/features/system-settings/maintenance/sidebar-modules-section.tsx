@@ -138,6 +138,10 @@ export function SidebarModulesSection({
         title: t('Models'),
         description: t('Manage catalog visibility and pricing.'),
       },
+      deployment: {
+        title: t('Deployments'),
+        description: t('Manage model deployments and runtime instances.'),
+      },
       redemption: {
         title: t('Redeem codes'),
         description: t('Create and review invite or credit codes.'),
@@ -146,13 +150,17 @@ export function SidebarModulesSection({
         title: t('Users'),
         description: t('Administer user accounts and roles.'),
       },
-      setting: {
-        title: t('System settings'),
-        description: t('Advanced platform configuration.'),
-      },
       subscription: {
         title: t('Subscription Management'),
         description: t('Manage subscription plans and pricing.'),
+      },
+      monitor: {
+        title: t('Monitor'),
+        description: t('Inspect live relay requests and captured details.'),
+      },
+      setting: {
+        title: t('System settings'),
+        description: t('Advanced platform configuration.'),
       },
     },
   }

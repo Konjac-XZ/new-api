@@ -56,6 +56,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
@@ -106,9 +107,8 @@ export function ChannelsPrimaryButtons() {
 
   return (
     <>
-      <div className='flex items-center gap-2'>
-        {/* Desktop: Toggle switches visible */}
-        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
+      <div className='flex min-w-0 items-center gap-1.5 sm:gap-2'>
+        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 2xl:flex'>
           <ListChecks className='text-muted-foreground h-4 w-4' />
           <Label
             htmlFor='channel-batch-mode'
@@ -123,7 +123,28 @@ export function ChannelsPrimaryButtons() {
           />
         </div>
 
-        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 sm:flex'>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant={batchMode ? 'secondary' : 'outline'}
+                size='icon-sm'
+                className='hidden lg:inline-flex 2xl:hidden'
+                aria-label={t('Batch Operations')}
+                aria-pressed={batchMode}
+                onClick={() => handleBatchModeToggle(!batchMode)}
+              />
+            }
+          >
+            <ListChecks
+              className={cn('h-4 w-4', batchMode && 'text-primary')}
+            />
+          </TooltipTrigger>
+          <TooltipContent>{t('Batch Operations')}</TooltipContent>
+        </Tooltip>
+
+        <div className='hidden items-center gap-2 rounded-md border px-3 py-1.5 2xl:flex'>
           <Tags className='text-muted-foreground h-4 w-4' />
           <Label htmlFor='tag-mode' className='cursor-pointer text-sm'>
             {t('Tag Mode')}
@@ -135,7 +156,26 @@ export function ChannelsPrimaryButtons() {
           />
         </div>
 
-        <div className='hidden items-center gap-2 sm:flex'>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant={enableTagMode ? 'secondary' : 'outline'}
+                size='icon-sm'
+                className='hidden lg:inline-flex 2xl:hidden'
+                aria-label={t('Tag Mode')}
+                aria-pressed={enableTagMode}
+                onClick={() => handleTagModeToggle(!enableTagMode)}
+              />
+            }
+          >
+            <Tags className={cn('h-4 w-4', enableTagMode && 'text-primary')} />
+          </TooltipTrigger>
+          <TooltipContent>{t('Tag Mode')}</TooltipContent>
+        </Tooltip>
+
+        <div className='hidden items-center gap-2 xl:flex'>
           <Button
             type='button'
             variant='outline'
@@ -144,11 +184,31 @@ export function ChannelsPrimaryButtons() {
           >
             <ArrowDownUp className='h-4 w-4' />
             {t('Sort')} {t('Rules')}
-            <span className='text-muted-foreground max-w-52 truncate text-xs font-normal'>
+            <span className='text-muted-foreground hidden max-w-52 truncate text-xs font-normal 2xl:inline'>
               {sortSummary}
             </span>
           </Button>
         </div>
+
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='outline'
+                size='icon-sm'
+                className='hidden lg:inline-flex xl:hidden'
+                aria-label={`${t('Sort')} ${t('Rules')}`}
+                onClick={() => setShowSortDialog(true)}
+              />
+            }
+          >
+            <ArrowDownUp className='h-4 w-4' />
+          </TooltipTrigger>
+          <TooltipContent>
+            {t('Sort')} {t('Rules')}
+          </TooltipContent>
+        </Tooltip>
 
         {/* Create Channel */}
         <Tooltip>
@@ -182,7 +242,7 @@ export function ChannelsPrimaryButtons() {
           <DropdownMenuContent align='end' className='w-56'>
             {/* Mobile-only: toggle switches */}
             <DropdownMenuCheckboxItem
-              className='sm:hidden'
+              className='lg:hidden'
               checked={batchMode}
               onCheckedChange={handleBatchModeToggle}
             >
@@ -191,7 +251,7 @@ export function ChannelsPrimaryButtons() {
             </DropdownMenuCheckboxItem>
 
             <DropdownMenuCheckboxItem
-              className='sm:hidden'
+              className='lg:hidden'
               checked={enableTagMode}
               onCheckedChange={handleTagModeToggle}
             >
@@ -200,7 +260,7 @@ export function ChannelsPrimaryButtons() {
             </DropdownMenuCheckboxItem>
 
             <DropdownMenuItem
-              className='sm:hidden'
+              className='lg:hidden'
               onSelect={(event) => {
                 event.preventDefault()
                 setShowSortDialog(true)
@@ -210,7 +270,7 @@ export function ChannelsPrimaryButtons() {
               {t('Sort')} {t('Rules')}
             </DropdownMenuItem>
 
-            <DropdownMenuSeparator className='sm:hidden' />
+            <DropdownMenuSeparator className='lg:hidden' />
 
             <DropdownMenuItem
               onClick={() => {

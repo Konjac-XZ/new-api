@@ -165,7 +165,7 @@ export function Channels() {
                   <Button
                     type='button'
                     variant='outline'
-                    size='icon'
+                    size='icon-sm'
                     onClick={toggleFullscreen}
                   />
                 }

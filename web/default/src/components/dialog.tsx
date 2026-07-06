@@ -43,6 +43,9 @@ type DialogProps = React.ComponentProps<typeof DialogRoot> & {
   bodyClassName?: string
   footerClassName?: string
   initialFocus?: boolean
+  portalContainer?: React.ComponentProps<
+    typeof DialogContent
+  >['portalContainer']
   showCloseButton?: boolean
 }
 
@@ -63,6 +66,7 @@ export function Dialog({
   bodyClassName,
   footerClassName,
   initialFocus,
+  portalContainer,
   showCloseButton,
   ...dialogProps
 }: DialogProps) {
@@ -76,6 +80,7 @@ export function Dialog({
           dialogContentMotionClassName
         )}
         initialFocus={initialFocus}
+        portalContainer={portalContainer}
         showCloseButton={showCloseButton}
         style={
           {
