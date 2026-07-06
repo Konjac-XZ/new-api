@@ -83,6 +83,51 @@ describe('compact upstream model helpers', () => {
     })
   })
 
+  test('keeps unrelated existing models while compacting mapped upstream targets', () => {
+    const result = buildCompactUpstreamModels({
+      upstreamModels: ['openai/gpt-4o'],
+      existingModels: ['openai/gpt-4o', 'immersive-translate'],
+      existingModelMapping: '',
+    })
+
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.deepEqual(result.models, ['immersive-translate', 'gpt-4o'])
+    assert.deepEqual(JSON.parse(result.modelMapping), {
+      'gpt-4o': 'openai/gpt-4o',
+    })
+  })
+
+  test('keeps original upstream target when compact model is not selected', () => {
+    const result = buildCompactUpstreamModels({
+      upstreamModels: ['openai/gpt-4o'],
+      existingModels: ['openai/gpt-4o', 'immersive-translate'],
+      existingModelMapping: '',
+      selectedCompactModels: [],
+    })
+
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.deepEqual(result.models, ['openai/gpt-4o', 'immersive-translate'])
+    assert.equal(result.modelMapping, '')
+  })
+
+  test('removes unrelated existing models only when they are not selected', () => {
+    const result = buildCompactUpstreamModels({
+      upstreamModels: ['openai/gpt-4o'],
+      existingModels: ['openai/gpt-4o', 'immersive-translate'],
+      existingModelMapping: '',
+      selectedExistingModels: ['openai/gpt-4o'],
+    })
+
+    assert.equal(result.success, true)
+    if (!result.success) return
+    assert.deepEqual(result.models, ['gpt-4o'])
+    assert.deepEqual(JSON.parse(result.modelMapping), {
+      'gpt-4o': 'openai/gpt-4o',
+    })
+  })
+
   test('keeps existing redirects when they already point to the same upstream', () => {
     const result = buildCompactUpstreamModels({
       upstreamModels: ['openai/gpt-4o'],

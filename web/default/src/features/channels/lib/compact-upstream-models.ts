@@ -99,6 +99,7 @@ export function buildCompactUpstreamModels(params: {
   existingModels: string[]
   existingModelMapping: string
   selectedCompactModels?: string[]
+  selectedExistingModels?: string[]
 }): CompactUpstreamModelBuildResult {
   const parsedMapping = parseModelMapping(params.existingModelMapping)
   if (!parsedMapping.success) return parsedMapping
@@ -141,6 +142,11 @@ export function buildCompactUpstreamModels(params: {
       .map((model) => normalizeModelName(model))
       .filter(Boolean)
   )
+  const selectedExistingSet = new Set(
+    (params.selectedExistingModels ?? params.existingModels)
+      .map((model) => normalizeModelName(model))
+      .filter(Boolean)
+  )
   const nextMapping = { ...parsedMapping.mapping }
 
   for (const entry of entries) {
@@ -162,7 +168,9 @@ export function buildCompactUpstreamModels(params: {
   )
   const models = formatModelsArray([
     ...params.existingModels.filter(
-      (model) => !selectedMappedTargets.has(normalizeModelName(model))
+      (model) =>
+        selectedExistingSet.has(normalizeModelName(model)) &&
+        !selectedMappedTargets.has(normalizeModelName(model))
     ),
     ...selectedEntries.map((entry) => entry.model),
   ]).split(',')
