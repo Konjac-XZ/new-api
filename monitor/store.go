@@ -30,6 +30,9 @@ type Store struct {
 	mu       sync.RWMutex
 	events   chan StoreEvent
 	eventsMu sync.RWMutex
+	statsMu  sync.Mutex
+	stats    MonitorStats
+	statsAt  time.Time
 
 	// realtimeEnabled gates websocket event work (snapshot/summary/clone + emit).
 	// When false, mutations still update storage, but skip realtime event overhead.
@@ -500,6 +503,14 @@ func (s *Store) GetActive() []*RequestRecord {
 // ReadMemStats is called outside the lock to avoid holding the read lock
 // during a stop-the-world pause.
 func (s *Store) GetStats() MonitorStats {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+
+	now := time.Now()
+	if !s.statsAt.IsZero() && now.Sub(s.statsAt) < MonitorStatsCacheTTL {
+		return s.stats
+	}
+
 	stats := MonitorStats{}
 
 	s.mu.RLock()
@@ -531,6 +542,9 @@ func (s *Store) GetStats() MonitorStats {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	stats.MemoryBytes = int64(mem.Alloc)
+
+	s.stats = stats
+	s.statsAt = now
 
 	return stats
 }

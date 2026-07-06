@@ -20,6 +20,7 @@ const (
 	// Store limits
 	MonitorMinRecords          = 100
 	MonitorRetentionWindow     = 5 * time.Minute
+	MonitorStatsCacheTTL       = time.Second
 	MonitorDegradeActiveLimit  = MonitorMinRecords
 	MonitorRecoverActiveLimit  = MonitorMinRecords * 8 / 10
 	MonitorBodyCaptureMaxBytes = 40 * 1024

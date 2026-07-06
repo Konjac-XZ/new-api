@@ -120,7 +120,8 @@ const monitorNeutralBadgeClassName =
   'border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
 
 const BODY_DISPLAY_LIMIT_BYTES = 40000
-const MONITOR_CLOCK_INTERVAL_MS = 1000
+const MONITOR_STOPWATCH_INTERVAL_MS = 100
+const MONITOR_METRIC_INTERVAL_MS = 100
 const MONITOR_ROW_HEIGHT_PX = 44
 const MONITOR_TABLE_OVERSCAN = 10
 
@@ -560,11 +561,18 @@ function MonitorTable(props: {
   records: MonitorRecord[]
   selectedId: string | null
   columns: MonitorColumnDefinition[]
-  clientNowMs: number
   onSelect: (record: MonitorRecord) => void
 }) {
   const { t } = useTranslation()
   const scrollParentRef = useRef<HTMLDivElement | null>(null)
+  const [clientNowMs, setClientNowMs] = useState(Date.now())
+  const shouldTick = useMemo(
+    () =>
+      props.records.some((record) =>
+        isActiveStatus(deriveDisplayStatus(record))
+      ),
+    [props.records]
+  )
   const columnWidthPercents = useMemo(
     () => getColumnWidthPercents(props.columns),
     [props.columns]
@@ -585,6 +593,16 @@ function MonitorTable(props: {
           rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? 0)
         )
       : 0
+
+  useEffect(() => {
+    if (!shouldTick) return
+    setClientNowMs(Date.now())
+    const timer = setInterval(
+      () => setClientNowMs(Date.now()),
+      MONITOR_STOPWATCH_INTERVAL_MS
+    )
+    return () => clearInterval(timer)
+  }, [shouldTick])
 
   if (props.records.length === 0) {
     return (
@@ -650,7 +668,7 @@ function MonitorTable(props: {
               >
                 {props.columns.map((column) => (
                   <TableCell key={column.key} className={column.cellClassName}>
-                    {column.render(record, props.clientNowMs)}
+                    {column.render(record, clientNowMs)}
                   </TableCell>
                 ))}
               </TableRow>
@@ -1326,12 +1344,58 @@ function useFullscreenWakeLock(
   return { isFullscreen, toggleFullscreen }
 }
 
+function getRecentLoadCount(records: MonitorRecord[], nowMs: number): number {
+  const loadWindowStartMs = nowMs - SUMMARY_RETENTION_WINDOW_MS
+  let count = 0
+  for (const record of records) {
+    const startMs = getStartTimeMs(record)
+    if (startMs >= loadWindowStartMs && startMs <= nowMs) {
+      count++
+    }
+  }
+  return count
+}
+
+function MonitorMetricGrid(props: {
+  summaries: MonitorRecord[]
+  stats: ReturnType<typeof useMonitorWs>['stats']
+}) {
+  const { t } = useTranslation()
+  const [clientNowMs, setClientNowMs] = useState(Date.now())
+  const recentLoadCount = useMemo(
+    () => getRecentLoadCount(props.summaries, clientNowMs),
+    [clientNowMs, props.summaries]
+  )
+
+  useEffect(() => {
+    const timer = setInterval(
+      () => setClientNowMs(Date.now()),
+      MONITOR_METRIC_INTERVAL_MS
+    )
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className='grid shrink-0 grid-cols-2 gap-2 md:grid-cols-4'>
+      <MetricCard label={t('5m Load')} value={recentLoadCount} />
+      <MetricCard
+        label={t('Memory Usage')}
+        value={formatBytes(props.stats.memory)}
+      />
+      <MetricCard
+        label={t('Current Concurrency')}
+        value={props.stats.load.active_requests}
+      />
+      <MetricCard label={t('Current Records')} value={props.stats.total} />
+    </div>
+  )
+}
+
 export function Monitor() {
   const { t } = useTranslation()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
   const [modelSearch, setModelSearch] = useState('')
-  const [clientNowMs, setClientNowMs] = useState(Date.now())
   const [visibleColumns, setVisibleColumns] = useState(
     getInitialMonitorVisibleColumns
   )
@@ -1342,14 +1406,6 @@ export function Monitor() {
   const applyLiveUpdate = detail.applyLiveUpdate
   const fetchDetail = detail.fetchDetail
   const monitorWs = useMonitorWs({ focusedRequestId: selectedId })
-
-  useEffect(() => {
-    const timer = setInterval(
-      () => setClientNowMs(Date.now()),
-      MONITOR_CLOCK_INTERVAL_MS
-    )
-    return () => clearInterval(timer)
-  }, [])
 
   useEffect(() => {
     if (monitorWs.channelUpdate?.request_id) {
@@ -1489,16 +1545,6 @@ export function Monitor() {
     [monitorColumns, visibleColumns]
   )
 
-  const loadWindowStartMs = clientNowMs - SUMMARY_RETENTION_WINDOW_MS
-  const recentLoadRecords = useMemo(
-    () =>
-      monitorWs.summaries.filter((record) => {
-        const startMs = getStartTimeMs(record)
-        return startMs >= loadWindowStartMs && startMs <= clientNowMs
-      }),
-    [clientNowMs, loadWindowStartMs, monitorWs.summaries]
-  )
-
   useEffect(() => {
     if (typeof localStorage === 'undefined') {
       return
@@ -1565,24 +1611,10 @@ export function Monitor() {
         </SectionPageLayout.Actions>
         <SectionPageLayout.Content>
           <div className='flex h-full min-h-0 flex-col gap-3'>
-            <div className='grid shrink-0 grid-cols-2 gap-2 md:grid-cols-4'>
-              <MetricCard
-                label={t('5m Load')}
-                value={recentLoadRecords.length}
-              />
-              <MetricCard
-                label={t('Memory Usage')}
-                value={formatBytes(monitorWs.stats.memory)}
-              />
-              <MetricCard
-                label={t('Current Concurrency')}
-                value={monitorWs.stats.load.active_requests}
-              />
-              <MetricCard
-                label={t('Current Records')}
-                value={monitorWs.stats.total}
-              />
-            </div>
+            <MonitorMetricGrid
+              summaries={monitorWs.summaries}
+              stats={monitorWs.stats}
+            />
 
             {monitorWs.stats.load.degraded ? (
               <Alert className='shrink-0 border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200'>
@@ -1599,7 +1631,6 @@ export function Monitor() {
                 records={records}
                 selectedId={selectedId}
                 columns={visibleMonitorColumns}
-                clientNowMs={clientNowMs}
                 onSelect={handleSelect}
               />
             </div>

@@ -126,9 +126,18 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
   const stableOpenTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const reconnectAttemptsRef = useRef(0)
+  const ignoredCloseWsRef = useRef(new WeakSet<WebSocket>())
   const focusedRequestIdRef = useRef<string | null>(
     options.focusedRequestId ?? null
   )
+
+  const closeWs = useCallback(() => {
+    const ws = wsRef.current
+    wsRef.current = null
+    if (!ws) return
+    ignoredCloseWsRef.current.add(ws)
+    ws.close()
+  }, [])
 
   const fetchStats = useCallback(async () => {
     try {
@@ -289,12 +298,12 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
   const connect = useCallback(() => {
     if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
     reconnectTimeoutRef.current = null
-    wsRef.current?.close()
+    closeWs()
     setChannelUpdate(null)
     pendingMessagesRef.current = []
 
     const ws = new WebSocket(buildWsUrl())
-    ws.onopen = () => {
+    ws.addEventListener('open', () => {
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current)
       disconnectTimerRef.current = null
       setConnected(true)
@@ -302,9 +311,12 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
       stableOpenTimerRef.current = setTimeout(() => {
         reconnectAttemptsRef.current = 0
       }, STABLE_CONNECTION_TIMEOUT_MS)
-    }
-    ws.onmessage = handleMessage
-    ws.onclose = () => {
+    })
+    ws.addEventListener('message', handleMessage)
+    ws.addEventListener('close', () => {
+      if (ignoredCloseWsRef.current.delete(ws)) return
+      if (wsRef.current !== ws) return
+      wsRef.current = null
       if (stableOpenTimerRef.current) clearTimeout(stableOpenTimerRef.current)
       stableOpenTimerRef.current = null
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current)
@@ -320,9 +332,9 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
           connect()
         }, delay)
       }
-    }
+    })
     wsRef.current = ws
-  }, [handleMessage])
+  }, [closeWs, handleMessage])
 
   const reconnect = useCallback(() => {
     reconnectAttemptsRef.current = 0
@@ -340,9 +352,9 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
       if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current)
       if (stableOpenTimerRef.current) clearTimeout(stableOpenTimerRef.current)
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current)
-      wsRef.current?.close()
+      closeWs()
     }
-  }, [connect])
+  }, [closeWs, connect])
 
   useEffect(() => {
     void fetchStats()
