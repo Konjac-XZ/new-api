@@ -149,15 +149,15 @@ export function formatTokenCount(value: number | null): string {
 export function getTtftMs(record: MonitorRecord): number | null {
   if (!record.is_stream) return null
   const streamingStartedAt = record.current_attempt_streaming_started_at_ms
-  const attemptStartedAt = record.current_attempt_started_at_ms
+  const requestStartedAt = getStartTimeMs(record)
   if (
     !streamingStartedAt ||
-    !attemptStartedAt ||
-    streamingStartedAt <= attemptStartedAt
+    !requestStartedAt ||
+    streamingStartedAt <= requestStartedAt
   ) {
     return null
   }
-  return streamingStartedAt - attemptStartedAt
+  return streamingStartedAt - requestStartedAt
 }
 
 export function getOutputSpeed(

@@ -158,6 +158,7 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
     if (batch.length === 0) return
 
     let nextSummaries = summariesRef.current
+    let summaryIndexById: Map<string, number> | null = null
     let changed = false
     let latestChannelUpdate: ChannelUpdate | null = null
 
@@ -165,6 +166,15 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
       if (nextSummaries === summariesRef.current) {
         nextSummaries = [...nextSummaries]
       }
+    }
+
+    const getSummaryIndex = (id: string) => {
+      if (!summaryIndexById) {
+        summaryIndexById = new Map(
+          nextSummaries.map((record, index) => [record.id, index])
+        )
+      }
+      return summaryIndexById.get(id) ?? -1
     }
 
     batch.forEach((message) => {
@@ -175,6 +185,7 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
           .map(asMonitorRecord)
           .filter((record): record is MonitorRecord => record !== null)
           .map((record) => normalizeMonitorPayload(record, receivedAtMs))
+        summaryIndexById = null
         changed = true
         return
       }
@@ -183,11 +194,10 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
         const record = asMonitorRecord(message.payload)
         if (!record) return
         const normalized = normalizeMonitorPayload(record, receivedAtMs)
-        const existingIndex = nextSummaries.findIndex(
-          (item) => item.id === normalized.id
-        )
+        const existingIndex = getSummaryIndex(normalized.id)
         ensureMutable()
         if (existingIndex === -1) {
+          summaryIndexById?.set(normalized.id, nextSummaries.length)
           nextSummaries.push(normalized)
         } else {
           nextSummaries[existingIndex] = normalized
@@ -199,8 +209,9 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
       if (message.type === 'delete') {
         const record = asMonitorRecord(message.payload)
         if (!record) return
-        if (nextSummaries.some((item) => item.id === record.id)) {
+        if (getSummaryIndex(record.id) !== -1) {
           nextSummaries = nextSummaries.filter((item) => item.id !== record.id)
+          summaryIndexById = null
           changed = true
         }
         return
@@ -210,9 +221,7 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
         const payload = asChannelUpdate(message.payload)
         if (!payload?.request_id) return
         const retryCount = getRetryCountFromChannelUpdate(payload)
-        const existingIndex = nextSummaries.findIndex(
-          (item) => item.id === payload.request_id
-        )
+        const existingIndex = getSummaryIndex(payload.request_id)
         if (existingIndex !== -1) {
           ensureMutable()
           nextSummaries[existingIndex] = {

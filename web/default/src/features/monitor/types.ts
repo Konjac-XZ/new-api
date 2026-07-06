@@ -135,6 +135,8 @@ export type MonitorRecord = {
   channel_id?: number
   channel_name?: string
   model?: string
+  upstream_model?: string
+  is_model_mapped?: boolean
   is_stream?: boolean
   prompt_tokens?: number
   completion_tokens?: number

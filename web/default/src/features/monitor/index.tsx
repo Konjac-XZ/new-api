@@ -16,11 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   Activity,
   ArrowDownToLine,
   ArrowUpFromLine,
   Clock3,
+  Download,
   Expand,
   Globe2,
   Hash,
@@ -45,6 +47,7 @@ import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { SectionPageLayout } from '@/components/layout'
+import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -78,6 +81,7 @@ import {
 } from '@/components/ui/tooltip'
 import { cn, tryPrettyJson } from '@/lib/utils'
 
+import { ModelBadge } from '../usage-logs/components/model-badge'
 import { getMonitorBody } from './api'
 import {
   deriveDisplayStatus,
@@ -112,6 +116,14 @@ const MONITOR_COLUMN_KEYS = {
   THROUGHPUT: 'throughput',
 } as const
 
+const monitorNeutralBadgeClassName =
+  'border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
+
+const BODY_DISPLAY_LIMIT_BYTES = 40000
+const MONITOR_CLOCK_INTERVAL_MS = 1000
+const MONITOR_ROW_HEIGHT_PX = 44
+const MONITOR_TABLE_OVERSCAN = 10
+
 type MonitorColumnId =
   (typeof MONITOR_COLUMN_KEYS)[keyof typeof MONITOR_COLUMN_KEYS]
 
@@ -128,23 +140,15 @@ type MonitorColumnDefinition = {
   }
   headClassName?: string
   cellClassName?: string
-  render: (record: MonitorRecord) => React.ReactNode
-  measure?: (record: MonitorRecord) => string
+  render: (record: MonitorRecord, clientNowMs: number) => React.ReactNode
 }
 
 function getColumnWidthPercents(
-  columns: MonitorColumnDefinition[],
-  records: MonitorRecord[]
+  columns: MonitorColumnDefinition[]
 ): Record<MonitorColumnId, number> {
   const columnScores = columns.map((column) => {
-    const measuredChars =
-      column.measure && records.length > 0
-        ? Math.max(
-            ...records.map((record) => column.measure?.(record).length ?? 0)
-          )
-        : column.label.length
     const contentScore = Math.ceil(
-      measuredChars * (column.layout.contentScale ?? 1)
+      column.label.length * (column.layout.contentScale ?? 1)
     )
     const score = Math.min(
       column.layout.max,
@@ -201,7 +205,7 @@ function getInitialMonitorVisibleColumns(): MonitorVisibleColumns {
 function getStatusLabel(status: string, t: (key: string) => string): string {
   if (status === 'completed') return t('Completed')
   if (status === 'error') return t('Error')
-  if (status === 'abandoned') return t('Failed')
+  if (status === 'abandoned') return t('Abandoned')
   if (status === 'streaming') return t('Streaming')
   if (status === 'waiting_upstream') return t('Waiting')
   if (status === 'processing') return t('Running')
@@ -213,8 +217,11 @@ function getStatusClassName(status: string): string {
   if (status === 'completed') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-300'
   }
-  if (status === 'error' || status === 'abandoned') {
+  if (status === 'error') {
     return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-300'
+  }
+  if (status === 'abandoned') {
+    return 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300'
   }
   if (status === 'streaming') {
     return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-900/70 dark:bg-sky-950/40 dark:text-sky-300'
@@ -240,9 +247,10 @@ function getAttemptStatusClassName(status: string | undefined): string {
   if (status === 'succeeded' || status === 'completed') {
     return getStatusClassName('completed')
   }
-  if (status === 'failed' || status === 'error' || status === 'abandoned') {
+  if (status === 'failed' || status === 'error') {
     return getStatusClassName('error')
   }
+  if (status === 'abandoned') return getStatusClassName('abandoned')
   if (status === 'streaming') {
     return getStatusClassName('streaming')
   }
@@ -288,6 +296,129 @@ function TokenUsageBadge({ record }: { record: MonitorRecord }) {
         </span>
       </span>
     </Badge>
+  )
+}
+
+function EmptyMonitorCell() {
+  return <span className='text-muted-foreground/60 text-xs'>-</span>
+}
+
+function MonitorValueBadge(props: {
+  label: string
+  copyText?: string
+  autoColor?: string
+  className?: string
+}) {
+  return (
+    <StatusBadge
+      label={props.label}
+      autoColor={props.autoColor}
+      copyText={props.copyText ?? props.label}
+      size='sm'
+      showDot={false}
+      className={cn(monitorNeutralBadgeClassName, props.className)}
+    />
+  )
+}
+
+function MonitorMetricBadge({ value }: { value: string }) {
+  if (value === '-') return <EmptyMonitorCell />
+
+  return (
+    <StatusBadge
+      label={value}
+      size='sm'
+      copyable={false}
+      showDot={false}
+      className={monitorNeutralBadgeClassName}
+    />
+  )
+}
+
+function getTtftBadgeClassName(ttftMs: number): string {
+  if (ttftMs < 2000) {
+    return 'border border-emerald-200/40 bg-emerald-50/35 !text-emerald-600 dark:border-emerald-900/40 dark:bg-emerald-950/15 dark:!text-emerald-400'
+  }
+  if (ttftMs < 5000) {
+    return 'border border-sky-200/45 bg-sky-50/35 !text-sky-600 dark:border-sky-900/40 dark:bg-sky-950/15 dark:!text-sky-400'
+  }
+  if (ttftMs < 8000) {
+    return 'border border-amber-200/45 bg-amber-50/35 !text-amber-600 dark:border-amber-900/40 dark:bg-amber-950/15 dark:!text-amber-400'
+  }
+  return 'border border-rose-200/50 bg-rose-50/35 !text-red-600 dark:border-rose-900/40 dark:bg-rose-950/15 dark:!text-red-400'
+}
+
+function MonitorTtftBadge({ ttftMs }: { ttftMs: number | null }) {
+  if (!ttftMs) return <EmptyMonitorCell />
+
+  return (
+    <StatusBadge
+      label={formatDuration(ttftMs)}
+      size='sm'
+      copyable={false}
+      showDot={false}
+      className={cn(
+        'h-6 rounded-md px-2 py-0.5',
+        getTtftBadgeClassName(ttftMs)
+      )}
+    />
+  )
+}
+
+function MonitorModelCell({ record }: { record: MonitorRecord }) {
+  const displayModel = record.upstream_model || record.model || ''
+  if (!displayModel) return <EmptyMonitorCell />
+
+  return (
+    <div className='flex min-w-0 items-center gap-1.5'>
+      <ModelBadge modelName={displayModel} className='max-w-full' />
+      {record.is_model_mapped ? (
+        <StatusBadge
+          label='R'
+          size='sm'
+          showDot={false}
+          copyable={false}
+          variant='purple'
+          title={
+            record.model && record.model !== displayModel
+              ? `${record.model} -> ${displayModel}`
+              : displayModel
+          }
+          className='h-5 min-w-5 justify-center rounded-full px-1 text-xs'
+          aria-label='Redirected model'
+        >
+          <Route className='size-3' aria-hidden='true' />
+        </StatusBadge>
+      ) : null}
+    </div>
+  )
+}
+
+function MonitorChannelCell({ record }: { record: MonitorRecord }) {
+  const retryCount = getRetryCount(record)
+  const channel = record.channel_name || record.channel_id
+
+  if (!channel && retryCount <= 0) return <EmptyMonitorCell />
+
+  return (
+    <div className='flex min-w-0 items-center gap-1.5'>
+      {channel ? (
+        <MonitorValueBadge
+          label={String(channel)}
+          copyText={String(channel)}
+          autoColor={String(record.channel_id || channel)}
+        />
+      ) : null}
+      {retryCount > 0 ? (
+        <Badge
+          variant='outline'
+          aria-label={`Retry ${retryCount}`}
+          className='h-5 shrink-0 border-amber-200/70 bg-amber-50/70 px-1.5 text-[11px] font-semibold text-amber-700 tabular-nums dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-300'
+        >
+          +{retryCount}
+        </Badge>
+      ) : null}
+    </div>
   )
 }
 
@@ -429,13 +560,31 @@ function MonitorTable(props: {
   records: MonitorRecord[]
   selectedId: string | null
   columns: MonitorColumnDefinition[]
+  clientNowMs: number
   onSelect: (record: MonitorRecord) => void
 }) {
   const { t } = useTranslation()
+  const scrollParentRef = useRef<HTMLDivElement | null>(null)
   const columnWidthPercents = useMemo(
-    () => getColumnWidthPercents(props.columns, props.records),
-    [props.columns, props.records]
+    () => getColumnWidthPercents(props.columns),
+    [props.columns]
   )
+  const rowVirtualizer = useVirtualizer({
+    count: props.records.length,
+    getScrollElement: () => scrollParentRef.current,
+    estimateSize: () => MONITOR_ROW_HEIGHT_PX,
+    overscan: MONITOR_TABLE_OVERSCAN,
+    getItemKey: (index) => props.records[index]?.id ?? index,
+  })
+  const virtualRows = rowVirtualizer.getVirtualItems()
+  const topPadding = virtualRows.length > 0 ? virtualRows[0].start : 0
+  const bottomPadding =
+    virtualRows.length > 0
+      ? Math.max(
+          0,
+          rowVirtualizer.getTotalSize() - (virtualRows.at(-1)?.end ?? 0)
+        )
+      : 0
 
   if (props.records.length === 0) {
     return (
@@ -454,7 +603,10 @@ function MonitorTable(props: {
   }
 
   return (
-    <div className='h-full overflow-auto rounded-lg border'>
+    <div
+      ref={scrollParentRef}
+      className='h-full overflow-auto rounded-lg border'
+    >
       <Table className='min-w-[72rem] table-fixed'>
         <colgroup>
           {props.columns.map((column) => (
@@ -474,22 +626,44 @@ function MonitorTable(props: {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {props.records.map((record) => (
-            <TableRow
-              key={record.id}
-              className={cn(
-                'cursor-pointer',
-                props.selectedId === record.id && 'bg-muted/70'
-              )}
-              onClick={() => props.onSelect(record)}
-            >
-              {props.columns.map((column) => (
-                <TableCell key={column.key} className={column.cellClassName}>
-                  {column.render(record)}
-                </TableCell>
-              ))}
+          {topPadding > 0 ? (
+            <TableRow aria-hidden='true'>
+              <TableCell
+                colSpan={props.columns.length}
+                style={{ height: topPadding, padding: 0 }}
+              />
             </TableRow>
-          ))}
+          ) : null}
+          {virtualRows.map((virtualRow) => {
+            const record = props.records[virtualRow.index]
+            if (!record) return null
+
+            return (
+              <TableRow
+                key={virtualRow.key}
+                className={cn(
+                  'cursor-pointer',
+                  props.selectedId === record.id && 'bg-muted/70'
+                )}
+                style={{ height: virtualRow.size }}
+                onClick={() => props.onSelect(record)}
+              >
+                {props.columns.map((column) => (
+                  <TableCell key={column.key} className={column.cellClassName}>
+                    {column.render(record, props.clientNowMs)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            )
+          })}
+          {bottomPadding > 0 ? (
+            <TableRow aria-hidden='true'>
+              <TableCell
+                colSpan={props.columns.length}
+                style={{ height: bottomPadding, padding: 0 }}
+              />
+            </TableRow>
+          ) : null}
         </TableBody>
       </Table>
     </div>
@@ -566,6 +740,8 @@ function HeadersViewer(props: {
 function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
   const { t } = useTranslation()
   const [body, setBody] = useState('')
+  const [bodySize, setBodySize] = useState(0)
+  const [bodyTruncated, setBodyTruncated] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -577,16 +753,23 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
       .then((response) => {
         if (cancelled) return
         if (response.success) {
-          setBody(tryPrettyJson(response.body ?? ''))
+          const rawBody = response.body ?? ''
+          setBody(rawBody)
+          setBodySize(response.size ?? rawBody.length)
+          setBodyTruncated(Boolean(response.truncated))
         } else {
           setError(response.message || t('Request failed'))
           setBody('')
+          setBodySize(0)
+          setBodyTruncated(false)
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : t('Request failed'))
           setBody('')
+          setBodySize(0)
+          setBodyTruncated(false)
         }
       })
       .finally(() => {
@@ -596,6 +779,25 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
       cancelled = true
     }
   }, [props.requestId, props.type, t])
+
+  const isLengthExceeded = bodyTruncated || bodySize > BODY_DISPLAY_LIMIT_BYTES
+
+  const handleDownload = useCallback(() => {
+    if (!body) {
+      toast.error(t('Request failed'))
+      return
+    }
+
+    const blob = new Blob([tryPrettyJson(body)], {
+      type: 'application/json;charset=utf-8',
+    })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${props.type}-${props.requestId}-${Date.now()}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [body, props.requestId, props.type, t])
 
   if (loading) {
     return (
@@ -614,10 +816,34 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
     )
   }
 
+  if (isLengthExceeded) {
+    return (
+      <Alert className='bg-muted/30'>
+        <Download className='size-4' />
+        <AlertTitle>{t('Content length exceeds the display limit')}</AlertTitle>
+        <AlertDescription className='flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between'>
+          <span>
+            {body
+              ? t('Download the full JSON file to inspect the captured body.')
+              : t(
+                  'Monitor did not capture this body because it exceeded the capture limit or the system was under load.'
+                )}
+          </span>
+          {body ? (
+            <Button type='button' size='sm' onClick={handleDownload}>
+              <Download className='size-4' />
+              {t('Download')} {t('JSON')}
+            </Button>
+          ) : null}
+        </AlertDescription>
+      </Alert>
+    )
+  }
+
   return (
     <Textarea
       readOnly
-      value={body}
+      value={tryPrettyJson(body)}
       className='h-80 resize-none font-mono text-xs leading-relaxed'
     />
   )
@@ -1113,27 +1339,34 @@ export function Monitor() {
   const { isFullscreen, toggleFullscreen } =
     useFullscreenWakeLock(fullscreenRef)
   const detail = useRequestDetail()
+  const applyLiveUpdate = detail.applyLiveUpdate
+  const fetchDetail = detail.fetchDetail
   const monitorWs = useMonitorWs({ focusedRequestId: selectedId })
 
   useEffect(() => {
-    const timer = setInterval(() => setClientNowMs(Date.now()), 100)
+    const timer = setInterval(
+      () => setClientNowMs(Date.now()),
+      MONITOR_CLOCK_INTERVAL_MS
+    )
     return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
     if (monitorWs.channelUpdate?.request_id) {
-      detail.applyLiveUpdate(
+      applyLiveUpdate(
         monitorWs.channelUpdate.request_id,
         monitorWs.channelUpdate
       )
     }
-  }, [detail, monitorWs.channelUpdate])
+  }, [applyLiveUpdate, monitorWs.channelUpdate])
 
   const records = useMemo(() => {
     const search = modelSearch.trim().toLowerCase()
     const filtered = search
       ? monitorWs.summaries.filter((record) =>
-          (record.model || '').toLowerCase().includes(search)
+          [record.model, record.upstream_model].some((model) =>
+            (model || '').toLowerCase().includes(search)
+          )
         )
       : monitorWs.summaries
     return [...filtered].sort((a, b) => {
@@ -1143,6 +1376,18 @@ export function Monitor() {
       return (b.start_time_ms || 0) - (a.start_time_ms || 0)
     })
   }, [modelSearch, monitorWs.summaries])
+
+  const selectedSummaryExists =
+    !selectedId ||
+    monitorWs.summaries.some((record) => record.id === selectedId)
+
+  useEffect(() => {
+    if (!detailOpen || !selectedId || selectedSummaryExists) return
+
+    setDetailOpen(false)
+    setSelectedId(null)
+    void fetchDetail(null)
+  }, [detailOpen, fetchDetail, selectedId, selectedSummaryExists])
 
   const selectedRecord =
     detail.selectedDetail ||
@@ -1158,8 +1403,6 @@ export function Monitor() {
         layout: { min: 12, max: 15, contentScale: 0.65 },
         cellClassName: 'text-muted-foreground',
         render: (record) =>
-          formatDateTime(record.start_time, record.start_time_ms),
-        measure: (record) =>
           formatDateTime(record.start_time, record.start_time_ms),
       },
       {
@@ -1178,16 +1421,14 @@ export function Monitor() {
             </Badge>
           )
         },
-        measure: (record) => getStatusLabel(deriveDisplayStatus(record), t),
       },
       {
         key: MONITOR_COLUMN_KEYS.MODEL,
         label: t('Model'),
         header: t('Model'),
         layout: { min: 16, max: 32, contentScale: 0.72 },
-        cellClassName: 'truncate font-medium',
-        render: (record) => record.model || '-',
-        measure: (record) => record.model || '-',
+        cellClassName: 'min-w-0',
+        render: (record) => <MonitorModelCell record={record} />,
       },
       {
         key: MONITOR_COLUMN_KEYS.CHANNEL,
@@ -1195,32 +1436,7 @@ export function Monitor() {
         header: t('Channel'),
         layout: { min: 13, max: 24, contentScale: 0.72 },
         cellClassName: 'min-w-0',
-        render: (record) => {
-          const retryCount = getRetryCount(record)
-          return (
-            <div className='flex min-w-0 items-center gap-2'>
-              <span className='min-w-0 truncate'>
-                {record.channel_name || record.channel_id || '-'}
-              </span>
-              {retryCount > 0 ? (
-                <Badge
-                  variant='outline'
-                  aria-label={`${t('Retry')} ${retryCount}`}
-                  className='h-5 shrink-0 border-amber-200/70 bg-amber-50/70 px-1.5 text-[11px] font-semibold text-amber-700 tabular-nums dark:border-amber-900/50 dark:bg-amber-950/35 dark:text-amber-300'
-                >
-                  +{retryCount}
-                </Badge>
-              ) : null}
-            </div>
-          )
-        },
-        measure: (record) => {
-          const retryCount = getRetryCount(record)
-          const channel = String(
-            record.channel_name || record.channel_id || '-'
-          )
-          return retryCount > 0 ? `${channel} +${retryCount}` : channel
-        },
+        render: (record) => <MonitorChannelCell record={record} />,
       },
       {
         key: MONITOR_COLUMN_KEYS.TOKEN_USAGE,
@@ -1228,18 +1444,17 @@ export function Monitor() {
         header: `${t('Input')} / ${t('Output')}`,
         layout: { min: 13, max: 15 },
         render: (record) => <TokenUsageBadge record={record} />,
-        measure: (record) => {
-          const tokenUsage = getMonitorTokenUsage(record)
-          return `${formatTokenCount(tokenUsage.promptTokens)} ${formatTokenCount(tokenUsage.completionTokens)}`
-        },
       },
       {
         key: MONITOR_COLUMN_KEYS.DURATION,
         label: t('Duration'),
         header: t('Duration'),
         layout: { min: 7, max: 9 },
-        render: (record) => formatDuration(getDurationMs(record, clientNowMs)),
-        measure: (record) => formatDuration(getDurationMs(record, clientNowMs)),
+        render: (record, nowMs) => (
+          <MonitorMetricBadge
+            value={formatDuration(getDurationMs(record, nowMs))}
+          />
+        ),
       },
       {
         key: MONITOR_COLUMN_KEYS.TTFT,
@@ -1248,11 +1463,7 @@ export function Monitor() {
         layout: { min: 6, max: 8 },
         render: (record) => {
           const ttftMs = getTtftMs(record)
-          return ttftMs ? formatDuration(ttftMs) : '-'
-        },
-        measure: (record) => {
-          const ttftMs = getTtftMs(record)
-          return ttftMs ? formatDuration(ttftMs) : '-'
+          return <MonitorTtftBadge ttftMs={ttftMs} />
         },
       },
       {
@@ -1260,17 +1471,17 @@ export function Monitor() {
         label: t('Throughput'),
         header: t('Throughput'),
         layout: { min: 9, max: 13 },
-        render: (record) => {
-          const outputSpeed = getOutputSpeed(record, clientNowMs)
-          return outputSpeed ? `${outputSpeed.toFixed(1)} Tokens/s` : '-'
-        },
-        measure: (record) => {
-          const outputSpeed = getOutputSpeed(record, clientNowMs)
-          return outputSpeed ? `${outputSpeed.toFixed(1)} Tokens/s` : '-'
+        render: (record, nowMs) => {
+          const outputSpeed = getOutputSpeed(record, nowMs)
+          return (
+            <MonitorMetricBadge
+              value={outputSpeed ? `${outputSpeed.toFixed(1)} Tokens/s` : '-'}
+            />
+          )
         },
       },
     ],
-    [clientNowMs, t]
+    [t]
   )
 
   const visibleMonitorColumns = useMemo(
@@ -1324,7 +1535,7 @@ export function Monitor() {
   const handleSelect = (record: MonitorRecord) => {
     setSelectedId(record.id)
     setDetailOpen(true)
-    void detail.fetchDetail(record.id)
+    void fetchDetail(record.id)
   }
 
   return (
@@ -1388,6 +1599,7 @@ export function Monitor() {
                 records={records}
                 selectedId={selectedId}
                 columns={visibleMonitorColumns}
+                clientNowMs={clientNowMs}
                 onSelect={handleSelect}
               />
             </div>
@@ -1398,6 +1610,7 @@ export function Monitor() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         title={t('Request Details')}
+        portalContainer={isFullscreen ? fullscreenRef : undefined}
         contentClassName='max-h-[92dvh] max-w-[calc(100vw-1rem)] gap-3 p-3 sm:max-w-[92vw] sm:p-4'
         bodyClassName='py-1'
       >
