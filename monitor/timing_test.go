@@ -214,6 +214,26 @@ func TestRequestSummaryIncludesPromptTokensBeforeResponse(t *testing.T) {
 	}
 }
 
+func TestRequestSummaryIncludesMappedModelFields(t *testing.T) {
+	startTime := time.Unix(1711456789, 123000000)
+
+	record := &RequestRecord{
+		ID:            "req-summary-model-map",
+		Status:        StatusProcessing,
+		StartTime:     startTime,
+		StartTimeMs:   startTime.UnixMilli(),
+		Downstream:    DownstreamInfo{},
+		Model:         "gpt-alias",
+		UpstreamModel: "gpt-4.1",
+		IsModelMapped: true,
+	}
+
+	summary := record.ToSummary()
+	require.Equal(t, "gpt-alias", summary.Model)
+	require.Equal(t, "gpt-4.1", summary.UpstreamModel)
+	require.True(t, summary.IsModelMapped)
+}
+
 func TestMarkChannelPhaseStreamingSetsStreamingStartedTiming(t *testing.T) {
 	resetMonitorManagerForTest()
 	store := GetManager().GetStore()

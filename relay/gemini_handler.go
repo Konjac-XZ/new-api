@@ -175,6 +175,7 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		requestBody = body
 	}
 
+	recordMonitorUpstreamModel(c, info)
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
 		if common.IsDownstreamContextDone(c.Request.Context()) {

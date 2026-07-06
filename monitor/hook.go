@@ -195,6 +195,21 @@ func RecordUpstreamWithContext(c *gin.Context, url string, method string, header
 	RecordUpstream(recordID, url, method, headers, body)
 }
 
+// UpdateModelMapping records the final upstream model used for this request.
+func UpdateModelMapping(recordID string, upstreamModel string, isModelMapped bool) {
+	if !GetManager().IsEnabled() || GetManager().GetStore() == nil || recordID == "" {
+		return
+	}
+	GetManager().GetStore().UpdateIfChanged(recordID, func(r *RequestRecord) bool {
+		if r.UpstreamModel == upstreamModel && r.IsModelMapped == isModelMapped {
+			return false
+		}
+		r.UpstreamModel = upstreamModel
+		r.IsModelMapped = isModelMapped
+		return true
+	})
+}
+
 // RecordResponse records the response details.
 // Uses BatchUpdate to apply all mutations under a single write lock.
 func RecordResponse(recordID string, statusCode int, headers http.Header, body []byte, promptTokens, completionTokens int, err error) {

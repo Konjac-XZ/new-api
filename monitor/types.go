@@ -66,14 +66,16 @@ type RequestRecord struct {
 	Response *ResponseInfo `json:"response,omitempty"`
 
 	// Metadata
-	UserId       int    `json:"user_id"`
-	TokenId      int    `json:"token_id"`
-	TokenName    string `json:"token_name"`
-	ChannelId    int    `json:"channel_id"`
-	ChannelName  string `json:"channel_name"`
-	Model        string `json:"model"`
-	IsStream     bool   `json:"is_stream"`
-	PromptTokens int    `json:"prompt_tokens,omitempty"`
+	UserId        int    `json:"user_id"`
+	TokenId       int    `json:"token_id"`
+	TokenName     string `json:"token_name"`
+	ChannelId     int    `json:"channel_id"`
+	ChannelName   string `json:"channel_name"`
+	Model         string `json:"model"`
+	UpstreamModel string `json:"upstream_model,omitempty"`
+	IsModelMapped bool   `json:"is_model_mapped,omitempty"`
+	IsStream      bool   `json:"is_stream"`
+	PromptTokens  int    `json:"prompt_tokens,omitempty"`
 
 	// Channel switching / retry info
 	CurrentPhase    string           `json:"current_phase,omitempty"`
@@ -202,6 +204,8 @@ type RequestSummary struct {
 	ChannelId                          int             `json:"channel_id"`
 	ChannelName                        string          `json:"channel_name"`
 	Model                              string          `json:"model"`
+	UpstreamModel                      string          `json:"upstream_model,omitempty"`
+	IsModelMapped                      bool            `json:"is_model_mapped,omitempty"`
 	IsStream                           bool            `json:"is_stream"`
 	CurrentPhase                       string          `json:"current_phase,omitempty"`
 	CurrentChannel                     *CurrentChannel `json:"current_channel,omitempty"`
@@ -238,6 +242,8 @@ type recordSnapshot struct {
 	ChannelId                          int
 	ChannelName                        string
 	Model                              string
+	UpstreamModel                      string
+	IsModelMapped                      bool
 	IsStream                           bool
 	PromptTokens                       int
 	CurrentPhase                       string
@@ -262,26 +268,28 @@ type recordSnapshot struct {
 // Must be called while the caller holds the store lock.
 func snapshotRecord(r *RequestRecord) recordSnapshot {
 	snap := recordSnapshot{
-		ID:           r.ID,
-		Status:       r.Status,
-		ServerNowMs:  time.Now().UnixMilli(),
-		StartTime:    r.StartTime,
-		StartTimeMs:  r.StartTimeMs,
-		EndTime:      r.EndTime,
-		EndTimeMs:    r.EndTimeMs,
-		Duration:     r.Duration,
-		Method:       r.Downstream.Method,
-		Path:         r.Downstream.Path,
-		ClientIP:     r.Downstream.ClientIP,
-		UserId:       r.UserId,
-		TokenId:      r.TokenId,
-		TokenName:    r.TokenName,
-		ChannelId:    r.ChannelId,
-		ChannelName:  r.ChannelName,
-		Model:        r.Model,
-		IsStream:     r.IsStream,
-		PromptTokens: r.PromptTokens,
-		CurrentPhase: r.CurrentPhase,
+		ID:            r.ID,
+		Status:        r.Status,
+		ServerNowMs:   time.Now().UnixMilli(),
+		StartTime:     r.StartTime,
+		StartTimeMs:   r.StartTimeMs,
+		EndTime:       r.EndTime,
+		EndTimeMs:     r.EndTimeMs,
+		Duration:      r.Duration,
+		Method:        r.Downstream.Method,
+		Path:          r.Downstream.Path,
+		ClientIP:      r.Downstream.ClientIP,
+		UserId:        r.UserId,
+		TokenId:       r.TokenId,
+		TokenName:     r.TokenName,
+		ChannelId:     r.ChannelId,
+		ChannelName:   r.ChannelName,
+		Model:         r.Model,
+		UpstreamModel: r.UpstreamModel,
+		IsModelMapped: r.IsModelMapped,
+		IsStream:      r.IsStream,
+		PromptTokens:  r.PromptTokens,
+		CurrentPhase:  r.CurrentPhase,
 	}
 	if len(r.ChannelAttempts) > 0 {
 		lastAttempt := r.ChannelAttempts[len(r.ChannelAttempts)-1]
@@ -330,6 +338,8 @@ func (snap *recordSnapshot) toSummary() *RequestSummary {
 		ChannelId:                          snap.ChannelId,
 		ChannelName:                        snap.ChannelName,
 		Model:                              snap.Model,
+		UpstreamModel:                      snap.UpstreamModel,
+		IsModelMapped:                      snap.IsModelMapped,
 		IsStream:                           snap.IsStream,
 		PromptTokens:                       snap.PromptTokens,
 		CurrentPhase:                       snap.CurrentPhase,
@@ -373,6 +383,8 @@ func (r *RequestRecord) ToSummary() *RequestSummary {
 		ChannelId:      r.ChannelId,
 		ChannelName:    r.ChannelName,
 		Model:          r.Model,
+		UpstreamModel:  r.UpstreamModel,
+		IsModelMapped:  r.IsModelMapped,
 		IsStream:       r.IsStream,
 		PromptTokens:   r.PromptTokens,
 		CurrentPhase:   r.CurrentPhase,
