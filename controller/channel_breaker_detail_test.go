@@ -216,12 +216,14 @@ func TestGetAllChannelsLoadsExternalBreakerConfig(t *testing.T) {
 func TestGetAllChannelsFiltersDynamicBreakerChannels(t *testing.T) {
 	setupChannelBreakerDetailTestDB(t)
 
+	autoBan := 1
 	dynamicChannel := &model.Channel{
 		Name:                  "dynamic-breaker-channel",
 		Key:                   "sk-dynamic-breaker",
 		Status:                common.ChannelStatusEnabled,
 		Group:                 "default",
 		Models:                "gpt-4o-mini",
+		AutoBan:               &autoBan,
 		DynamicCircuitBreaker: true,
 	}
 	require.NoError(t, dynamicChannel.Insert())
@@ -247,6 +249,105 @@ func TestGetAllChannelsFiltersDynamicBreakerChannels(t *testing.T) {
 	require.Len(t, list.Items, 1)
 	assert.Equal(t, dynamicChannel.Id, list.Items[0].Id)
 	assert.True(t, list.Items[0].BreakerState.DynamicEnabled)
+}
+
+func TestGetAllChannelsFiltersDynamicBreakerModes(t *testing.T) {
+	setupChannelBreakerDetailTestDB(t)
+
+	autoBan := 1
+	autoBanDisabled := 0
+	now := time.Now().Unix()
+	channels := []*model.Channel{
+		{
+			Name:                  "dynamic-disabled",
+			Key:                   "sk-dynamic-disabled",
+			Status:                common.ChannelStatusManuallyDisabled,
+			Group:                 "default",
+			Models:                "gpt-4o-mini",
+			AutoBan:               &autoBan,
+			DynamicCircuitBreaker: true,
+		},
+		{
+			Name:                  "dynamic-autoban-off",
+			Key:                   "sk-dynamic-autoban-off",
+			Status:                common.ChannelStatusEnabled,
+			Group:                 "default",
+			Models:                "gpt-4o-mini",
+			AutoBan:               &autoBanDisabled,
+			DynamicCircuitBreaker: true,
+		},
+		{
+			Name:                  "dynamic-cooling",
+			Key:                   "sk-dynamic-cooling",
+			Status:                common.ChannelStatusEnabled,
+			Group:                 "default",
+			Models:                "gpt-4o-mini",
+			AutoBan:               &autoBan,
+			DynamicCircuitBreaker: true,
+			BreakerCooldownAt:     now + 300,
+		},
+		{
+			Name:                  "dynamic-active",
+			Key:                   "sk-dynamic-active",
+			Status:                common.ChannelStatusEnabled,
+			Group:                 "default",
+			Models:                "gpt-4o-mini",
+			AutoBan:               &autoBan,
+			DynamicCircuitBreaker: true,
+		},
+		{
+			Name:   "plain",
+			Key:    "sk-plain-mode",
+			Status: common.ChannelStatusEnabled,
+			Group:  "default",
+			Models: "gpt-4o-mini",
+		},
+	}
+	for _, channel := range channels {
+		require.NoError(t, channel.Insert())
+	}
+
+	tests := []struct {
+		mode      string
+		wantNames []string
+	}{
+		{
+			mode: "enabled",
+			wantNames: []string{
+				"dynamic-disabled",
+				"dynamic-autoban-off",
+				"dynamic-cooling",
+				"dynamic-active",
+			},
+		},
+		{
+			mode:      "candidate",
+			wantNames: []string{"dynamic-cooling", "dynamic-active"},
+		},
+		{
+			mode:      "active",
+			wantNames: []string{"dynamic-active"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.mode, func(t *testing.T) {
+			ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/channel/?p=1&page_size=20&dynamic_breaker="+tt.mode, nil, 1)
+			GetAllChannels(ctx)
+
+			response := decodeAPIResponse(t, recorder)
+			require.True(t, response.Success, "expected success response, got message: %s", response.Message)
+
+			var list channelListResponse
+			require.NoError(t, common.Unmarshal(response.Data, &list))
+			require.Equal(t, int64(len(tt.wantNames)), list.Total)
+			gotNames := make([]string, 0, len(list.Items))
+			for _, item := range list.Items {
+				gotNames = append(gotNames, item.Name)
+			}
+			assert.ElementsMatch(t, tt.wantNames, gotNames)
+		})
+	}
 }
 
 func TestUpdateChannelPreservesExternalConfigWhenRequestOmitsFields(t *testing.T) {

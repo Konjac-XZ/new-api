@@ -41,6 +41,7 @@ type FilterDef = {
     count?: number
   }[]
   singleSelect?: boolean
+  compactActiveIndicator?: boolean
 }
 
 type SearchDraft = {
@@ -54,6 +55,7 @@ export type DataTableToolbarProps<TData> = {
    * Placeholder for the default search input. Defaults to `t('Filter...')`.
    */
   searchPlaceholder?: string
+  searchClassName?: string
   /**
    * Delay committing the default search input. Defaults to immediate updates.
    */
@@ -250,7 +252,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
       onChange={handleSearchChange}
       onCompositionStart={handleSearchCompositionStart}
       onCompositionEnd={handleSearchCompositionEnd}
-      className='w-full sm:w-[200px] lg:w-[240px]'
+      className={cn('w-full sm:w-[200px] lg:w-[240px]', props.searchClassName)}
     />
   )
 
@@ -266,6 +268,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
             title={filter.title}
             options={filter.options}
             singleSelect={filter.singleSelect}
+            compactActiveIndicator={filter.compactActiveIndicator}
           />
         )
       }),

@@ -311,6 +311,26 @@ function BreakerRuntimeBadge({
   return null
 }
 
+function getDynamicBreakerFilterValue(channel: Channel) {
+  if (
+    channel.dynamic_circuit_breaker !== true &&
+    channel.breaker_state?.dynamic_enabled !== true
+  ) {
+    return 'disabled'
+  }
+  if (channel.breaker_state?.dynamic_enabled !== true || channel.status !== 1) {
+    return 'enabled'
+  }
+  if (
+    channel.breaker_state.phase === 'cooling' ||
+    channel.breaker_state.phase === 'awaiting_probe' ||
+    channel.breaker_state.phase === 'observation'
+  ) {
+    return 'candidate'
+  }
+  return 'active'
+}
+
 function RemarkCell({ channel }: { channel: Channel }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -1014,15 +1034,26 @@ export function useChannelsColumns(
       {
         id: 'dynamic_breaker',
         header: t('Dynamic Breaker'),
-        accessorFn: (channel) =>
-          channel.breaker_state?.dynamic_enabled === true
-            ? 'enabled'
-            : 'disabled',
+        accessorFn: (channel) => getDynamicBreakerFilterValue(channel),
         filterFn: (row, id, value) => {
           if (!value || value.length === 0 || value.includes('all')) {
             return true
           }
-          return value.includes(String(row.getValue(id)))
+          const filterValue = String(row.getValue(id))
+          if (value.includes('enabled')) {
+            return (
+              filterValue === 'enabled' ||
+              filterValue === 'candidate' ||
+              filterValue === 'active'
+            )
+          }
+          if (value.includes('candidate')) {
+            return filterValue === 'candidate' || filterValue === 'active'
+          }
+          if (value.includes('active')) {
+            return filterValue === 'active'
+          }
+          return false
         },
         enableHiding: false,
       },

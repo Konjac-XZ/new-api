@@ -91,6 +91,21 @@ function isDisabledChannelRow(channel: Channel) {
   )
 }
 
+function normalizeDynamicBreakerFilter(value: string | null | undefined) {
+  if (value === 'enabled' || value === 'candidate' || value === 'active') {
+    return value
+  }
+  return 'all'
+}
+
+function normalizeDynamicBreakerFilterValue(value: unknown) {
+  const rawValue = Array.isArray(value) ? value[0] : value
+  const normalized = normalizeDynamicBreakerFilter(
+    typeof rawValue === 'string' ? rawValue : undefined
+  )
+  return normalized === 'all' ? [] : [normalized]
+}
+
 export function ChannelsTable() {
   const { t } = useTranslation()
   const {
@@ -142,11 +157,13 @@ export function ChannelsTable() {
         searchKey: 'dynamic_breaker',
         type: 'array',
         deserialize: (value) => {
-          if (value !== undefined) return value
+          if (value !== undefined) {
+            return normalizeDynamicBreakerFilterValue(value)
+          }
           const stored = localStorage.getItem(
             CHANNELS_DYNAMIC_BREAKER_FILTER_STORAGE_KEY
           )
-          return stored === 'enabled' ? [stored] : []
+          return normalizeDynamicBreakerFilterValue(stored)
         },
       },
       { columnId: 'type', searchKey: 'type', type: 'array' },
@@ -184,7 +201,11 @@ export function ChannelsTable() {
     (columnFilters.find((f) => f.id === 'dynamic_breaker')?.value as
       | string[]
       | undefined) || []
-  const dynamicBreakerOnly = dynamicBreakerFilter.includes('enabled')
+  const dynamicBreakerMode =
+    dynamicBreakerFilter.find(
+      (value) =>
+        value === 'enabled' || value === 'candidate' || value === 'active'
+    ) ?? undefined
   const typeFilter = useMemo(
     () => (columnFilters.find((f) => f.id === 'type')?.value as string[]) || [],
     [columnFilters]
@@ -262,7 +283,7 @@ export function ChannelsTable() {
         statusFilter.length > 0 && !statusFilter.includes('all')
           ? statusFilter[0]
           : undefined,
-      dynamic_breaker: dynamicBreakerOnly || undefined,
+      dynamic_breaker: dynamicBreakerMode,
       type:
         typeFilter.length > 0 && !typeFilter.includes('all')
           ? Number(typeFilter[0])
@@ -285,7 +306,7 @@ export function ChannelsTable() {
             statusFilter.length > 0 && !statusFilter.includes('all')
               ? statusFilter[0]
               : undefined,
-          dynamic_breaker: dynamicBreakerOnly || undefined,
+          dynamic_breaker: dynamicBreakerMode,
           type:
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
@@ -305,7 +326,7 @@ export function ChannelsTable() {
             statusFilter.length > 0 && !statusFilter.includes('all')
               ? statusFilter[0]
               : undefined,
-          dynamic_breaker: dynamicBreakerOnly || undefined,
+          dynamic_breaker: dynamicBreakerMode,
           type:
             typeFilter.length > 0 && !typeFilter.includes('all')
               ? Number(typeFilter[0])
@@ -469,6 +490,7 @@ export function ChannelsTable() {
       applyHeaderSize
       toolbarProps={{
         searchPlaceholder: t('Filter by name, ID, or key...'),
+        searchClassName: 'hidden h-8 2xl:block 2xl:w-[240px]',
         searchDebounceMs: 500,
         onReset: () => {
           resetModelFilterInput()
@@ -480,7 +502,7 @@ export function ChannelsTable() {
             onChange={onModelFilterInputChange}
             onCompositionStart={onModelFilterCompositionStart}
             onCompositionEnd={onModelFilterCompositionEnd}
-            className='w-full sm:w-[150px] lg:w-[180px]'
+            className='hidden h-8 2xl:block 2xl:w-[180px]'
           />
         ),
         filters: [
@@ -489,6 +511,7 @@ export function ChannelsTable() {
             title: t('Status'),
             options: [...CHANNEL_STATUS_OPTIONS],
             singleSelect: true,
+            compactActiveIndicator: true,
           },
           {
             columnId: 'dynamic_breaker',
@@ -496,22 +519,33 @@ export function ChannelsTable() {
             options: [
               {
                 value: 'enabled',
-                label: 'Dynamic circuit breaker enabled',
+                label: 'Enabled',
+              },
+              {
+                value: 'candidate',
+                label: 'Candidate',
+              },
+              {
+                value: 'active',
+                label: 'Active',
               },
             ],
             singleSelect: true,
+            compactActiveIndicator: true,
           },
           {
             columnId: 'type',
             title: t('Type'),
             options: typeFilterOptions,
             singleSelect: true,
+            compactActiveIndicator: true,
           },
           {
             columnId: 'group',
             title: t('Group'),
             options: groupFilterOptions,
             singleSelect: true,
+            compactActiveIndicator: true,
           },
         ],
         preActions: (

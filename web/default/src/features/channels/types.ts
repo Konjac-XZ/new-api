@@ -359,7 +359,8 @@ export interface GetChannelsParams {
   p?: number
   page_size?: number
   status?: string // 'enabled', 'disabled', or empty for all
-  dynamic_breaker?: boolean
+  dynamic_breaker?: boolean | string
+  dynamic_breaker_mode?: string
   type?: number
   group?: string
   id_sort?: boolean
@@ -374,7 +375,8 @@ export interface SearchChannelsParams {
   group?: string
   model?: string
   status?: string
-  dynamic_breaker?: boolean
+  dynamic_breaker?: boolean | string
+  dynamic_breaker_mode?: string
   type?: number
   id_sort?: boolean
   tag_mode?: boolean
