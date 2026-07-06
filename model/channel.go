@@ -350,6 +350,44 @@ func (channel *Channel) GetModels() []string {
 	return strings.Split(strings.Trim(channel.Models, ","), ",")
 }
 
+func (channel *Channel) GetRoutableModels() []string {
+	models := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, modelName := range channel.GetModels() {
+		modelName = strings.TrimSpace(modelName)
+		if modelName == "" {
+			continue
+		}
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		seen[modelName] = struct{}{}
+		models = append(models, modelName)
+	}
+
+	modelMapping := strings.TrimSpace(channel.GetModelMapping())
+	if modelMapping == "" || modelMapping == "{}" {
+		return models
+	}
+	parsed := make(map[string]string)
+	if err := common.UnmarshalJsonStr(modelMapping, &parsed); err != nil {
+		return models
+	}
+	for source, target := range parsed {
+		source = strings.TrimSpace(source)
+		target = strings.TrimSpace(target)
+		if source == "" || target == "" {
+			continue
+		}
+		if _, ok := seen[source]; ok {
+			continue
+		}
+		seen[source] = struct{}{}
+		models = append(models, source)
+	}
+	return models
+}
+
 func (channel *Channel) GetGroups() []string {
 	if channel.Group == "" {
 		return []string{}

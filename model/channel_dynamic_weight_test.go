@@ -183,6 +183,74 @@ func TestDBChannelSelectionLoadsExternalTimeoutConfig(t *testing.T) {
 	require.Equal(t, maxLatency, selectedExclude.GetMaxFirstTokenLatency())
 }
 
+func TestChannelAbilitiesIncludeRedirectSourceModels(t *testing.T) {
+	truncateTables(t)
+
+	priority := int64(10)
+	weight := uint(100)
+	modelMapping := `{"redirect-alias":"upstream-model"," second-alias ":" second-upstream ","ignored-empty-source":"   "}`
+	channel := &Channel{
+		Name:         "redirect-source-channel",
+		Key:          "sk-redirect",
+		Group:        "default",
+		Models:       "upstream-model",
+		Status:       common.ChannelStatusEnabled,
+		Priority:     &priority,
+		Weight:       &weight,
+		ModelMapping: &modelMapping,
+	}
+	require.NoError(t, channel.Insert())
+
+	var abilityModels []string
+	require.NoError(t, DB.Model(&Ability{}).
+		Where("channel_id = ?", channel.Id).
+		Pluck("model", &abilityModels).Error)
+	require.ElementsMatch(t, []string{"upstream-model", "redirect-alias", "second-alias"}, abilityModels)
+
+	selected, err := GetChannel("default", "redirect-alias", 0, "")
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	require.Equal(t, channel.Id, selected.Id)
+}
+
+func TestChannelCacheIncludesRedirectSourceModels(t *testing.T) {
+	truncateTables(t)
+
+	oldMemoryCacheEnabled := common.MemoryCacheEnabled
+	oldGroup2Model2Channels := group2model2channels
+	oldChannelsIDM := channelsIDM
+	oldChannel2advancedCustomConfig := channel2advancedCustomConfig
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled = oldMemoryCacheEnabled
+		group2model2channels = oldGroup2Model2Channels
+		channelsIDM = oldChannelsIDM
+		channel2advancedCustomConfig = oldChannel2advancedCustomConfig
+	})
+	common.MemoryCacheEnabled = true
+
+	priority := int64(10)
+	weight := uint(100)
+	modelMapping := `{"cache-redirect-alias":"cache-upstream-model"}`
+	channel := &Channel{
+		Name:         "cache-redirect-source-channel",
+		Key:          "sk-cache-redirect",
+		Group:        "default",
+		Models:       "cache-upstream-model",
+		Status:       common.ChannelStatusEnabled,
+		Priority:     &priority,
+		Weight:       &weight,
+		ModelMapping: &modelMapping,
+	}
+	require.NoError(t, channel.Insert())
+
+	InitChannelCache()
+
+	selected, err := GetRandomSatisfiedChannel("default", "cache-redirect-alias", 0)
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	require.Equal(t, channel.Id, selected.Id)
+}
+
 func TestFixAbilityLoadsExternalDynamicBreakerConfig(t *testing.T) {
 	truncateTables(t)
 
