@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -10,18 +11,49 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ envMode }) => {
   const env = loadEnv({ mode: envMode, prefixes: ['VITE_'] })
-  const serverUrl =
+  const clientServerUrl =
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
-    'http://localhost:3000'
+    ''
+  let serverPort = process.env.PORT || ''
+
+  if (!serverPort) {
+    const repoEnvPath = path.resolve(__dirname, '../..', '.env')
+    if (existsSync(repoEnvPath)) {
+      const repoEnv = readFileSync(repoEnvPath, 'utf8')
+      for (const line of repoEnv.split(/\r?\n/)) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith('#')) continue
+
+        const match = /^PORT\s*=\s*(.*)$/.exec(trimmed)
+        if (match) {
+          const value = match[1].trim()
+          const quote = value.at(0)
+          if (
+            value.length >= 2 &&
+            (quote === '"' || quote === "'") &&
+            value.at(-1) === quote
+          ) {
+            serverPort = value.slice(1, -1)
+          } else {
+            serverPort = value
+          }
+          break
+        }
+      }
+    }
+  }
+
+  const proxyServerUrl =
+    clientServerUrl || `http://localhost:${serverPort || '3000'}`
 
   const isProd = envMode === 'production'
   const devProxy = Object.fromEntries(
     (['/api', '/mj', '/pg'] as const).map((key) => [
       key,
-      { target: serverUrl, changeOrigin: true },
+      { target: proxyServerUrl, changeOrigin: true, ws: true },
     ])
-  ) as Record<string, { target: string; changeOrigin: boolean }>
+  ) as Record<string, { target: string; changeOrigin: boolean; ws: boolean }>
 
   return {
     plugins: [pluginReact(), pluginTailwindcss({ optimize: false })],
