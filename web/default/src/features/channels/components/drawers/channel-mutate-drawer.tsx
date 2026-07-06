@@ -597,6 +597,7 @@ export function ChannelMutateDrawer({
   )
   const canRevealChannelKey = currentUser?.role === ROLE.SUPER_ADMIN
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
+  const [fetchModelsCompactMode, setFetchModelsCompactMode] = useState(false)
   const [channelKey, setChannelKey] = useState<string | null>(null)
   const [isChannelKeyLoading, setIsChannelKeyLoading] = useState(false)
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
@@ -1408,30 +1409,34 @@ export function ChannelMutateDrawer({
   )
 
   // Handle fetching models from upstream
-  const handleFetchModels = useCallback(async () => {
-    const type = form.getValues('type')
+  const handleFetchModels = useCallback(
+    async (options?: { compact?: boolean }) => {
+      const type = form.getValues('type')
 
-    if (!MODEL_FETCHABLE_TYPES.has(type)) {
-      toast.error(t('This channel type does not support fetching models'))
-      return
-    }
-
-    if (!isEditing && !canEditSensitive) {
-      toast.error(t("You don't have necessary permission"))
-      return
-    }
-
-    // For creation mode, validate key before opening dialog
-    if (!isEditing) {
-      const key = form.getValues('key')
-      if (!key?.trim()) {
-        toast.error(t('Please enter API key first'))
+      if (!MODEL_FETCHABLE_TYPES.has(type)) {
+        toast.error(t('This channel type does not support fetching models'))
         return
       }
-    }
 
-    setFetchModelsDialogOpen(true)
-  }, [isEditing, canEditSensitive, form, t])
+      if (!isEditing && !canEditSensitive) {
+        toast.error(t("You don't have necessary permission"))
+        return
+      }
+
+      // For creation mode, validate key before opening dialog
+      if (!isEditing) {
+        const key = form.getValues('key')
+        if (!key?.trim()) {
+          toast.error(t('Please enter API key first'))
+          return
+        }
+      }
+
+      setFetchModelsCompactMode(options?.compact === true)
+      setFetchModelsDialogOpen(true)
+    },
+    [isEditing, canEditSensitive, form, t]
+  )
 
   const createModeFetcher = useCallback(async (): Promise<string[]> => {
     if (!canEditSensitive) {
@@ -3373,7 +3378,7 @@ export function ChannelMutateDrawer({
                                       type='button'
                                       variant='outline'
                                       size='sm'
-                                      onClick={handleFetchModels}
+                                      onClick={() => handleFetchModels()}
                                       disabled={!isEditing && !canEditSensitive}
                                     >
                                       <Sparkles
@@ -3381,6 +3386,21 @@ export function ChannelMutateDrawer({
                                         aria-hidden='true'
                                       />
                                       {t('Fetch from Upstream')}
+                                    </Button>
+                                    <Button
+                                      type='button'
+                                      variant='outline'
+                                      size='sm'
+                                      onClick={() =>
+                                        handleFetchModels({ compact: true })
+                                      }
+                                      disabled={!isEditing && !canEditSensitive}
+                                    >
+                                      <Wand2
+                                        className='mr-2 h-4 w-4'
+                                        aria-hidden='true'
+                                      />
+                                      {t('Fetch Compact')}
                                     </Button>
                                     {!isEditing && !canEditSensitive && (
                                       <span className='text-muted-foreground basis-full text-xs'>
@@ -4956,10 +4976,42 @@ export function ChannelMutateDrawer({
       {/* Fetch Models Dialog */}
       <FetchModelsDialog
         open={fetchModelsDialogOpen}
-        onOpenChange={setFetchModelsDialogOpen}
-        onModelsSelected={(models) => {
-          form.setValue('models', formatModelsArray(models))
+        onOpenChange={(nextOpen) => {
+          setFetchModelsDialogOpen(nextOpen)
+          if (!nextOpen) setFetchModelsCompactMode(false)
         }}
+        onModelsSelected={(models) => {
+          form.setValue('models', formatModelsArray(models), {
+            shouldDirty: true,
+            shouldValidate: true,
+          })
+        }}
+        onCompactModelsSelected={(data) => {
+          form.setValue('models', formatModelsArray(data.models), {
+            shouldDirty: true,
+            shouldValidate: true,
+          })
+          form.setValue('model_mapping', data.modelMapping, {
+            shouldDirty: true,
+            shouldValidate: true,
+          })
+          if (data.duplicateModels.length > 0) {
+            toast.warning(
+              t('Skipped duplicate compact model names: {{models}}', {
+                models: data.duplicateModels.join(', '),
+              })
+            )
+          }
+          if (data.conflictModels.length > 0) {
+            toast.warning(
+              t('Kept existing model redirects for conflicts: {{models}}', {
+                models: data.conflictModels.join(', '),
+              })
+            )
+          }
+        }}
+        compactMode={fetchModelsCompactMode}
+        existingModelMapping={form.getValues('model_mapping') || ''}
         redirectModels={redirectModelList}
         redirectSourceModels={redirectModelKeyList}
         customFetcher={!isEditing ? createModeFetcher : undefined}

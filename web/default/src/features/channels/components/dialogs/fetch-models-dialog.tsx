@@ -41,23 +41,31 @@ import {
 
 import { fetchUpstreamModels, updateChannel } from '../../api'
 import {
+  buildCompactUpstreamModels,
   channelsQueryKeys,
   categorizeModelsWithRedirect,
+  type CompactUpstreamModelEntry,
   normalizeModelName,
   parseModelsString,
 } from '../../lib'
 import { useChannels } from '../channels-provider'
 
 function normalizeModelNameList(models: readonly string[]): string[] {
-  return Array.from(
-    new Set(models.map((m) => normalizeModelName(m)).filter(Boolean))
-  )
+  return [...new Set(models.map((m) => normalizeModelName(m)).filter(Boolean))]
 }
 
 type FetchModelsDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onModelsSelected?: (models: string[]) => void
+  onCompactModelsSelected?: (data: {
+    models: string[]
+    modelMapping: string
+    duplicateModels: string[]
+    conflictModels: string[]
+  }) => void
+  compactMode?: boolean
+  existingModelMapping?: string
   redirectModels?: string[]
   redirectSourceModels?: string[]
   customFetcher?: () => Promise<string[]>
@@ -69,6 +77,9 @@ export function FetchModelsDialog({
   open,
   onOpenChange,
   onModelsSelected,
+  onCompactModelsSelected,
+  compactMode = false,
+  existingModelMapping = '',
   redirectModels = [],
   redirectSourceModels = [],
   customFetcher,
@@ -81,9 +92,13 @@ export function FetchModelsDialog({
   const queryClient = useQueryClient()
   const [isFetching, setIsFetching] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [rawFetchedModels, setRawFetchedModels] = useState<string[]>([])
   const [fetchedModels, setFetchedModels] = useState<string[]>([])
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [searchKeyword, setSearchKeyword] = useState('')
+  const [compactEntries, setCompactEntries] = useState<
+    CompactUpstreamModelEntry[]
+  >([])
 
   // Parse existing models
   const existingModels = useMemo(
@@ -104,6 +119,10 @@ export function FetchModelsDialog({
     () => new Set(normalizeModelNameList(fetchedModels)),
     [fetchedModels]
   )
+  const compactEntryMap = useMemo(
+    () => new Map(compactEntries.map((entry) => [entry.model, entry])),
+    [compactEntries]
+  )
 
   // Source keys in model_mapping are aliases, not real upstream IDs, so we
   // must skip them when computing "removed upstream" entries to avoid false
@@ -114,6 +133,7 @@ export function FetchModelsDialog({
   )
 
   const removedModels = useMemo(() => {
+    if (compactMode) return []
     const kw = searchKeyword.toLowerCase().trim()
     return normalizeModelNameList(selectedModels).filter((model) => {
       if (fetchedModelSet.has(model)) return false
@@ -121,7 +141,13 @@ export function FetchModelsDialog({
       if (!kw) return true
       return model.toLowerCase().includes(kw)
     })
-  }, [fetchedModelSet, redirectSourceKeysSet, searchKeyword, selectedModels])
+  }, [
+    compactMode,
+    fetchedModelSet,
+    redirectSourceKeysSet,
+    searchKeyword,
+    selectedModels,
+  ])
 
   useEffect(() => {
     if (open && (activeChannel || customFetcher)) {
@@ -137,16 +163,17 @@ export function FetchModelsDialog({
     try {
       if (customFetcher) {
         const list = await customFetcher()
-        setFetchedModels(list)
-        setSelectedModels(existingModels)
-        toast.success(t('Fetched {{count}} models', { count: list.length }))
+        if (applyFetchedModels(list)) {
+          toast.success(t('Fetched {{count}} models', { count: list.length }))
+        }
       } else {
-        const response = await fetchUpstreamModels(activeChannel!.id)
+        if (!activeChannel) return
+        const response = await fetchUpstreamModels(activeChannel.id)
         if (response.success) {
           const list = Array.isArray(response.data) ? response.data : []
-          setFetchedModels(list)
-          setSelectedModels(existingModels)
-          toast.success(t('Fetched {{count}} models', { count: list.length }))
+          if (applyFetchedModels(list)) {
+            toast.success(t('Fetched {{count}} models', { count: list.length }))
+          }
         } else {
           toast.error(response.message || t('Failed to fetch models'))
           setFetchedModels([])
@@ -162,7 +189,60 @@ export function FetchModelsDialog({
     }
   }
 
+  const applyFetchedModels = (list: string[]): boolean => {
+    setRawFetchedModels(list)
+    if (!compactMode) {
+      setFetchedModels(list)
+      setSelectedModels(existingModels)
+      setCompactEntries([])
+      return true
+    }
+
+    const compactResult = buildCompactUpstreamModels({
+      upstreamModels: list,
+      existingModels,
+      existingModelMapping,
+    })
+
+    if (!compactResult.success) {
+      toast.error(t(compactResult.error))
+      setFetchedModels([])
+      setSelectedModels([])
+      setCompactEntries([])
+      return false
+    }
+
+    setFetchedModels(compactResult.compactModels)
+    setSelectedModels(compactResult.compactModels)
+    setCompactEntries(compactResult.entries)
+    return true
+  }
+
   const handleSave = async () => {
+    if (compactMode && onCompactModelsSelected) {
+      const compactResult = buildCompactUpstreamModels({
+        upstreamModels: rawFetchedModels,
+        existingModels,
+        existingModelMapping,
+        selectedCompactModels: selectedModels,
+      })
+
+      if (!compactResult.success) {
+        toast.error(t(compactResult.error))
+        return
+      }
+
+      onCompactModelsSelected({
+        models: compactResult.models,
+        modelMapping: compactResult.modelMapping,
+        duplicateModels: compactResult.duplicateModels,
+        conflictModels: compactResult.conflictModels,
+      })
+      toast.success(t('Compact models filled to form'))
+      onOpenChange(false)
+      return
+    }
+
     // If onModelsSelected callback is provided, use it (form filling mode)
     if (onModelsSelected) {
       onModelsSelected(selectedModels)
@@ -196,8 +276,10 @@ export function FetchModelsDialog({
   }
 
   const handleClose = () => {
+    setRawFetchedModels([])
     setFetchedModels([])
     setSelectedModels([])
+    setCompactEntries([])
     setSearchKeyword('')
     onOpenChange(false)
   }
@@ -329,31 +411,54 @@ export function FetchModelsDialog({
         </CollapsibleTrigger>
         <CollapsibleContent className='px-4 py-2'>
           <div className='grid grid-cols-2 gap-2'>
-            {categoryModels.map((model) => (
-              <div key={model} className='flex items-center space-x-2'>
-                <Checkbox
-                  id={model}
-                  checked={selectedModels.includes(model)}
-                  onCheckedChange={() => toggleModel(model)}
-                />
-                <Label
-                  htmlFor={model}
-                  className='flex cursor-pointer items-center gap-1.5 text-sm font-normal'
-                >
-                  <span>{model}</span>
-                  {redirectOnlySet.has(normalizeModelName(model)) && (
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={<Info className='h-3.5 w-3.5 text-amber-500' />}
-                      ></TooltipTrigger>
-                      <TooltipContent>
-                        {t('From model redirect, not yet added to models list')}
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </Label>
-              </div>
-            ))}
+            {categoryModels.map((model) =>
+              (() => {
+                const compactEntry = compactEntryMap.get(model)
+                return (
+                  <div key={model} className='flex items-center space-x-2'>
+                    <Checkbox
+                      id={model}
+                      checked={selectedModels.includes(model)}
+                      onCheckedChange={() => toggleModel(model)}
+                    />
+                    <Label
+                      htmlFor={model}
+                      className='flex cursor-pointer items-center gap-1.5 text-sm font-normal'
+                    >
+                      <span>{model}</span>
+                      {compactMode && compactEntry?.shouldMap && (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Info className='text-muted-foreground h-3.5 w-3.5' />
+                            }
+                          />
+                          <TooltipContent>
+                            {t('Redirects to {{model}}', {
+                              model: compactEntry.upstreamModel,
+                            })}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {redirectOnlySet.has(normalizeModelName(model)) && (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <Info className='h-3.5 w-3.5 text-amber-500' />
+                            }
+                          />
+                          <TooltipContent>
+                            {t(
+                              'From model redirect, not yet added to models list'
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </Label>
+                  </div>
+                )
+              })()
+            )}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -364,25 +469,153 @@ export function FetchModelsDialog({
     !!(activeChannel || customFetcher) &&
     !isFetching &&
     (fetchedModels.length > 0 || removedModels.length > 0)
+  const dialogTitle = compactMode
+    ? t('Fetch Compact Models')
+    : t('Fetch Models')
+  const dialogDescription = (() => {
+    if (activeChannel) {
+      return (
+        <>
+          {t('Channel:')} <strong>{activeChannel.name}</strong>
+        </>
+      )
+    }
+    if (channelName) {
+      return (
+        <>
+          {t('Channel:')} <strong>{channelName}</strong>
+        </>
+      )
+    }
+    return t('Fetch available models from upstream')
+  })()
+  const saveLabel = (() => {
+    if (isSaving) return t('Saving...')
+    if (compactMode) return t('Apply Compact Models')
+    return t('Save Models')
+  })()
+  let bodyContent
+  if (!activeChannel && !customFetcher) {
+    bodyContent = (
+      <div className='text-muted-foreground py-8 text-center'>
+        {t('No channel selected')}
+      </div>
+    )
+  } else if (isFetching) {
+    bodyContent = (
+      <div className='flex items-center justify-center py-12'>
+        <Loader2 className='text-muted-foreground h-8 w-8 animate-spin' />
+      </div>
+    )
+  } else if (fetchedModels.length === 0 && removedModels.length === 0) {
+    bodyContent = (
+      <div className='text-muted-foreground py-8 text-center'>
+        <p>{t('No models fetched yet.')}</p>
+        <Button
+          className='mt-4'
+          onClick={handleFetchModels}
+          disabled={isFetching}
+        >
+          {t('Fetch Models')}
+        </Button>
+      </div>
+    )
+  } else {
+    let defaultTab = 'existing'
+    if (newModels.length > 0) {
+      defaultTab = 'new'
+    } else if (removedModels.length > 0) {
+      defaultTab = 'removed'
+    }
+
+    bodyContent = (
+      <div className='space-y-4'>
+        {/* Search Bar */}
+        <div className='relative'>
+          <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
+          <Input
+            placeholder={t('Search models...')}
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            className='pl-9'
+          />
+        </div>
+
+        {/* Tabs for New vs Existing vs Removed */}
+        <Tabs
+          key={`${activeChannel?.id ?? 'custom'}-${fetchedModels.length}-${removedModels.length}`}
+          defaultValue={defaultTab}
+        >
+          <TabsList
+            className={`grid w-full ${removedModels.length > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}
+          >
+            <TabsTrigger value='new' disabled={newModels.length === 0}>
+              {t('New Models ({{count}})', { count: newModels.length })}
+            </TabsTrigger>
+            <TabsTrigger
+              value='existing'
+              disabled={existingFilteredModels.length === 0}
+            >
+              {t('Existing Models ({{count}})', {
+                count: existingFilteredModels.length,
+              })}
+            </TabsTrigger>
+            {removedModels.length > 0 && (
+              <TabsTrigger value='removed'>
+                {t('Removed Models ({{count}})', {
+                  count: removedModels.length,
+                })}
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent
+            value='new'
+            className='max-h-96 space-y-2 overflow-y-auto'
+          >
+            {getSortedCategoryEntries(newModelsByCategory).map(
+              ([category, models]) => renderModelCategory(category, models)
+            )}
+          </TabsContent>
+
+          <TabsContent
+            value='existing'
+            className='max-h-96 space-y-2 overflow-y-auto'
+          >
+            {getSortedCategoryEntries(existingModelsByCategory).map(
+              ([category, models]) => renderModelCategory(category, models)
+            )}
+          </TabsContent>
+
+          {removedModels.length > 0 && (
+            <TabsContent
+              value='removed'
+              className='max-h-96 space-y-2 overflow-y-auto'
+            >
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
+                )}
+              </p>
+              {renderModelCategory(t('Removed'), removedModels)}
+            </TabsContent>
+          )}
+        </Tabs>
+
+        {/* Selection Summary */}
+        <div className='bg-muted/50 rounded-lg border p-3 text-sm'>
+          {t('{{n}} model(s) selected', { n: selectedModels.length })}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <Dialog
       open={open}
       onOpenChange={handleClose}
-      title={t('Fetch Models')}
-      description={
-        activeChannel ? (
-          <>
-            {t('Channel:')} <strong>{activeChannel.name}</strong>
-          </>
-        ) : channelName ? (
-          <>
-            {t('Channel:')} <strong>{channelName}</strong>
-          </>
-        ) : (
-          t('Fetch available models from upstream')
-        )
-      }
+      title={dialogTitle}
+      description={dialogDescription}
       contentClassName='max-w-3xl'
       contentHeight='auto'
       bodyClassName='space-y-4'
@@ -394,119 +627,13 @@ export function FetchModelsDialog({
             </Button>
             <Button onClick={handleSave} disabled={isSaving}>
               {isSaving && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
-              {isSaving ? t('Saving...') : t('Save Models')}
+              {saveLabel}
             </Button>
           </>
         ) : null
       }
     >
-      {!activeChannel && !customFetcher ? (
-        <div className='text-muted-foreground py-8 text-center'>
-          {t('No channel selected')}
-        </div>
-      ) : isFetching ? (
-        <div className='flex items-center justify-center py-12'>
-          <Loader2 className='text-muted-foreground h-8 w-8 animate-spin' />
-        </div>
-      ) : fetchedModels.length === 0 && removedModels.length === 0 ? (
-        <div className='text-muted-foreground py-8 text-center'>
-          <p>{t('No models fetched yet.')}</p>
-          <Button
-            className='mt-4'
-            onClick={handleFetchModels}
-            disabled={isFetching}
-          >
-            {t('Fetch Models')}
-          </Button>
-        </div>
-      ) : (
-        <>
-          <div className='space-y-4'>
-            {/* Search Bar */}
-            <div className='relative'>
-              <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
-              <Input
-                placeholder={t('Search models...')}
-                value={searchKeyword}
-                onChange={(e) => setSearchKeyword(e.target.value)}
-                className='pl-9'
-              />
-            </div>
-
-            {/* Tabs for New vs Existing vs Removed */}
-            <Tabs
-              key={`${activeChannel?.id ?? 'custom'}-${fetchedModels.length}-${removedModels.length}`}
-              defaultValue={
-                newModels.length > 0
-                  ? 'new'
-                  : removedModels.length > 0
-                    ? 'removed'
-                    : 'existing'
-              }
-            >
-              <TabsList
-                className={`grid w-full ${removedModels.length > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}
-              >
-                <TabsTrigger value='new' disabled={newModels.length === 0}>
-                  {t('New Models ({{count}})', { count: newModels.length })}
-                </TabsTrigger>
-                <TabsTrigger
-                  value='existing'
-                  disabled={existingFilteredModels.length === 0}
-                >
-                  {t('Existing Models ({{count}})', {
-                    count: existingFilteredModels.length,
-                  })}
-                </TabsTrigger>
-                {removedModels.length > 0 && (
-                  <TabsTrigger value='removed'>
-                    {t('Removed Models ({{count}})', {
-                      count: removedModels.length,
-                    })}
-                  </TabsTrigger>
-                )}
-              </TabsList>
-
-              <TabsContent
-                value='new'
-                className='max-h-96 space-y-2 overflow-y-auto'
-              >
-                {getSortedCategoryEntries(newModelsByCategory).map(
-                  ([category, models]) => renderModelCategory(category, models)
-                )}
-              </TabsContent>
-
-              <TabsContent
-                value='existing'
-                className='max-h-96 space-y-2 overflow-y-auto'
-              >
-                {getSortedCategoryEntries(existingModelsByCategory).map(
-                  ([category, models]) => renderModelCategory(category, models)
-                )}
-              </TabsContent>
-
-              {removedModels.length > 0 && (
-                <TabsContent
-                  value='removed'
-                  className='max-h-96 space-y-2 overflow-y-auto'
-                >
-                  <p className='text-muted-foreground text-xs'>
-                    {t(
-                      'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
-                    )}
-                  </p>
-                  {renderModelCategory(t('Removed'), removedModels)}
-                </TabsContent>
-              )}
-            </Tabs>
-
-            {/* Selection Summary */}
-            <div className='bg-muted/50 rounded-lg border p-3 text-sm'>
-              {t('{{n}} model(s) selected', { n: selectedModels.length })}
-            </div>
-          </div>
-        </>
-      )}
+      {bodyContent}
     </Dialog>
   )
 }
