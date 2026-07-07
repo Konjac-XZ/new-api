@@ -141,12 +141,14 @@ export function FetchModelsDialog({
     CompactUpstreamModelEntry[]
   >([])
 
-  // Parse existing models
-  const existingModels = useMemo(
+  // Parse the latest form/channel value, then freeze it per dialog opening.
+  const currentExistingModels = useMemo(
     () =>
       existingModelsOverride ?? parseModelsString(activeChannel?.models || ''),
     [existingModelsOverride, activeChannel?.models]
   )
+  const [baseExistingModels, setBaseExistingModels] = useState<string[]>([])
+  const existingModels = open ? baseExistingModels : currentExistingModels
 
   // Categorize models with redirect models
   const modelCategories = useMemo(
@@ -159,6 +161,10 @@ export function FetchModelsDialog({
   const fetchedModelSet = useMemo(
     () => new Set(normalizeModelNameList(fetchedModels)),
     [fetchedModels]
+  )
+  const rawFetchedModelSet = useMemo(
+    () => new Set(normalizeModelNameList(rawFetchedModels)),
+    [rawFetchedModels]
   )
   const compactEntryMap = useMemo(
     () =>
@@ -175,39 +181,70 @@ export function FetchModelsDialog({
     () => new Set(normalizeModelNameList(redirectSourceModels)),
     [redirectSourceModels]
   )
+  const redirectTargetBySourceModel = useMemo(() => {
+    const trimmed = existingModelMapping.trim()
+    if (!trimmed) return new Map<string, string>()
+
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return new Map<string, string>()
+      }
+
+      const entries = Object.entries(parsed)
+        .map(([source, target]) => [
+          normalizeModelName(source),
+          typeof target === 'string' ? normalizeModelName(target) : '',
+        ])
+        .filter(
+          (entry): entry is [string, string] =>
+            Boolean(entry[0]) && Boolean(entry[1])
+        )
+      return new Map(entries)
+    } catch {
+      return new Map<string, string>()
+    }
+  }, [existingModelMapping])
 
   const removedModels = useMemo(() => {
     if (compactMode) return []
     const kw = searchKeyword.toLowerCase().trim()
-    return normalizeModelNameList(selectedModels).filter((model) => {
-      if (fetchedModelSet.has(model)) return false
-      if (redirectSourceKeysSet.has(model)) return false
+    return existingModels.filter((model) => {
+      const normalized = normalizeModelName(model)
+      if (!normalized) return false
+      if (fetchedModelSet.has(normalized)) return false
+      const mappedTarget = redirectTargetBySourceModel.get(normalized)
+      if (mappedTarget && fetchedModelSet.has(mappedTarget)) return false
+      if (!mappedTarget && redirectSourceKeysSet.has(normalized)) return false
       if (!kw) return true
-      return model.toLowerCase().includes(kw)
+      return normalized.toLowerCase().includes(kw)
     })
   }, [
     compactMode,
+    existingModels,
     fetchedModelSet,
+    redirectTargetBySourceModel,
     redirectSourceKeysSet,
     searchKeyword,
-    selectedModels,
   ])
 
   useEffect(() => {
     if (open && (activeChannel || customFetcher)) {
-      handleFetchModels()
+      const nextExistingModels = currentExistingModels
+      setBaseExistingModels(nextExistingModels)
+      handleFetchModels(nextExistingModels)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, activeChannel?.id, customFetcher])
 
-  const handleFetchModels = async () => {
+  const handleFetchModels = async (baseModels = existingModels) => {
     if (!activeChannel && !customFetcher) return
 
     setIsFetching(true)
     try {
       if (customFetcher) {
         const list = await customFetcher()
-        if (applyFetchedModels(list)) {
+        if (applyFetchedModels(list, baseModels)) {
           toast.success(t('Fetched {{count}} models', { count: list.length }))
         }
       } else {
@@ -215,7 +252,7 @@ export function FetchModelsDialog({
         const response = await fetchUpstreamModels(activeChannel.id)
         if (response.success) {
           const list = Array.isArray(response.data) ? response.data : []
-          if (applyFetchedModels(list)) {
+          if (applyFetchedModels(list, baseModels)) {
             toast.success(t('Fetched {{count}} models', { count: list.length }))
           }
         } else {
@@ -233,14 +270,22 @@ export function FetchModelsDialog({
     }
   }
 
-  const applyFetchedModels = (list: string[]): boolean => {
+  const applyFetchedModels = (
+    list: string[],
+    baseModels = existingModels
+  ): boolean => {
     setRawFetchedModels(list)
+    const baseCategories = categorizeModelsWithRedirect(
+      baseModels,
+      redirectModels
+    )
     if (!compactMode) {
       const newFetchedModels = list.filter(
-        (model) => !classificationSet.has(normalizeModelName(model))
+        (model) =>
+          !baseCategories.classificationSet.has(normalizeModelName(model))
       )
       setFetchedModels(list)
-      setSelectedModels(existingModels)
+      setSelectedModels(baseModels)
       setSelectedCompactModels([])
       setSelectedExistingModels([])
       setActiveTab(newFetchedModels.length > 0 ? 'new' : 'existing')
@@ -250,7 +295,7 @@ export function FetchModelsDialog({
 
     const compactResult = buildCompactUpstreamModels({
       upstreamModels: list,
-      existingModels,
+      existingModels: baseModels,
       existingModelMapping,
     })
 
@@ -267,10 +312,15 @@ export function FetchModelsDialog({
     setFetchedModels(compactResult.compactModels)
     setSelectedModels([])
     setSelectedCompactModels(compactResult.compactModels)
-    setSelectedExistingModels(existingModels)
+    setSelectedExistingModels(baseModels)
+    const baseExistingSet = new Set(normalizeModelNameList(baseModels))
     setActiveTab(
       compactResult.entries.some(
-        (entry) => !existingModelSet.has(normalizeModelName(entry.model))
+        (entry) =>
+          !baseExistingSet.has(normalizeModelName(entry.model)) &&
+          !baseCategories.classificationSet.has(
+            normalizeModelName(entry.upstreamModel)
+          )
       )
         ? 'new'
         : 'existing'
@@ -344,6 +394,7 @@ export function FetchModelsDialog({
     setSelectedCompactModels([])
     setSelectedExistingModels([])
     setCompactEntries([])
+    setBaseExistingModels([])
     setSearchKeyword('')
     setActiveTab('existing')
     onOpenChange(false)
@@ -436,12 +487,22 @@ export function FetchModelsDialog({
   )
   const allRemovedModels = useMemo(() => {
     if (compactMode) return []
-    return normalizeModelNameList(selectedModels).filter((model) => {
-      if (fetchedModelSet.has(model)) return false
-      if (redirectSourceKeysSet.has(model)) return false
+    return existingModels.filter((model) => {
+      const normalized = normalizeModelName(model)
+      if (!normalized) return false
+      if (fetchedModelSet.has(normalized)) return false
+      const mappedTarget = redirectTargetBySourceModel.get(normalized)
+      if (mappedTarget && fetchedModelSet.has(mappedTarget)) return false
+      if (!mappedTarget && redirectSourceKeysSet.has(normalized)) return false
       return true
     })
-  }, [compactMode, fetchedModelSet, redirectSourceKeysSet, selectedModels])
+  }, [
+    compactMode,
+    existingModels,
+    fetchedModelSet,
+    redirectSourceKeysSet,
+    redirectTargetBySourceModel,
+  ])
 
   // Helper to check if a model is considered "existing" (in selected or redirect)
   const isExistingModel = (model: string) =>
@@ -469,7 +530,9 @@ export function FetchModelsDialog({
     () =>
       compactEntries
         .filter(
-          (entry) => !existingModelSet.has(normalizeModelName(entry.model))
+          (entry) =>
+            !classificationSet.has(normalizeModelName(entry.model)) &&
+            !classificationSet.has(normalizeModelName(entry.upstreamModel))
         )
         .map((entry) => {
           const checked = selectedCompactModelSet.has(
@@ -490,17 +553,19 @@ export function FetchModelsDialog({
               : 'border-border bg-background text-muted-foreground',
           }
         }),
-    [compactEntries, existingModelSet, selectedCompactModelSet, t]
+    [classificationSet, compactEntries, selectedCompactModelSet, t]
   )
   const compactExistingRowsAll = useMemo<CompactModelRow[]>(
     () =>
       existingModels
         .filter((model) => {
           const normalized = normalizeModelName(model)
-          return (
-            selectedExistingModelSet.has(normalized) &&
-            !selectedCompactMappedTargetSet.has(normalized)
-          )
+          if (!normalized) return false
+          if (fetchedModelSet.has(normalized)) return true
+          if (compactEntryMap.has(normalized)) return true
+          const mappedTarget = redirectTargetBySourceModel.get(normalized)
+          if (mappedTarget && rawFetchedModelSet.has(mappedTarget)) return true
+          return compactEntryByUpstreamModel.has(normalized)
         })
         .map((model) => {
           const normalized = normalizeModelName(model)
@@ -508,29 +573,48 @@ export function FetchModelsDialog({
           const compactModelSelected =
             !!compactEntry &&
             selectedCompactModelSet.has(normalizeModelName(compactEntry.model))
+          const compacted =
+            compactEntry && selectedCompactMappedTargetSet.has(normalized)
           const existingCompactName =
             compactEntryMap.has(normalized) &&
             selectedCompactModelSet.has(normalized)
           let badgeLabel = t('Kept, not compacted')
-          if (compactEntry && !compactModelSelected) {
+          if (compacted) {
+            badgeLabel = t('Compacted to {{model}}', {
+              model: compactEntry.model,
+            })
+          } else if (compactEntry && !compactModelSelected) {
             badgeLabel = t('Compact not applied')
           } else if (existingCompactName) {
             badgeLabel = t('Existing compact name')
+          }
+          let className = ''
+          if (compacted) {
+            className = 'font-medium text-amber-700 dark:text-amber-300'
+          } else if (!selectedExistingModelSet.has(normalized)) {
+            className = 'font-medium text-rose-700 dark:text-rose-300'
           }
 
           return {
             key: `existing:${model}`,
             model,
-            checked: true,
-            className: '',
+            checked:
+              selectedExistingModelSet.has(normalized) &&
+              !selectedCompactMappedTargetSet.has(normalized),
+            className,
             badgeLabel,
-            badgeClassName: 'border-border bg-background text-muted-foreground',
+            badgeClassName: compacted
+              ? 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300'
+              : 'border-border bg-background text-muted-foreground',
           }
         }),
     [
       compactEntryByUpstreamModel,
       compactEntryMap,
       existingModels,
+      fetchedModelSet,
+      rawFetchedModelSet,
+      redirectTargetBySourceModel,
       selectedCompactMappedTargetSet,
       selectedCompactModelSet,
       selectedExistingModelSet,
@@ -538,6 +622,46 @@ export function FetchModelsDialog({
     ]
   )
   const compactRemovedRowsAll = useMemo<CompactModelRow[]>(
+    () =>
+      existingModels
+        .map((model): CompactModelRow | null => {
+          const normalized = normalizeModelName(model)
+          if (!normalized) return null
+          if (fetchedModelSet.has(normalized)) return null
+          if (compactEntryMap.has(normalized)) return null
+          if (compactEntryByUpstreamModel.has(normalized)) return null
+          const mappedTarget = redirectTargetBySourceModel.get(normalized)
+          if (mappedTarget && rawFetchedModelSet.has(mappedTarget)) return null
+          if (!mappedTarget && redirectSourceKeysSet.has(normalized)) {
+            return null
+          }
+
+          return {
+            key: `removed:${model}`,
+            model,
+            checked: selectedExistingModelSet.has(normalized),
+            className: selectedExistingModelSet.has(normalized)
+              ? 'font-medium text-rose-700 dark:text-rose-300'
+              : '',
+            badgeLabel: t('Not returned by upstream'),
+            badgeClassName:
+              'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300',
+          }
+        })
+        .filter((row): row is CompactModelRow => row !== null),
+    [
+      compactEntryByUpstreamModel,
+      compactEntryMap,
+      existingModels,
+      fetchedModelSet,
+      rawFetchedModelSet,
+      redirectSourceKeysSet,
+      redirectTargetBySourceModel,
+      selectedExistingModelSet,
+      t,
+    ]
+  )
+  const compactRemovalPreviewRowsAll = useMemo<CompactModelRow[]>(
     () =>
       existingModels
         .map((model): CompactModelRow | null => {
@@ -550,7 +674,7 @@ export function FetchModelsDialog({
           if (!compacted && !manuallyRemoved) return null
 
           return {
-            key: `removed:${model}`,
+            key: `preview-removed:${model}`,
             model,
             checked: false,
             className: 'font-medium text-rose-700 dark:text-rose-300',
@@ -560,7 +684,6 @@ export function FetchModelsDialog({
             badgeClassName: compacted
               ? 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300'
               : 'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300',
-            compactModel: compactEntry?.model,
           }
         })
         .filter((row): row is CompactModelRow => row !== null),
@@ -676,11 +799,16 @@ export function FetchModelsDialog({
   const modelsToRemove = useMemo(
     () =>
       compactMode
-        ? compactRemovedRowsAll.map((row) => row.model)
+        ? compactRemovalPreviewRowsAll.map((row) => row.model)
         : existingModels.filter(
             (model) => !selectedModelSet.has(normalizeModelName(model))
           ),
-    [compactMode, compactRemovedRowsAll, existingModels, selectedModelSet]
+    [
+      compactMode,
+      compactRemovalPreviewRowsAll,
+      existingModels,
+      selectedModelSet,
+    ]
   )
 
   const defaultTab = (() => {
@@ -801,7 +929,11 @@ export function FetchModelsDialog({
     }
 
     if (row.key.startsWith('removed:')) {
-      keepExistingModel(row.model)
+      if (row.checked) {
+        removeExistingModel(row.model)
+      } else {
+        keepExistingModel(row.model)
+      }
       return
     }
 
@@ -841,6 +973,8 @@ export function FetchModelsDialog({
       if (row.key.startsWith('compact-new:')) {
         deselectCompactModel(row.model)
       } else if (row.key.startsWith('existing:')) {
+        removeExistingModel(row.model)
+      } else if (row.key.startsWith('removed:')) {
         removeExistingModel(row.model)
       }
     })
@@ -929,7 +1063,7 @@ export function FetchModelsDialog({
   }
 
   const renderCompactRemovalPreviewList = () => {
-    if (compactRemovedRowsAll.length === 0) {
+    if (compactRemovalPreviewRowsAll.length === 0) {
       return (
         <p className='text-muted-foreground text-sm'>
           {t('No models to remove')}
@@ -939,7 +1073,7 @@ export function FetchModelsDialog({
 
     return (
       <div className='max-h-28 space-y-1 overflow-y-auto pr-1'>
-        {compactRemovedRowsAll.map((row) => (
+        {compactRemovalPreviewRowsAll.map((row) => (
           <div
             key={row.key}
             className='bg-background rounded-md border px-2 py-1.5 text-xs leading-5'
@@ -1187,7 +1321,7 @@ export function FetchModelsDialog({
         <p>{t('No models fetched yet.')}</p>
         <Button
           className='mt-4'
-          onClick={handleFetchModels}
+          onClick={() => handleFetchModels()}
           disabled={isFetching}
         >
           {t('Fetch Models')}
