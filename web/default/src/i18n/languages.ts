@@ -41,3 +41,29 @@ export function normalizeInterfaceLanguage(value?: string | null): string {
     ? normalized
     : 'en'
 }
+
+/**
+ * Convert an interface language code (the values i18next uses, such as `zhCN` /
+ * `zhTW`) into a valid BCP-47 locale tag that the `Intl.*` APIs accept.
+ *
+ * `new Intl.NumberFormat('zhCN')` throws `RangeError: Invalid language tag`, so
+ * any locale derived from `i18n.language` / `i18n.resolvedLanguage` MUST be run
+ * through this before it reaches an `Intl` constructor. Unknown values fall back
+ * to `undefined`, which makes `Intl` use the runtime default locale.
+ */
+export function toIntlLocale(value?: string | null): string | undefined {
+  if (!value) return undefined
+  switch (value) {
+    case 'zhCN':
+      return 'zh-CN'
+    case 'zhTW':
+      return 'zh-TW'
+    default:
+      break
+  }
+  try {
+    return Intl.getCanonicalLocales(value)[0]
+  } catch {
+    return undefined
+  }
+}
