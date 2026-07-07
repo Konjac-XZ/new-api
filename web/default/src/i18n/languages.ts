@@ -34,12 +34,41 @@ export function normalizeInterfaceLanguage(value?: string | null): string {
   if (!value) return 'en'
 
   const normalized = value.trim().replaceAll('_', '-').toLowerCase()
-  if (['zh-tw', 'zh-hk', 'zh-mo', 'zhtw'].includes(normalized)) return 'zhTW'
+  if (
+    ['zh-tw', 'zh-hk', 'zh-mo', 'zhtw'].includes(normalized) ||
+    normalized.startsWith('zh-hant')
+  ) {
+    return 'zhTW'
+  }
   if (['zh-cn', 'zh-hans', 'zhcn'].includes(normalized)) return 'zhCN'
 
   return INTERFACE_LANGUAGE_OPTIONS.some((lang) => lang.code === normalized)
     ? normalized
     : 'en'
+}
+
+/**
+ * Map a browser-detected locale onto the interface language codes this project
+ * uses with i18next (`zhCN` / `zhTW`).
+ *
+ * Browsers report standard BCP-47 tags (`zh-CN`, `zh-TW`, `zh-Hant`, `zh`, ...),
+ * but `supportedLngs`/resources use the non-standard camelCase codes, so without
+ * this mapping a Chinese browser would never match and fall back to English.
+ * Non-Chinese codes are returned unchanged so i18next's own `supportedLngs`
+ * matching still applies (e.g. `fr-FR` -> `fr`, `ja` -> `ja`).
+ */
+export function convertDetectedLanguage(value: string): string {
+  const lower = value.trim().replaceAll('_', '-').toLowerCase()
+  if (!lower.startsWith('zh')) return value
+  if (
+    lower === 'zh-tw' ||
+    lower === 'zh-hk' ||
+    lower === 'zh-mo' ||
+    lower.startsWith('zh-hant')
+  ) {
+    return 'zhTW'
+  }
+  return 'zhCN'
 }
 
 /**
