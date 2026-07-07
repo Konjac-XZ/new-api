@@ -126,7 +126,7 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
   }
 
   return (
-    <div className='flex items-center gap-0.5'>
+    <div className='flex shrink-0 items-center gap-0.5'>
       {addCount > 0 && (
         <StatusBadge
           label={`+${addCount}`}
@@ -807,11 +807,11 @@ export function useChannelsColumns(
             const childrenCount = (row.original as TagRow).children?.length || 0
 
             return (
-              <div className='flex items-center gap-2'>
+              <div className='flex max-w-full min-w-0 items-center gap-2'>
                 <Button
                   variant='ghost'
                   size='sm'
-                  className='h-6 w-6 p-0'
+                  className='h-6 w-6 shrink-0 p-0'
                   onClick={row.getToggleExpandedHandler()}
                 >
                   {row.getIsExpanded() ? (
@@ -820,8 +820,10 @@ export function useChannelsColumns(
                     <ChevronRight className='h-4 w-4' />
                   )}
                 </Button>
-                <div className='flex items-center gap-1.5'>
-                  <span className='font-semibold'>Tag：{tag}</span>
+                <div className='flex min-w-0 items-center gap-1.5'>
+                  <span className='min-w-0 truncate font-semibold'>
+                    Tag：{tag}
+                  </span>
                   <StatusBadge
                     label={`${childrenCount} channels`}
                     variant='blue'
@@ -839,13 +841,13 @@ export function useChannelsColumns(
           const hasParamOverride = Boolean(channel.param_override?.trim())
 
           return (
-            <div className='flex items-center gap-2'>
-              <div className='flex flex-col gap-1'>
-                <div className='flex items-center gap-1.5'>
+            <div className='flex max-w-full min-w-0 items-center gap-2'>
+              <div className='flex min-w-0 flex-1 flex-col gap-1'>
+                <div className='flex min-w-0 items-center gap-1.5'>
                   <TruncatedText
                     text={sensitiveVisible ? name : SENSITIVE_MASK}
-                    className='font-medium'
-                    maxWidth='max-w-[180px]'
+                    className='min-w-0 flex-1 font-medium'
+                    maxWidth='max-w-full'
                   />
                   {isPassThrough && (
                     <TooltipProvider delay={100}>
