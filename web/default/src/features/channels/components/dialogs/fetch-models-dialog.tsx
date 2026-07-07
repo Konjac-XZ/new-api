@@ -945,13 +945,13 @@ export function FetchModelsDialog({
             className='bg-background rounded-md border px-2 py-1.5 text-xs leading-5'
             title={row.model}
           >
-            <div className='flex min-w-0 items-start gap-2'>
+            <div className='flex min-w-0 flex-col items-start gap-1'>
               <span className='min-w-0 flex-1 font-mono [overflow-wrap:anywhere] break-words'>
                 {row.model}
               </span>
               <Badge
                 variant='outline'
-                className={cn('max-w-52', row.badgeClassName)}
+                className={cn('max-w-full', row.badgeClassName)}
                 title={row.badgeLabel}
               >
                 <span className='min-w-0 truncate'>{row.badgeLabel}</span>
@@ -1000,8 +1000,8 @@ export function FetchModelsDialog({
             />
           </div>
         </CollapsibleTrigger>
-        <CollapsibleContent className='px-4 py-2'>
-          <div className='grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'>
+        <CollapsibleContent className='px-1 py-2 sm:px-4'>
+          <div className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-2'>
             {categoryModels.map((model) =>
               (() => {
                 const compactEntry = compactEntryMap.get(
@@ -1095,8 +1095,8 @@ export function FetchModelsDialog({
             />
           </div>
         </CollapsibleTrigger>
-        <CollapsibleContent className='px-4 py-2'>
-          <div className='grid grid-cols-1 gap-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]'>
+        <CollapsibleContent className='px-1 py-2 sm:px-4'>
+          <div className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-2'>
             {categoryRows.map((row) => (
               <div key={row.key} className='flex min-w-0 items-start gap-2'>
                 <Checkbox
@@ -1107,7 +1107,7 @@ export function FetchModelsDialog({
                 />
                 <Label
                   htmlFor={row.key}
-                  className='flex min-w-0 flex-1 cursor-pointer items-start gap-1.5 text-sm leading-5 font-normal'
+                  className='flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-1 text-sm leading-5 font-normal'
                 >
                   <span
                     className={cn(
@@ -1119,7 +1119,7 @@ export function FetchModelsDialog({
                   </span>
                   <Badge
                     variant='outline'
-                    className={cn('mt-0.5 max-w-80', row.badgeClassName)}
+                    className={cn('max-w-full', row.badgeClassName)}
                     title={row.badgeLabel}
                   >
                     <span className='min-w-0 truncate'>{row.badgeLabel}</span>
@@ -1429,7 +1429,7 @@ export function FetchModelsDialog({
       onOpenChange={handleClose}
       title={dialogTitle}
       description={dialogDescription}
-      contentClassName='w-[min(98vw,96rem)] max-w-none'
+      contentClassName='w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] sm:min-w-[min(44rem,calc(100vw-3rem))] sm:w-[min(max(44rem,92vw),calc(100vw-3rem),96rem)] sm:max-w-[min(max(44rem,92vw),calc(100vw-3rem),96rem)]'
       contentHeight='auto'
       bodyClassName='space-y-4'
       footer={
