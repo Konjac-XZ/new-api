@@ -811,55 +811,6 @@ export function FetchModelsDialog({
     ]
   )
 
-  const defaultTab = (() => {
-    if (compactMode) {
-      if (compactNewRowsAll.length > 0) return 'new'
-      if (compactExistingRowsAll.length > 0) return 'existing'
-      if (compactRemovedRowsAll.length > 0) return 'removed'
-      return 'existing'
-    }
-    if (allFetchedNewModels.length > 0) return 'new'
-    if (allRemovedModels.length > 0) return 'removed'
-    return 'existing'
-  })()
-
-  useEffect(() => {
-    if (compactMode) {
-      let hasActiveTabModels = compactExistingRowsAll.length > 0
-      if (activeTab === 'new') {
-        hasActiveTabModels = compactNewRowsAll.length > 0
-      } else if (activeTab === 'removed') {
-        hasActiveTabModels = compactRemovedRowsAll.length > 0
-      }
-
-      if (!hasActiveTabModels && activeTab !== defaultTab) {
-        setActiveTab(defaultTab)
-      }
-      return
-    }
-
-    let hasActiveTabModels = allFetchedExistingModels.length > 0
-    if (activeTab === 'new') {
-      hasActiveTabModels = allFetchedNewModels.length > 0
-    } else if (activeTab === 'removed') {
-      hasActiveTabModels = allRemovedModels.length > 0
-    }
-
-    if (!hasActiveTabModels && activeTab !== defaultTab) {
-      setActiveTab(defaultTab)
-    }
-  }, [
-    activeTab,
-    allFetchedExistingModels.length,
-    allFetchedNewModels.length,
-    allRemovedModels.length,
-    compactExistingRowsAll.length,
-    compactMode,
-    compactNewRowsAll.length,
-    compactRemovedRowsAll.length,
-    defaultTab,
-  ])
-
   // 厂商分类按 a-z 排序，Other 放最后，便于查找
   const getSortedCategoryEntries = (
     categories: Record<string, string[]>
@@ -1394,46 +1345,28 @@ export function FetchModelsDialog({
           value={activeTab}
           onValueChange={(value) => setActiveTab(value as ModelTab)}
         >
-          <TabsList
-            className={`grid w-full ${compactMode || allRemovedModels.length > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}
-          >
-            <TabsTrigger
-              value='new'
-              disabled={
-                compactMode
-                  ? compactNewRowsAll.length === 0
-                  : allFetchedNewModels.length === 0
-              }
-            >
+          <TabsList className='grid w-full grid-cols-3'>
+            <TabsTrigger value='new'>
               {t('New Models ({{count}})', {
                 count: compactMode
                   ? compactNewRowsAll.length
                   : allFetchedNewModels.length,
               })}
             </TabsTrigger>
-            <TabsTrigger
-              value='existing'
-              disabled={
-                compactMode
-                  ? compactExistingRowsAll.length === 0
-                  : allFetchedExistingModels.length === 0
-              }
-            >
+            <TabsTrigger value='existing'>
               {t('Existing Models ({{count}})', {
                 count: compactMode
                   ? compactExistingRowsAll.length
                   : allFetchedExistingModels.length,
               })}
             </TabsTrigger>
-            {(compactMode || allRemovedModels.length > 0) && (
-              <TabsTrigger value='removed'>
-                {t('Removed Models ({{count}})', {
-                  count: compactMode
-                    ? compactRemovedRowsAll.length
-                    : allRemovedModels.length,
-                })}
-              </TabsTrigger>
-            )}
+            <TabsTrigger value='removed'>
+              {t('Removed Models ({{count}})', {
+                count: compactMode
+                  ? compactRemovedRowsAll.length
+                  : allRemovedModels.length,
+              })}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent
@@ -1482,38 +1415,35 @@ export function FetchModelsDialog({
               : null}
           </TabsContent>
 
-          {(compactMode || allRemovedModels.length > 0) && (
-            <TabsContent
-              value='removed'
-              className='max-h-96 space-y-2 overflow-y-auto'
-            >
-              {!compactMode ? (
-                <p className='text-muted-foreground text-xs'>
-                  {t(
-                    'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
-                  )}
-                </p>
-              ) : null}
-              {activeTab === 'removed' && activeVisibleCount === 0 ? (
-                <p className='text-muted-foreground py-8 text-center text-sm'>
-                  {getEmptyTabMessage()}
-                </p>
-              ) : null}
-              {activeTab === 'removed' && compactMode
-                ? getSortedCompactCategoryEntries(
-                    activeCompactRowsByCategory
-                  ).map(([category, rows]) =>
-                    renderCompactModelCategory(category, rows)
-                  )
-                : null}
-              {activeTab === 'removed' && !compactMode
-                ? getSortedCategoryEntries(activeModelsByCategory).map(
-                    ([category, models]) =>
-                      renderModelCategory(category, models)
-                  )
-                : null}
-            </TabsContent>
-          )}
+          <TabsContent
+            value='removed'
+            className='max-h-96 space-y-2 overflow-y-auto'
+          >
+            {!compactMode ? (
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
+                )}
+              </p>
+            ) : null}
+            {activeTab === 'removed' && activeVisibleCount === 0 ? (
+              <p className='text-muted-foreground py-8 text-center text-sm'>
+                {getEmptyTabMessage()}
+              </p>
+            ) : null}
+            {activeTab === 'removed' && compactMode
+              ? getSortedCompactCategoryEntries(
+                  activeCompactRowsByCategory
+                ).map(([category, rows]) =>
+                  renderCompactModelCategory(category, rows)
+                )
+              : null}
+            {activeTab === 'removed' && !compactMode
+              ? getSortedCategoryEntries(activeModelsByCategory).map(
+                  ([category, models]) => renderModelCategory(category, models)
+                )
+              : null}
+          </TabsContent>
         </Tabs>
 
         {/* Selection Summary */}
