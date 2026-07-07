@@ -755,11 +755,27 @@ export function FetchModelsDialog({
     () =>
       new Set(
         [
-          ...compactExistingRowsAll.map((row) => row.model),
-          ...selectedCompactModels,
+          ...existingModels.filter((model) => {
+            const normalized = normalizeModelName(model)
+            return (
+              selectedExistingModelSet.has(normalized) &&
+              !selectedCompactMappedTargetSet.has(normalized)
+            )
+          }),
+          ...compactEntries
+            .filter((entry) =>
+              selectedCompactModelSet.has(normalizeModelName(entry.model))
+            )
+            .map((entry) => entry.model),
         ].map((model) => normalizeModelName(model))
       ).size,
-    [compactExistingRowsAll, selectedCompactModels]
+    [
+      compactEntries,
+      existingModels,
+      selectedCompactMappedTargetSet,
+      selectedCompactModelSet,
+      selectedExistingModelSet,
+    ]
   )
 
   const activeModelsByCategory = categorizeModels(activeTabModels)
@@ -1419,13 +1435,11 @@ export function FetchModelsDialog({
             value='removed'
             className='max-h-96 space-y-2 overflow-y-auto'
           >
-            {!compactMode ? (
-              <p className='text-muted-foreground text-xs'>
-                {t(
-                  'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
-                )}
-              </p>
-            ) : null}
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'These models are still in your selection but were not returned by the upstream listing. Entries that are only model_mapping source aliases are omitted. Toggle to adjust before saving.'
+              )}
+            </p>
             {activeTab === 'removed' && activeVisibleCount === 0 ? (
               <p className='text-muted-foreground py-8 text-center text-sm'>
                 {getEmptyTabMessage()}
