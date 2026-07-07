@@ -21,6 +21,8 @@ import path from 'node:path'
 
 // This script is executed from the web/ package root (see package.json script).
 const LOCALES_DIR = path.resolve('src/i18n/locales')
+const SRC_DIR = path.resolve('src')
+const STATIC_KEYS_FILE = path.resolve('src/i18n/static-keys.ts')
 const FALLBACK_COMPARE_LOCALE = 'en' // used for "still English" detection only
 const OBFUSCATED_KEYS = [
   {
@@ -229,10 +231,108 @@ function isLikelyUntranslated({ locale, baseValue, value }) {
   if (locale === 'ru') return true
 
   // For fr/vi: still useful but noisier; keep it conservative.
-  if (locale === 'fr' || locale === 'vi')
+  if (locale === 'fr' || locale === 'vi') {
     return /\b(the|and|or|to|with|please)\b/i.test(s)
+  }
 
   return false
+}
+
+async function walkSourceFiles(dir) {
+  const files = []
+  const entries = await fs.readdir(dir, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      if (
+        [
+          'node_modules',
+          '.git',
+          'dist',
+          'locales',
+          '_reports',
+          '_extras',
+        ].includes(entry.name)
+      ) {
+        continue
+      }
+      files.push(...(await walkSourceFiles(fullPath)))
+      continue
+    }
+
+    if (/\.(tsx?|jsx?)$/.test(entry.name)) {
+      files.push(fullPath)
+    }
+  }
+
+  return files.sort((a, b) => a.localeCompare(b))
+}
+
+function decodeJsString(raw) {
+  return raw
+    .replaceAll("\\'", "'")
+    .replaceAll('\\"', '"')
+    .replaceAll('\\n', '\n')
+    .replaceAll('\\r', '\r')
+    .replaceAll('\\t', '\t')
+    .replaceAll('\\\\', '\\')
+}
+
+function addSourceKey(sourceKeys, key, location) {
+  if (!key || key.startsWith('{{') || key.includes('${')) return
+  if (!sourceKeys.has(key)) sourceKeys.set(key, new Set())
+  sourceKeys.get(key).add(location)
+}
+
+function collectStaticKeys(content, sourceKeys) {
+  const match = content.match(
+    /export\s+const\s+STATIC_I18N_KEYS\s*=\s*\[([\s\S]*?)\]\s+as\s+const/
+  )
+  if (!match) return 0
+
+  let count = 0
+  const stringRegex = /(['"])((?:\\.|(?!\1)[\s\S])*?)\1/g
+  let stringMatch
+  while ((stringMatch = stringRegex.exec(match[1])) !== null) {
+    addSourceKey(
+      sourceKeys,
+      decodeJsString(stringMatch[2]),
+      path.relative(SRC_DIR, STATIC_KEYS_FILE)
+    )
+    count += 1
+  }
+  return count
+}
+
+async function collectSourceKeys() {
+  const sourceKeys = new Map()
+  const files = await walkSourceFiles(SRC_DIR)
+
+  for (const file of files) {
+    const content = await fs.readFile(file, 'utf8')
+    const relPath = path.relative(SRC_DIR, file)
+    const tCallRegex =
+      /(?:^|[^\w$])(?:t|i18next\.t)\(\s*(['"`])((?:\\.|(?!\1)[^\r\n\\])*)\1\s*[,)]/g
+    let match
+    while ((match = tCallRegex.exec(content)) !== null) {
+      addSourceKey(sourceKeys, decodeJsString(match[2]), relPath)
+    }
+  }
+
+  let staticKeyCount = 0
+  try {
+    const staticKeysContent = await fs.readFile(STATIC_KEYS_FILE, 'utf8')
+    staticKeyCount = collectStaticKeys(staticKeysContent, sourceKeys)
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err
+  }
+
+  return {
+    files,
+    sourceKeys,
+    staticKeyCount,
+  }
 }
 
 async function main() {
@@ -266,9 +366,31 @@ async function main() {
   const baseJson = parsedByLocale[baseLocale]
 
   const compareJson = parsedByLocale[FALLBACK_COMPARE_LOCALE] ?? baseJson
+  const {
+    files: sourceFiles,
+    sourceKeys,
+    staticKeyCount,
+  } = await collectSourceKeys()
+  const baseTranslations = baseJson?.translation ?? {}
+  const missingSourceKeys = {}
+
+  for (const [key, locations] of sourceKeys) {
+    if (!Object.prototype.hasOwnProperty.call(baseTranslations, key)) {
+      missingSourceKeys[key] = [...locations].sort((a, b) =>
+        a.localeCompare(b)
+      )
+    }
+  }
 
   const report = {
     base: baseFile,
+    sourceKeys: {
+      scannedFileCount: sourceFiles.length,
+      staticKeyCount,
+      discoveredKeyCount: sourceKeys.size,
+      missingCount: Object.keys(missingSourceKeys).length,
+      missing: missingSourceKeys,
+    },
     locales: {},
   }
 
@@ -348,6 +470,17 @@ async function main() {
   console.log(
     `i18n sync done. Report: ${path.join(reportsDir, '_sync-report.json')}`
   )
+
+  if (Object.keys(missingSourceKeys).length > 0) {
+    console.error('Missing i18n source keys:')
+    for (const [key, locations] of Object.entries(missingSourceKeys)) {
+      console.error(`  ${JSON.stringify(key)}`)
+      for (const location of locations) {
+        console.error(`    -> ${location}`)
+      }
+    }
+    process.exitCode = 1
+  }
 }
 
 main().catch((err) => {

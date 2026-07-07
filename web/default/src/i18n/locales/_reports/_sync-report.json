@@ -1,5 +1,12 @@
 {
   "base": "en.json",
+  "sourceKeys": {
+    "scannedFileCount": 989,
+    "staticKeyCount": 454,
+    "discoveredKeyCount": 4122,
+    "missingCount": 0,
+    "missing": {}
+  },
   "locales": {
     "en": {
       "file": "en.json",

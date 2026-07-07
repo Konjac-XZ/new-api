@@ -215,6 +215,10 @@ export const STATIC_I18N_KEYS = [
   // Channel Affinity section
   'Channel Affinity',
 
+  // Channels
+  'Candidate',
+  'Dynamic Breaker',
+
   // Models constants
   'Exact Match',
   'Prefix Match',

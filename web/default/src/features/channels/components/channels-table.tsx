@@ -523,7 +523,7 @@ export function ChannelsTable() {
               },
               {
                 value: 'candidate',
-                label: 'Candidate',
+                label: t('Candidate'),
               },
               {
                 value: 'active',
