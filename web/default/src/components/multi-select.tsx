@@ -123,6 +123,7 @@ export function MultiSelect(props: MultiSelectProps) {
   const [inputValue, setInputValue] = React.useState('')
   const [open, setOpen] = React.useState(false)
   const [expanded, setExpanded] = React.useState(false)
+  const keepOpenAfterSelectionRef = React.useRef(false)
 
   const selectedSet = React.useMemo(
     () => new Set(props.selected),
@@ -165,7 +166,7 @@ export function MultiSelect(props: MultiSelectProps) {
     if (canCreate) {
       set.add(trimmedInput)
     }
-    return Array.from(set)
+    return [...set]
   }, [props.options, props.selected, canCreate, trimmedInput])
 
   const addValues = React.useCallback(
@@ -200,13 +201,25 @@ export function MultiSelect(props: MultiSelectProps) {
   }
 
   const handleValueChange = (next: string[]) => {
-    props.onChange(next)
-    // When an item is picked (multiple mode), Base UI keeps the input but most
-    // UX patterns clear it. Clearing once a value is added makes batch picking
-    // feel snappier and matches popular chip-style multiselects.
-    if (next.length > props.selected.length) {
-      setInputValue('')
+    const changed =
+      next.length !== props.selected.length ||
+      next.some((value, index) => value !== props.selected[index])
+    if (changed && open) {
+      keepOpenAfterSelectionRef.current = true
+      window.setTimeout(() => {
+        keepOpenAfterSelectionRef.current = false
+      }, 0)
     }
+    props.onChange(next)
+  }
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && keepOpenAfterSelectionRef.current) {
+      keepOpenAfterSelectionRef.current = false
+      setOpen(true)
+      return
+    }
+    setOpen(nextOpen)
   }
 
   const handleCopyChip = React.useCallback(
@@ -255,7 +268,7 @@ export function MultiSelect(props: MultiSelectProps) {
       inputValue={inputValue}
       onInputValueChange={handleInputValueChange}
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={handleOpenChange}
       disabled={props.disabled}
     >
       <ComboboxChips

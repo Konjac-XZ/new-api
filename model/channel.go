@@ -821,7 +821,7 @@ func (channel *Channel) Update() error {
 		if err := saveChannelExternalFieldsTx(tx, channel); err != nil {
 			return err
 		}
-		return channel.UpdateAbilities(tx)
+		return channel.UpdateAbilitiesFromDatabase(tx)
 	})
 	if err != nil {
 		return err

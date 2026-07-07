@@ -251,6 +251,39 @@ func TestChannelCacheIncludesRedirectSourceModels(t *testing.T) {
 	require.Equal(t, channel.Id, selected.Id)
 }
 
+func TestChannelUpdateRebuildsAbilitiesFromPersistedStatus(t *testing.T) {
+	truncateTables(t)
+
+	priority := int64(10)
+	weight := uint(100)
+	channel := &Channel{
+		Name:     "persisted-status-channel",
+		Key:      "sk-persisted-status",
+		Group:    "default",
+		Models:   "old-model",
+		Status:   common.ChannelStatusEnabled,
+		Priority: &priority,
+		Weight:   &weight,
+	}
+	require.NoError(t, channel.Insert())
+
+	update := &Channel{
+		Id:       channel.Id,
+		Name:     channel.Name,
+		Group:    "default",
+		Models:   "new-model",
+		Priority: &priority,
+		Weight:   &weight,
+	}
+	require.NoError(t, update.Update())
+
+	var abilities []Ability
+	require.NoError(t, DB.Find(&abilities, "channel_id = ?", channel.Id).Error)
+	require.Len(t, abilities, 1)
+	require.Equal(t, "new-model", abilities[0].Model)
+	require.True(t, abilities[0].Enabled)
+}
+
 func TestFixAbilityLoadsExternalDynamicBreakerConfig(t *testing.T) {
 	truncateTables(t)
 

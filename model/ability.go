@@ -381,6 +381,51 @@ func (channel *Channel) DeleteAbilities() error {
 	return DB.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
 }
 
+func (channel *Channel) UpdateAbilitiesFromDatabase(tx *gorm.DB) error {
+	if channel == nil || channel.Id == 0 {
+		return errors.New("channel ID is 0")
+	}
+
+	isNewTx := false
+	if tx == nil {
+		tx = DB.Begin()
+		if tx.Error != nil {
+			return tx.Error
+		}
+		isNewTx = true
+		defer func() {
+			if r := recover(); r != nil {
+				tx.Rollback()
+			}
+		}()
+	}
+
+	persisted := &Channel{}
+	if err := tx.First(persisted, "id = ?", channel.Id).Error; err != nil {
+		if isNewTx {
+			tx.Rollback()
+		}
+		return err
+	}
+	if err := loadChannelExternalFieldsTx(tx, []*Channel{persisted}); err != nil {
+		if isNewTx {
+			tx.Rollback()
+		}
+		return err
+	}
+	if err := persisted.UpdateAbilities(tx); err != nil {
+		if isNewTx {
+			tx.Rollback()
+		}
+		return err
+	}
+
+	if isNewTx {
+		return tx.Commit().Error
+	}
+	return nil
+}
+
 // UpdateAbilities updates abilities of this channel.
 // Make sure the channel is completed before calling this function.
 func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
