@@ -3,7 +3,7 @@
   "sourceKeys": {
     "scannedFileCount": 989,
     "staticKeyCount": 454,
-    "discoveredKeyCount": 4122,
+    "discoveredKeyCount": 4129,
     "missingCount": 0,
     "missing": {}
   },
@@ -40,7 +40,7 @@
     },
     "zh-TW": {
       "file": "zh-TW.json",
-      "missingCount": 0,
+      "missingCount": 118,
       "extrasCount": 0,
       "untranslatedCount": 0
     },
