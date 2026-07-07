@@ -145,10 +145,10 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
       if (!response.success) return
       const data = response.data ?? {}
       const load = response.load ?? {}
-      setStats({
-        total: data.total_requests ?? 0,
-        active: data.active_requests ?? 0,
-        memory: data.memory_bytes ?? 0,
+      const nextStats: MonitorStatsPayload = {
+        total: data.total_requests ?? DEFAULT_STATS.total,
+        active: data.active_requests ?? DEFAULT_STATS.active,
+        memory: data.memory_bytes ?? DEFAULT_STATS.memory,
         load: {
           active_requests:
             load.active_requests ??
@@ -157,6 +157,20 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
           capacity: load.capacity ?? DEFAULT_STATS.load.capacity,
           degraded: load.degraded ?? false,
         },
+      }
+
+      setStats((previous) => {
+        if (
+          previous.total === nextStats.total &&
+          previous.active === nextStats.active &&
+          previous.memory === nextStats.memory &&
+          previous.load.active_requests === nextStats.load.active_requests &&
+          previous.load.capacity === nextStats.load.capacity &&
+          previous.load.degraded === nextStats.load.degraded
+        ) {
+          return previous
+        }
+        return nextStats
       })
     } catch {
       // stats are best-effort and will refresh on the next interval
@@ -186,49 +200,58 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
       return summaryIndexById.get(id) ?? -1
     }
 
-    batch.forEach((message) => {
+    for (const message of batch) {
       const receivedAtMs = Date.now()
       if (message.type === 'snapshot') {
         const payload = Array.isArray(message.payload) ? message.payload : []
-        nextSummaries = payload
-          .map(asMonitorRecord)
-          .filter((record): record is MonitorRecord => record !== null)
-          .map((record) => normalizeMonitorPayload(record, receivedAtMs))
+        const snapshot: MonitorRecord[] = []
+        for (const item of payload) {
+          const record = asMonitorRecord(item)
+          if (record) {
+            snapshot.push(normalizeMonitorPayload(record, receivedAtMs))
+          }
+        }
+        nextSummaries = snapshot
         summaryIndexById = null
         changed = true
-        return
+        continue
       }
 
       if (message.type === 'new' || message.type === 'update') {
         const record = asMonitorRecord(message.payload)
-        if (!record) return
+        if (!record) continue
         const normalized = normalizeMonitorPayload(record, receivedAtMs)
         const existingIndex = getSummaryIndex(normalized.id)
         ensureMutable()
         if (existingIndex === -1) {
-          summaryIndexById?.set(normalized.id, nextSummaries.length)
+          if (!summaryIndexById) {
+            summaryIndexById = new Map(
+              nextSummaries.map((item, index) => [item.id, index])
+            )
+          }
+          summaryIndexById.set(normalized.id, nextSummaries.length)
           nextSummaries.push(normalized)
         } else {
           nextSummaries[existingIndex] = normalized
         }
         changed = true
-        return
+        continue
       }
 
       if (message.type === 'delete') {
         const record = asMonitorRecord(message.payload)
-        if (!record) return
+        if (!record) continue
         if (getSummaryIndex(record.id) !== -1) {
           nextSummaries = nextSummaries.filter((item) => item.id !== record.id)
           summaryIndexById = null
           changed = true
         }
-        return
+        continue
       }
 
       if (message.type === 'channel_update') {
         const payload = asChannelUpdate(message.payload)
-        if (!payload?.request_id) return
+        if (!payload?.request_id) continue
         const retryCount = getRetryCountFromChannelUpdate(payload)
         const existingIndex = getSummaryIndex(payload.request_id)
         if (existingIndex !== -1) {
@@ -254,7 +277,7 @@ export function useMonitorWs(options: UseMonitorWsOptions = {}) {
           latestChannelUpdate = normalizeMonitorPayload(payload, receivedAtMs)
         }
       }
-    })
+    }
 
     if (changed) {
       const trimmed = trimSummaries(nextSummaries)

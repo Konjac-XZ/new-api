@@ -39,7 +39,9 @@ interface ModelProvider {
   label: string
 }
 
-function resolveModelProvider(modelName: string): ModelProvider | null {
+const modelProviderCache = new Map<string, ModelProvider | null>()
+
+function resolveModelProviderUncached(modelName: string): ModelProvider | null {
   const model = modelName.toLowerCase()
   const hasAny = (keywords: string[]) =>
     keywords.some((keyword) => model.includes(keyword))
@@ -122,6 +124,16 @@ function resolveModelProvider(modelName: string): ModelProvider | null {
   return null
 }
 
+function resolveModelProvider(modelName: string): ModelProvider | null {
+  if (modelProviderCache.has(modelName)) {
+    return modelProviderCache.get(modelName) ?? null
+  }
+
+  const provider = resolveModelProviderUncached(modelName)
+  modelProviderCache.set(modelName, provider)
+  return provider
+}
+
 function ModelBadgeContent(props: ModelBadgeProps) {
   const provider = resolveModelProvider(props.modelName)
 
@@ -132,12 +144,12 @@ function ModelBadgeContent(props: ModelBadgeProps) {
       showDot={!provider}
       autoColor={provider ? undefined : props.modelName}
       className={cn(
-        'border-border/60 bg-muted/30 h-6 max-w-none gap-1.5 rounded-md border px-2 [font-family:var(--font-body)]',
+        'border-border/60 bg-muted/30 h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 [font-family:var(--font-body)]',
         provider && 'text-foreground',
         props.className
       )}
     >
-      <span className='flex max-w-none items-center gap-1.5'>
+      <span className='flex max-w-full min-w-0 items-center gap-1.5'>
         {provider && (
           <span
             className='flex h-[18px] w-[18px] shrink-0 items-center justify-center'
@@ -147,7 +159,9 @@ function ModelBadgeContent(props: ModelBadgeProps) {
             {getLobeIcon(provider.icon, 18)}
           </span>
         )}
-        <span className='whitespace-nowrap'>{props.modelName}</span>
+        <span className='min-w-0 truncate whitespace-nowrap'>
+          {props.modelName}
+        </span>
       </span>
     </StatusBadge>
   )

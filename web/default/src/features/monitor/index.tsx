@@ -41,7 +41,7 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -142,14 +142,23 @@ type MonitorColumnDefinition = {
   headClassName?: string
   cellClassName?: string
   render: (record: MonitorRecord, clientNowMs: number) => React.ReactNode
+  measure?: (record: MonitorRecord) => string
+  live?: boolean
 }
 
 function getColumnWidthPercents(
-  columns: MonitorColumnDefinition[]
+  columns: MonitorColumnDefinition[],
+  records: MonitorRecord[]
 ): Record<MonitorColumnId, number> {
   const columnScores = columns.map((column) => {
+    let measuredChars = column.label.length
+    if (column.measure) {
+      for (const record of records) {
+        measuredChars = Math.max(measuredChars, column.measure(record).length)
+      }
+    }
     const contentScore = Math.ceil(
-      column.label.length * (column.layout.contentScale ?? 1)
+      measuredChars * (column.layout.contentScale ?? 1)
     )
     const score = Math.min(
       column.layout.max,
@@ -371,7 +380,7 @@ function MonitorModelCell({ record }: { record: MonitorRecord }) {
   if (!displayModel) return <EmptyMonitorCell />
 
   return (
-    <div className='flex min-w-0 items-center gap-1.5'>
+    <div className='flex w-full min-w-0 items-center gap-1.5 overflow-hidden'>
       <ModelBadge modelName={displayModel} className='max-w-full' />
       {record.is_model_mapped ? (
         <StatusBadge
@@ -402,7 +411,7 @@ function MonitorChannelCell({ record }: { record: MonitorRecord }) {
   if (!channel && retryCount <= 0) return <EmptyMonitorCell />
 
   return (
-    <div className='flex min-w-0 items-center gap-1.5'>
+    <div className='flex w-full min-w-0 items-center gap-1.5 overflow-hidden'>
       {channel ? (
         <MonitorValueBadge
           label={String(channel)}
@@ -557,6 +566,35 @@ function MonitorToolbar(props: {
   )
 }
 
+const StaticMonitorTableCell = memo(function StaticMonitorTableCell(props: {
+  record: MonitorRecord
+  column: MonitorColumnDefinition
+}) {
+  return (
+    <TableCell className={props.column.cellClassName}>
+      {props.column.render(props.record, 0)}
+    </TableCell>
+  )
+})
+
+function MonitorTableCell(props: {
+  record: MonitorRecord
+  column: MonitorColumnDefinition
+  clientNowMs: number
+}) {
+  if (!props.column.live) {
+    return (
+      <StaticMonitorTableCell record={props.record} column={props.column} />
+    )
+  }
+
+  return (
+    <TableCell className={props.column.cellClassName}>
+      {props.column.render(props.record, props.clientNowMs)}
+    </TableCell>
+  )
+}
+
 function MonitorTable(props: {
   records: MonitorRecord[]
   selectedId: string | null
@@ -574,8 +612,8 @@ function MonitorTable(props: {
     [props.records]
   )
   const columnWidthPercents = useMemo(
-    () => getColumnWidthPercents(props.columns),
-    [props.columns]
+    () => getColumnWidthPercents(props.columns, props.records),
+    [props.columns, props.records]
   )
   const rowVirtualizer = useVirtualizer({
     count: props.records.length,
@@ -667,9 +705,12 @@ function MonitorTable(props: {
                 onClick={() => props.onSelect(record)}
               >
                 {props.columns.map((column) => (
-                  <TableCell key={column.key} className={column.cellClassName}>
-                    {column.render(record, clientNowMs)}
-                  </TableCell>
+                  <MonitorTableCell
+                    key={column.key}
+                    record={record}
+                    column={column}
+                    clientNowMs={clientNowMs}
+                  />
                 ))}
               </TableRow>
             )
@@ -799,6 +840,7 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
   }, [props.requestId, props.type, t])
 
   const isLengthExceeded = bodyTruncated || bodySize > BODY_DISPLAY_LIMIT_BYTES
+  const prettyBody = useMemo(() => tryPrettyJson(body), [body])
 
   const handleDownload = useCallback(() => {
     if (!body) {
@@ -806,7 +848,7 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
       return
     }
 
-    const blob = new Blob([tryPrettyJson(body)], {
+    const blob = new Blob([prettyBody], {
       type: 'application/json;charset=utf-8',
     })
     const url = URL.createObjectURL(blob)
@@ -815,7 +857,7 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
     link.download = `${props.type}-${props.requestId}-${Date.now()}.json`
     link.click()
     URL.revokeObjectURL(url)
-  }, [body, props.requestId, props.type, t])
+  }, [body, prettyBody, props.requestId, props.type, t])
 
   if (loading) {
     return (
@@ -861,7 +903,7 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
   return (
     <Textarea
       readOnly
-      value={tryPrettyJson(body)}
+      value={prettyBody}
       className='h-80 resize-none font-mono text-xs leading-relaxed'
     />
   )
@@ -1344,16 +1386,53 @@ function useFullscreenWakeLock(
   return { isFullscreen, toggleFullscreen }
 }
 
-function getRecentLoadCount(records: MonitorRecord[], nowMs: number): number {
-  const loadWindowStartMs = nowMs - SUMMARY_RETENTION_WINDOW_MS
-  let count = 0
+function getSortedStartTimes(records: MonitorRecord[]): number[] {
+  const startTimes: number[] = []
   for (const record of records) {
-    const startMs = getStartTimeMs(record)
-    if (startMs >= loadWindowStartMs && startMs <= nowMs) {
-      count++
+    const startTime = getStartTimeMs(record)
+    if (startTime > 0) startTimes.push(startTime)
+  }
+  startTimes.sort((a, b) => a - b)
+  return startTimes
+}
+
+function lowerBound(values: number[], target: number): number {
+  let low = 0
+  let high = values.length
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2)
+    if (values[middle] < target) {
+      low = middle + 1
+    } else {
+      high = middle
     }
   }
-  return count
+  return low
+}
+
+function upperBound(values: number[], target: number): number {
+  let low = 0
+  let high = values.length
+  while (low < high) {
+    const middle = low + Math.floor((high - low) / 2)
+    if (values[middle] <= target) {
+      low = middle + 1
+    } else {
+      high = middle
+    }
+  }
+  return low
+}
+
+function getRecentLoadCountFromStartTimes(
+  sortedStartTimes: number[],
+  nowMs: number
+): number {
+  const loadWindowStartMs = nowMs - SUMMARY_RETENTION_WINDOW_MS
+  return (
+    upperBound(sortedStartTimes, nowMs) -
+    lowerBound(sortedStartTimes, loadWindowStartMs)
+  )
 }
 
 function MonitorMetricGrid(props: {
@@ -1362,9 +1441,13 @@ function MonitorMetricGrid(props: {
 }) {
   const { t } = useTranslation()
   const [clientNowMs, setClientNowMs] = useState(Date.now())
+  const sortedStartTimes = useMemo(
+    () => getSortedStartTimes(props.summaries),
+    [props.summaries]
+  )
   const recentLoadCount = useMemo(
-    () => getRecentLoadCount(props.summaries, clientNowMs),
-    [clientNowMs, props.summaries]
+    () => getRecentLoadCountFromStartTimes(sortedStartTimes, clientNowMs),
+    [clientNowMs, sortedStartTimes]
   )
 
   useEffect(() => {
@@ -1418,24 +1501,46 @@ export function Monitor() {
 
   const records = useMemo(() => {
     const search = modelSearch.trim().toLowerCase()
-    const filtered = search
-      ? monitorWs.summaries.filter((record) =>
-          [record.model, record.upstream_model].some((model) =>
-            (model || '').toLowerCase().includes(search)
-          )
+    const decorated: Array<{
+      record: MonitorRecord
+      activeRank: number
+      startTimeMs: number
+    }> = []
+
+    for (const record of monitorWs.summaries) {
+      if (
+        search &&
+        ![record.model, record.upstream_model].some((model) =>
+          (model || '').toLowerCase().includes(search)
         )
-      : monitorWs.summaries
-    return [...filtered].sort((a, b) => {
-      const bActive = isActiveStatus(deriveDisplayStatus(b)) ? 1 : 0
-      const aActive = isActiveStatus(deriveDisplayStatus(a)) ? 1 : 0
-      if (bActive !== aActive) return bActive - aActive
-      return (b.start_time_ms || 0) - (a.start_time_ms || 0)
+      ) {
+        continue
+      }
+
+      decorated.push({
+        record,
+        activeRank: isActiveStatus(deriveDisplayStatus(record)) ? 1 : 0,
+        startTimeMs: record.start_time_ms || 0,
+      })
+    }
+
+    decorated.sort((a, b) => {
+      if (b.activeRank !== a.activeRank) return b.activeRank - a.activeRank
+      return b.startTimeMs - a.startTimeMs
     })
+
+    return decorated.map((item) => item.record)
   }, [modelSearch, monitorWs.summaries])
 
-  const selectedSummaryExists =
-    !selectedId ||
-    monitorWs.summaries.some((record) => record.id === selectedId)
+  const summariesById = useMemo(() => {
+    const byId = new Map<string, MonitorRecord>()
+    for (const record of monitorWs.summaries) {
+      byId.set(record.id, record)
+    }
+    return byId
+  }, [monitorWs.summaries])
+
+  const selectedSummaryExists = !selectedId || summariesById.has(selectedId)
 
   useEffect(() => {
     if (!detailOpen || !selectedId || selectedSummaryExists) return
@@ -1447,7 +1552,7 @@ export function Monitor() {
 
   const selectedRecord =
     detail.selectedDetail ||
-    monitorWs.summaries.find((record) => record.id === selectedId) ||
+    (selectedId ? summariesById.get(selectedId) : null) ||
     null
 
   const monitorColumns = useMemo<MonitorColumnDefinition[]>(
@@ -1459,6 +1564,8 @@ export function Monitor() {
         layout: { min: 12, max: 15, contentScale: 0.65 },
         cellClassName: 'text-muted-foreground',
         render: (record) =>
+          formatDateTime(record.start_time, record.start_time_ms),
+        measure: (record) =>
           formatDateTime(record.start_time, record.start_time_ms),
       },
       {
@@ -1477,35 +1584,51 @@ export function Monitor() {
             </Badge>
           )
         },
+        measure: (record) => getStatusLabel(deriveDisplayStatus(record), t),
       },
       {
         key: MONITOR_COLUMN_KEYS.MODEL,
         label: t('Model'),
         header: t('Model'),
         layout: { min: 16, max: 32, contentScale: 0.72 },
-        cellClassName: 'min-w-0',
+        cellClassName: 'min-w-0 overflow-hidden',
         render: (record) => <MonitorModelCell record={record} />,
+        measure: (record) => record.upstream_model || record.model || '-',
       },
       {
         key: MONITOR_COLUMN_KEYS.CHANNEL,
         label: t('Channel'),
         header: t('Channel'),
         layout: { min: 13, max: 24, contentScale: 0.72 },
-        cellClassName: 'min-w-0',
+        cellClassName: 'min-w-0 overflow-hidden',
         render: (record) => <MonitorChannelCell record={record} />,
+        measure: (record) => {
+          const retryCount = getRetryCount(record)
+          const channel = String(
+            record.channel_name || record.channel_id || '-'
+          )
+          return retryCount > 0 ? `${channel} +${retryCount}` : channel
+        },
       },
       {
         key: MONITOR_COLUMN_KEYS.TOKEN_USAGE,
         label: `${t('Input')} / ${t('Output')}`,
         header: `${t('Input')} / ${t('Output')}`,
         layout: { min: 13, max: 15 },
+        cellClassName: 'overflow-hidden',
         render: (record) => <TokenUsageBadge record={record} />,
+        measure: (record) => {
+          const tokenUsage = getMonitorTokenUsage(record)
+          return `${formatTokenCount(tokenUsage.promptTokens)} ${formatTokenCount(tokenUsage.completionTokens)}`
+        },
       },
       {
         key: MONITOR_COLUMN_KEYS.DURATION,
         label: t('Duration'),
         header: t('Duration'),
-        layout: { min: 7, max: 9 },
+        layout: { min: 9, max: 9 },
+        cellClassName: 'overflow-hidden',
+        live: true,
         render: (record, nowMs) => (
           <MonitorMetricBadge
             value={formatDuration(getDurationMs(record, nowMs))}
@@ -1517,16 +1640,23 @@ export function Monitor() {
         label: 'TTFT',
         header: 'TTFT',
         layout: { min: 6, max: 8 },
+        cellClassName: 'overflow-hidden',
         render: (record) => {
           const ttftMs = getTtftMs(record)
           return <MonitorTtftBadge ttftMs={ttftMs} />
+        },
+        measure: (record) => {
+          const ttftMs = getTtftMs(record)
+          return ttftMs ? formatDuration(ttftMs) : '-'
         },
       },
       {
         key: MONITOR_COLUMN_KEYS.THROUGHPUT,
         label: t('Throughput'),
         header: t('Throughput'),
-        layout: { min: 9, max: 13 },
+        layout: { min: 13, max: 13 },
+        cellClassName: 'overflow-hidden',
+        live: true,
         render: (record, nowMs) => {
           const outputSpeed = getOutputSpeed(record, nowMs)
           return (
