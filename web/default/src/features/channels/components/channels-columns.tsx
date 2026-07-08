@@ -48,12 +48,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toIntlLocale } from '@/i18n/languages'
 import {
   formatCurrencyFromUSD,
   formatQuotaWithCurrency,
   getCurrencyLabel,
 } from '@/lib/currency'
-import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampToDate } from '@/lib/format'
 
 import { getCodexUsage } from '../api'
@@ -775,6 +775,7 @@ export function useChannelsColumns(
               },
               enableSorting: false,
               enableHiding: false,
+              enableResizing: false,
               size: 40,
             } satisfies ColumnDef<Channel>,
           ]
@@ -842,8 +843,8 @@ export function useChannelsColumns(
 
           return (
             <div className='flex max-w-full min-w-0 items-center gap-2'>
-              <div className='flex min-w-0 flex-1 flex-col gap-1'>
-                <div className='flex min-w-0 items-center gap-1.5'>
+              <div className='flex max-w-full min-w-0 flex-1 flex-col gap-1'>
+                <div className='flex max-w-full min-w-0 items-center gap-1.5'>
                   <TruncatedText
                     text={sensitiveVisible ? name : SENSITIVE_MASK}
                     className='min-w-0 flex-1 font-medium'
@@ -886,6 +887,7 @@ export function useChannelsColumns(
             </div>
           )
         },
+        size: 260,
         minSize: 200,
       },
 
