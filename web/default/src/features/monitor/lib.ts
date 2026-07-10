@@ -23,6 +23,7 @@ export const MIN_SUMMARY_ITEMS = 100
 export const SUMMARY_RETENTION_WINDOW_MS = 5 * 60 * 1000
 export const MS_TO_SECONDS = 1000
 export const MIN_OUTPUT_TOKENS_FOR_THROUGHPUT = 100
+export const MAX_REASONABLE_OUTPUT_TOKENS_PER_SECOND = 5000
 
 const ACTIVE_STATUSES = new Set(['processing', 'waiting_upstream', 'streaming'])
 const TERMINAL_STATUSES = new Set(['completed', 'error', 'abandoned'])
@@ -183,7 +184,9 @@ export function getOutputSpeed(
       : getSyncedNowMs(record, clientNowMs) - startedAt
 
   if (generationMs <= 0) return null
-  return completionTokens / (generationMs / MS_TO_SECONDS)
+  const outputSpeed = completionTokens / (generationMs / MS_TO_SECONDS)
+  if (outputSpeed > MAX_REASONABLE_OUTPUT_TOKENS_PER_SECOND) return null
+  return outputSpeed
 }
 
 export function getRetryCount(record: MonitorRecord): number {

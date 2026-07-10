@@ -376,9 +376,7 @@ async function main() {
 
   for (const [key, locations] of sourceKeys) {
     if (!Object.prototype.hasOwnProperty.call(baseTranslations, key)) {
-      missingSourceKeys[key] = [...locations].sort((a, b) =>
-        a.localeCompare(b)
-      )
+      missingSourceKeys[key] = [...locations].sort((a, b) => a.localeCompare(b))
     }
   }
 

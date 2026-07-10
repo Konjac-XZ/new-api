@@ -24,6 +24,14 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
 
+import { Button } from '@/components/design-system/button'
+import { Input } from '@/components/design-system/input'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/design-system/tabs'
 import { RiskAcknowledgementDialog } from '@/components/risk-acknowledgement-dialog'
 import {
   Alert,
@@ -31,7 +39,6 @@ import {
   AlertDescription,
   AlertTitle,
 } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -41,9 +48,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { zodResolver } from '@/lib/zod-resolver'
@@ -819,7 +824,6 @@ export function PaymentSettingsSection({
           <AlertAction>
             <Button
               type='button'
-              size='sm'
               variant='destructive'
               onClick={() => setShowComplianceDialog(true)}
             >
@@ -958,7 +962,6 @@ export function PaymentSettingsSection({
                         <Button
                           type='button'
                           variant='outline'
-                          size='sm'
                           onClick={() =>
                             setPayMethodsVisualMode(!payMethodsVisualMode)
                           }
@@ -1017,7 +1020,6 @@ export function PaymentSettingsSection({
                           <Button
                             type='button'
                             variant='outline'
-                            size='sm'
                             onClick={() =>
                               setAmountOptionsVisualMode(
                                 !amountOptionsVisualMode
@@ -1073,7 +1075,6 @@ export function PaymentSettingsSection({
                           <Button
                             type='button'
                             variant='outline'
-                            size='sm'
                             onClick={() =>
                               setAmountDiscountVisualMode(
                                 !amountDiscountVisualMode
@@ -1542,7 +1543,6 @@ export function PaymentSettingsSection({
                         <Button
                           type='button'
                           variant='outline'
-                          size='sm'
                           onClick={() =>
                             setCreemProductsVisualMode(!creemProductsVisualMode)
                           }

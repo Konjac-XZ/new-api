@@ -33,9 +33,9 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/design-system/button'
 import { Dialog } from '@/components/dialog'
-import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
-import { Button } from '@/components/ui/button'
+import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -74,14 +74,6 @@ const CHANNEL_FIELD_LABELS: Record<string, string> = {
   key: 'Key',
 }
 
-function timingTextColorClass(
-  variant: 'success' | 'warning' | 'danger'
-): string {
-  if (variant === 'success') return 'text-success'
-  if (variant === 'warning') return 'text-warning'
-  return 'text-destructive'
-}
-
 function DetailRow(props: {
   label: React.ReactNode
   value: React.ReactNode
@@ -109,16 +101,16 @@ function DetailRow(props: {
 function DetailSection(props: {
   icon?: React.ReactNode
   label: string
-  variant?: 'default' | 'danger'
+  variant?: 'default' | 'destructive'
   children: React.ReactNode
 }) {
-  const isDanger = props.variant === 'danger'
+  const isDestructive = props.variant === 'destructive'
   return (
     <div className='min-w-0 space-y-1.5'>
       <Label
         className={cn(
           'flex items-center gap-1.5 text-xs font-semibold',
-          isDanger && 'text-red-500'
+          isDestructive && 'text-destructive'
         )}
       >
         {props.icon}
@@ -127,8 +119,8 @@ function DetailSection(props: {
       <div
         className={cn(
           'min-w-0 space-y-1 overflow-hidden rounded-md border p-2.5 max-sm:p-2',
-          isDanger
-            ? 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/20'
+          isDestructive
+            ? 'border-destructive/25 bg-destructive/10'
             : 'bg-muted/30'
         )}
       >
@@ -431,6 +423,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
   const typeConfig = getLogTypeConfig(props.log.type)
+  let reasoningEffortVariant: StatusVariant = 'success'
+  if (other?.reasoning_effort === 'high') {
+    reasoningEffortVariant = 'warning'
+  } else if (other?.reasoning_effort === 'medium') {
+    reasoningEffortVariant = 'info'
+  }
 
   const isViolation = isViolationFeeLog(other)
   const isRefund = props.log.type === 6
@@ -553,12 +551,6 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
     useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
-  let reasoningEffortVariant: StatusBadgeProps['variant'] = 'green'
-  if (other?.reasoning_effort === 'high') {
-    reasoningEffortVariant = 'orange'
-  } else if (other?.reasoning_effort === 'medium') {
-    reasoningEffortVariant = 'yellow'
-  }
 
   return (
     <Dialog
@@ -567,12 +559,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
       title={
         <>
           {t('Log Details')}
-          <StatusBadge
-            label={t(typeConfig.label)}
-            variant={typeConfig.color as StatusBadgeProps['variant']}
-            size='sm'
-            copyable={false}
-          />
+          <StatusBadge variant={typeConfig.variant} size='sm'>
+            {t(typeConfig.label)}
+          </StatusBadge>
         </>
       }
       description={t('View the complete details for this log entry')}
@@ -659,32 +648,25 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <DetailRow
               label={t('Response Time')}
               value={
-                <span
-                  className={cn(
-                    'font-medium',
-                    timingTextColorClass(
-                      getResponseTimeColor(
-                        props.log.use_time,
-                        props.log.completion_tokens
-                      )
-                    )
-                  )}
-                >
-                  {formatUseTime(props.log.use_time)}
+                <span className='flex flex-wrap items-center gap-1'>
+                  <StatusBadge
+                    appearance='plain'
+                    variant={getResponseTimeColor(
+                      props.log.use_time,
+                      props.log.completion_tokens
+                    )}
+                  >
+                    {formatUseTime(props.log.use_time)}
+                  </StatusBadge>
                   {props.log.is_stream &&
                     other?.frt != null &&
                     other.frt > 0 && (
-                      <span
-                        className={cn(
-                          'font-normal',
-                          timingTextColorClass(
-                            getFirstResponseTimeColor(other.frt / 1000)
-                          )
-                        )}
+                      <StatusBadge
+                        appearance='plain'
+                        variant={getFirstResponseTimeColor(other.frt / 1000)}
                       >
-                        {' '}
-                        (FRT: {formatUseTime(other.frt / 1000)})
-                      </span>
+                        {`(FRT: ${formatUseTime(other.frt / 1000)})`}
+                      </StatusBadge>
                     )}
                 </span>
               }
@@ -698,14 +680,14 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <div className='relative min-w-0'>
               <Button
                 variant='ghost'
-                size='sm'
-                className='absolute top-0 right-0 h-5 w-5 p-0'
+                size='icon-xs'
+                className='absolute top-0 right-0'
                 onClick={() => copyToClipboard(conversionLabel)}
                 title={t('Copy to clipboard')}
                 aria-label={t('Copy to clipboard')}
               >
                 {copiedText === conversionLabel ? (
-                  <Check className='size-3 text-green-600' />
+                  <Check className='text-success size-3' />
                 ) : (
                   <Copy className='size-3' />
                 )}
@@ -737,7 +719,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
             label={t('Quota clamped')}
-            variant='danger'
+            variant='destructive'
           >
             <p className='mb-1 text-xs wrap-break-word'>
               {t('Quota saturation protection triggered')}
@@ -772,7 +754,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
             label={t('Reject Reason')}
-            variant='danger'
+            variant='destructive'
           >
             <p className='text-xs wrap-break-word'>{other.reject_reason}</p>
           </DetailSection>
@@ -783,7 +765,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
             label={t('Violation Fee')}
-            variant='danger'
+            variant='destructive'
           >
             {other.violation_fee_code && (
               <DetailRow
@@ -966,12 +948,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailRow
             label={t('Reasoning Effort')}
             value={
-              <StatusBadge
-                label={other.reasoning_effort}
-                variant={reasoningEffortVariant}
-                size='sm'
-                copyable={false}
-              />
+              <StatusBadge variant={reasoningEffortVariant} size='sm'>
+                {other.reasoning_effort}
+              </StatusBadge>
             }
           />
         )}
@@ -981,12 +960,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
           <DetailRow
             label={t('System Prompt')}
             value={
-              <StatusBadge
-                label={t('Overwritten')}
-                variant='orange'
-                size='sm'
-                copyable={false}
-              />
+              <StatusBadge variant='warning' size='sm'>
+                {t('Overwritten')}
+              </StatusBadge>
             }
           />
         )}
@@ -1065,12 +1041,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
               <DetailRow
                 label={t('Status')}
                 value={
-                  <StatusBadge
-                    label={other.stream_status.status || t('Error')}
-                    variant='red'
-                    size='sm'
-                    copyable={false}
-                  />
+                  <StatusBadge variant='destructive' size='sm'>
+                    {other.stream_status.status || t('Error')}
+                  </StatusBadge>
                 }
               />
               {other.stream_status.end_reason && (
@@ -1154,20 +1127,17 @@ export function DetailsDialog(props: DetailsDialogProps) {
             icon={<Settings2 className='size-3.5' aria-hidden='true' />}
             label={`${t('Param Override')} (${other.po.length})`}
           >
-            {other.po.filter(Boolean).map((line, idx) => {
+            {other.po.filter(Boolean).map((line) => {
               const parsed = parseAuditLine(line)
               if (!parsed) return null
               return (
                 <div
-                  key={`${parsed.action}:${parsed.content || idx}`}
+                  key={`${parsed.action}:${parsed.content || line}`}
                   className='bg-background/60 flex min-w-0 flex-col gap-1.5 rounded border p-2 sm:flex-row sm:items-start sm:gap-2'
                 >
-                  <StatusBadge
-                    variant='neutral'
-                    label={getParamOverrideActionLabel(parsed.action, t)}
-                    className='shrink-0 font-medium'
-                    copyable={false}
-                  />
+                  <StatusBadge variant='neutral' className='shrink-0'>
+                    {getParamOverrideActionLabel(parsed.action, t)}
+                  </StatusBadge>
                   <span className='min-w-0 font-mono text-xs leading-relaxed break-all sm:wrap-break-word'>
                     {parsed.content}
                   </span>
@@ -1184,14 +1154,14 @@ export function DetailsDialog(props: DetailsDialogProps) {
             <div className='bg-muted/30 relative min-w-0 overflow-hidden rounded-md border p-2.5'>
               <Button
                 variant='ghost'
-                size='sm'
-                className='absolute top-1.5 right-1.5 h-5 w-5 p-0'
+                size='icon-xs'
+                className='absolute top-1.5 right-1.5'
                 onClick={() => copyToClipboard(details)}
                 title={t('Copy to clipboard')}
                 aria-label={t('Copy to clipboard')}
               >
                 {copiedText === details ? (
-                  <Check className='size-3 text-green-600' />
+                  <Check className='text-success size-3' />
                 ) : (
                   <Copy className='size-3' />
                 )}

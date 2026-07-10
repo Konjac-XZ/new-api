@@ -20,6 +20,12 @@ import { flexRender, type Row } from '@tanstack/react-table'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import {
+  BadgeListCellDisplayContext,
+  DataTableCardField,
+  DataTableCardRow,
+} from '@/components/data-table'
+
 import { CHANNEL_STATUS } from '../constants'
 import { isTagAggregateRow } from '../lib'
 import type { Channel } from '../types'
@@ -28,10 +34,8 @@ import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 /**
  * Bespoke channel card for the card view. Reuses every column's existing cell
  * renderer via `flexRender`, so the table's information and interactions are
- * preserved: row selection, provider/multi-key/IO.NET type badge, id,
- * name/remark + warning icons, status (with tooltips), groups, inline
- * priority/weight spinners, balance refresh, response/test times, tag
- * expand-collapse, and the per-row (or per-tag) actions menu.
+ * preserved. All fields are always visible, with status de-duplicated against
+ * the inline power toggle.
  */
 function ChannelCardComponent({
   row,
@@ -43,59 +47,31 @@ function ChannelCardComponent({
   const { t } = useTranslation()
   const isTagRow = isTagAggregateRow(row.original)
   const cells = row.getVisibleCells()
+  const visibleColumnIds = new Set(cells.map((cell) => cell.column.id))
 
   const renderCell = (id: string) => {
-    const cell = cells.find((c) => c.column.id === id)
+    const cell = cells.find((candidate) => candidate.column.id === id)
     if (!cell || !cell.column.columnDef.cell) {
       return null
     }
     return flexRender(cell.column.columnDef.cell, cell.getContext())
   }
 
-  const fieldLabels: Record<string, string> = {
-    id: t('ID'),
-    models: t('Models'),
-    group: t('Groups'),
-    tag: t('Tag'),
-    balance: t('Used / Remaining'),
-    response_time: t('Response'),
-    test_time: t('Last Tested'),
-    priority: t('Priority'),
-    weight: t('Weight'),
-  }
-
   const selectCell = renderCell('select')
-  const idCell = renderCell('id')
   const typeCell = renderCell('type')
+  const idCell = renderCell('id')
   const nameCell = renderCell('name')
-  const remarkCell = renderCell('remark')
   const statusCell = renderCell('status')
   const actionsCell = renderCell('actions')
-  const modelsCell = renderCell('models')
-  const groupCell = renderCell('group')
-  const tagCell = renderCell('tag')
   const priorityCell = renderCell('priority')
   const weightCell = renderCell('weight')
   const balanceCell = renderCell('balance')
+  const modelsCell = renderCell('models')
+  const groupsCell = renderCell('group')
+  const tagCell = renderCell('tag')
   const responseCell = renderCell('response_time')
   const testCell = renderCell('test_time')
 
-  const labelClass = 'text-muted-foreground text-xs font-medium select-none'
-  const statCells = [
-    { id: 'priority', content: priorityCell },
-    { id: 'weight', content: weightCell },
-    { id: 'response_time', content: responseCell },
-    { id: 'test_time', content: testCell },
-  ].filter((item) => item.content)
-  const secondaryCells = [
-    { id: 'models', content: modelsCell },
-    { id: 'group', content: groupCell },
-    { id: 'tag', content: tagCell },
-  ].filter((item) => item.content)
-
-  // In card view the enable/disable state is already conveyed by the inline
-  // power toggle, so the plain "Enabled"/"Disabled" badge is redundant. Keep
-  // only the informative states (e.g. auto-disabled, unknown) and tag rows.
   const dynamicBreakerPhase = row.original.breaker_state?.phase
   const showDynamicBreakerStatus =
     row.original.status === CHANNEL_STATUS.ENABLED &&
@@ -109,91 +85,114 @@ function ChannelCardComponent({
     (row.original.status !== CHANNEL_STATUS.ENABLED &&
       row.original.status !== CHANNEL_STATUS.MANUAL_DISABLED)
 
+  const showId = !isTagRow && visibleColumnIds.has('id')
+  const showTag = !isTagRow && visibleColumnIds.has('tag')
+  const showModels = !isTagRow && visibleColumnIds.has('models')
+  const showTestTime = !isTagRow && visibleColumnIds.has('test_time')
+  const hasStatRows =
+    showId ||
+    showTag ||
+    showTestTime ||
+    visibleColumnIds.has('balance') ||
+    visibleColumnIds.has('response_time') ||
+    visibleColumnIds.has('priority') ||
+    visibleColumnIds.has('weight')
+  const hasBadgeSections = showModels || visibleColumnIds.has('group')
+
   return (
     <ChannelRowActionsLayoutContext.Provider value='card'>
-      <div
-        data-state={isSelected ? 'selected' : undefined}
-        className='flex flex-col gap-3'
-      >
-        {/* Row 1: selection + type, with status badge + actions menu */}
-        <div className='flex items-center justify-between gap-2'>
-          <div className='flex min-w-0 flex-1 items-center gap-2'>
+      <BadgeListCellDisplayContext.Provider value='full'>
+        <div
+          data-state={isSelected ? 'selected' : undefined}
+          className='flex h-full min-w-0 flex-col'
+        >
+          <div className='flex min-w-0 items-start gap-2.5'>
             {!isTagRow && selectCell && (
-              <span className='shrink-0'>{selectCell}</span>
+              <span className='mt-0.5 shrink-0'>{selectCell}</span>
             )}
-            {typeCell && (
-              <div className='min-w-0 overflow-hidden'>{typeCell}</div>
-            )}
-          </div>
-          <div className='flex shrink-0 items-center gap-1.5'>
-            {showStatusBadge && statusCell}
-            {actionsCell}
-          </div>
-        </div>
 
-        {/* Body: left column (id/name + balance) paired with a right-aligned
-          column (priority/weight + response/test time). */}
-        <div className='flex items-start justify-between gap-3'>
-          {/* Left column */}
-          <div className='flex min-w-0 flex-1 flex-col gap-3 overflow-hidden'>
-            {(idCell || nameCell || remarkCell) && (
-              <div className='min-w-0 space-y-1 text-sm'>
-                {idCell && (
-                  <div>
-                    <div className={labelClass}>{fieldLabels.id}</div>
-                    {idCell}
-                  </div>
-                )}
-                {nameCell}
-                {remarkCell}
-              </div>
-            )}
-            {balanceCell && (
-              <div className='min-w-0'>
-                <div className={`mb-1 ${labelClass}`}>
-                  {fieldLabels.balance}
+            <div className='min-w-0 flex-1'>
+              {visibleColumnIds.has('name') && (
+                <div className='min-w-0 text-[15px] leading-tight font-semibold break-words'>
+                  {nameCell}
                 </div>
-                <div className='min-w-0 overflow-hidden text-sm'>
+              )}
+              {visibleColumnIds.has('type') && (
+                <div className='mt-1.5 min-w-0'>{typeCell}</div>
+              )}
+            </div>
+
+            <div className='flex shrink-0 items-center gap-1'>
+              {visibleColumnIds.has('status') && showStatusBadge && statusCell}
+              {actionsCell}
+            </div>
+          </div>
+
+          {hasStatRows && (
+            <div className='mt-3 space-y-0.5 border-t pt-3'>
+              {showId && (
+                <DataTableCardRow label={t('ID')} contentMode='full'>
+                  {idCell}
+                </DataTableCardRow>
+              )}
+              {visibleColumnIds.has('balance') && (
+                <DataTableCardRow
+                  label={t('Used / Remaining')}
+                  contentMode='full'
+                >
                   {balanceCell}
-                </div>
-              </div>
-            )}
-          </div>
+                </DataTableCardRow>
+              )}
+              {visibleColumnIds.has('response_time') && (
+                <DataTableCardRow label={t('Response')} contentMode='full'>
+                  {responseCell}
+                </DataTableCardRow>
+              )}
+              {showTestTime && (
+                <DataTableCardRow label={t('Last Tested')} contentMode='full'>
+                  {testCell}
+                </DataTableCardRow>
+              )}
+              {visibleColumnIds.has('priority') && (
+                <DataTableCardRow label={t('Priority')} contentMode='full'>
+                  {priorityCell}
+                </DataTableCardRow>
+              )}
+              {visibleColumnIds.has('weight') && (
+                <DataTableCardRow label={t('Weight')} contentMode='full'>
+                  {weightCell}
+                </DataTableCardRow>
+              )}
+              {showTag && (
+                <DataTableCardRow label={t('Tag')} contentMode='wrap'>
+                  {tagCell}
+                </DataTableCardRow>
+              )}
+            </div>
+          )}
 
-          {statCells.length > 0 && (
-            <div className='grid shrink-0 grid-cols-2 items-start gap-x-3 gap-y-2'>
-              {statCells.map((item) => (
-                <div key={item.id} className='min-w-0'>
-                  <div className={labelClass}>{fieldLabels[item.id]}</div>
-                  <div className='mt-1 overflow-hidden text-sm'>
-                    {item.content}
-                  </div>
-                </div>
-              ))}
+          {hasBadgeSections && (
+            <div className='mt-3 space-y-3 border-t pt-3'>
+              {visibleColumnIds.has('group') && (
+                <DataTableCardField label={t('Groups')} contentMode='full'>
+                  {groupsCell ?? (
+                    <span className='text-muted-foreground'>-</span>
+                  )}
+                </DataTableCardField>
+              )}
+              {showModels && (
+                <DataTableCardField label={t('Models')} contentMode='full'>
+                  {modelsCell ?? (
+                    <span className='text-muted-foreground'>-</span>
+                  )}
+                </DataTableCardField>
+              )}
             </div>
           )}
         </div>
-
-        {secondaryCells.length > 0 && (
-          <div className='grid min-w-0 gap-2'>
-            {secondaryCells.map((item) => (
-              <div key={item.id} className='min-w-0'>
-                <div className={labelClass}>{fieldLabels[item.id]}</div>
-                <div className='mt-1 min-w-0 overflow-hidden text-sm'>
-                  {item.content}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+      </BadgeListCellDisplayContext.Provider>
     </ChannelRowActionsLayoutContext.Provider>
   )
 }
 
-/**
- * Memoized so each card only re-renders when its own react-table row reference
- * changes, instead of every card re-rendering whenever the parent table state
- * (filters, pagination, sensitive toggle, etc.) updates.
- */
 export const ChannelCard = memo(ChannelCardComponent)

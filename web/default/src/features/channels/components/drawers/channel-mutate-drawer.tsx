@@ -54,6 +54,17 @@ import { type SubmitErrorHandler, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { Button } from '@/components/design-system/button'
+import { Combobox } from '@/components/design-system/combobox'
+import { Input } from '@/components/design-system/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/design-system/select'
 import {
   sideDrawerContentClassName,
   sideDrawerFooterClassName,
@@ -66,8 +77,6 @@ import { JsonEditor } from '@/components/json-editor'
 import { MultiSelect } from '@/components/multi-select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Combobox } from '@/components/ui/combobox'
 import {
   Form,
   FormControl,
@@ -77,15 +86,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -1870,7 +1870,6 @@ export function ChannelMutateDrawer({
                 <Button
                   type='button'
                   variant='outline'
-                  size='sm'
                   className='shrink-0'
                   disabled={isChannelDetailLoading}
                   onClick={pasteConnectionInfoFromClipboard}
@@ -2868,7 +2867,6 @@ export function ChannelMutateDrawer({
                                       <Button
                                         type='button'
                                         variant='outline'
-                                        size='sm'
                                         onClick={() =>
                                           setAdvancedCustomEditorOpen(true)
                                         }
@@ -2905,10 +2903,7 @@ export function ChannelMutateDrawer({
                                         value={field.value}
                                       >
                                         <FormControl>
-                                          <SelectTrigger
-                                            size='sm'
-                                            className='w-full sm:w-56'
-                                          >
+                                          <SelectTrigger className='w-full sm:w-56'>
                                             <SelectValue />
                                           </SelectTrigger>
                                         </FormControl>
@@ -3022,7 +3017,6 @@ export function ChannelMutateDrawer({
                                             <Button
                                               type='button'
                                               variant='outline'
-                                              size='sm'
                                               onClick={handleDeduplicateKeys}
                                               className='w-fit'
                                             >
@@ -3049,7 +3043,6 @@ export function ChannelMutateDrawer({
                                               <Button
                                                 type='button'
                                                 variant='outline'
-                                                size='sm'
                                                 onClick={handleRevealKey}
                                                 disabled={
                                                   isChannelKeyLoading ||
@@ -3067,7 +3060,6 @@ export function ChannelMutateDrawer({
                                               <Button
                                                 type='button'
                                                 variant='ghost'
-                                                size='sm'
                                                 onClick={async () => {
                                                   if (channelKey) {
                                                     await copyToClipboard(
@@ -3111,7 +3103,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={handleRefreshCodexCredential}
                                           disabled={
                                             sensitiveLocked ||
@@ -3320,7 +3311,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={() => {
                                             const hiddenTargets = new Set(
                                               modelMappingGuardrail.exposedTargetModels
@@ -3360,7 +3350,6 @@ export function ChannelMutateDrawer({
                                 <Button
                                   type='button'
                                   variant='outline'
-                                  size='sm'
                                   onClick={handleFillRelatedModels}
                                   disabled={!basicModels.length}
                                 >
@@ -3373,7 +3362,6 @@ export function ChannelMutateDrawer({
                                 <Button
                                   type='button'
                                   variant='outline'
-                                  size='sm'
                                   onClick={handleFillAllModels}
                                   disabled={!allModelsList.length}
                                 >
@@ -3388,7 +3376,6 @@ export function ChannelMutateDrawer({
                                     <Button
                                       type='button'
                                       variant='outline'
-                                      size='sm'
                                       onClick={() => handleFetchModels()}
                                       disabled={!isEditing && !canEditSensitive}
                                     >
@@ -3425,7 +3412,6 @@ export function ChannelMutateDrawer({
                                 <Button
                                   type='button'
                                   variant='outline'
-                                  size='sm'
                                   onClick={handleCopyModels}
                                   disabled={currentModelsArray.length === 0}
                                 >
@@ -3438,7 +3424,6 @@ export function ChannelMutateDrawer({
                                 <Button
                                   type='button'
                                   variant='ghost'
-                                  size='sm'
                                   onClick={handleClearModels}
                                   disabled={currentModelsArray.length === 0}
                                 >
@@ -3459,7 +3444,6 @@ export function ChannelMutateDrawer({
                                       key={group.id}
                                       type='button'
                                       variant='secondary'
-                                      size='sm'
                                       onClick={() =>
                                         handleAddPrefillGroup(group)
                                       }
@@ -3592,7 +3576,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={() => {
                                             updateModels([
                                               ...currentModelsArray,
@@ -4131,7 +4114,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={() =>
                                             setParamOverrideEditorOpen(true)
                                           }
@@ -4142,7 +4124,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={() => {
                                             field.onChange(
                                               JSON.stringify(
@@ -4175,7 +4156,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='ghost'
-                                          size='sm'
                                           onClick={() => field.onChange('')}
                                         >
                                           {t('Clear')}
@@ -4219,7 +4199,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={() =>
                                             field.onChange(
                                               JSON.stringify(
@@ -4242,7 +4221,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={() =>
                                             field.onChange(
                                               JSON.stringify(
@@ -4258,7 +4236,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='outline'
-                                          size='sm'
                                           onClick={() => {
                                             try {
                                               const parsed = JSON.parse(
@@ -4277,7 +4254,6 @@ export function ChannelMutateDrawer({
                                         <Button
                                           type='button'
                                           variant='ghost'
-                                          size='sm'
                                           onClick={() => field.onChange('')}
                                         >
                                           {t('Clear')}

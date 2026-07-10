@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { getTtftMs } from './lib'
+import { getOutputSpeed, getTtftMs } from './lib'
 import type { MonitorRecord } from './types'
 
 describe('monitor timing helpers', () => {
@@ -31,5 +31,31 @@ describe('monitor timing helpers', () => {
     }
 
     assert.equal(getTtftMs(record), null)
+  })
+
+  test('hides unreasonable streaming throughput above 5000 tokens per second', () => {
+    const startedAt = 1_711_456_789_000
+    const record: MonitorRecord = {
+      id: 'req-fast-stream',
+      is_stream: true,
+      completion_tokens: 501,
+      current_attempt_streaming_started_at_ms: startedAt,
+      end_time_ms: startedAt + 100,
+    }
+
+    assert.equal(getOutputSpeed(record, startedAt + 100), null)
+  })
+
+  test('keeps streaming throughput at the 5000 tokens per second threshold', () => {
+    const startedAt = 1_711_456_789_000
+    const record: MonitorRecord = {
+      id: 'req-threshold-stream',
+      is_stream: true,
+      completion_tokens: 500,
+      current_attempt_streaming_started_at_ms: startedAt,
+      end_time_ms: startedAt + 100,
+    }
+
+    assert.equal(getOutputSpeed(record, startedAt + 100), 5000)
   })
 })

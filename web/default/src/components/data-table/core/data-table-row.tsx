@@ -18,16 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   flexRender,
-  type Cell,
   type Row,
   type Table as TanstackTable,
 } from '@tanstack/react-table'
 import * as React from 'react'
 
-import { TableCell, TableRow } from '@/components/ui/table'
+import { TableCell, TableRow } from '@/components/design-system/table'
 import { cn } from '@/lib/utils'
 
-import { TruncatedCell } from './truncated-cell'
 import type { DataTableColumnClassName } from './types'
 
 type DataTableRowProps<TData> = {
@@ -67,19 +65,25 @@ function DataTableRowInner<TData>({
       {...rowProps}
     >
       {visibleCells.map((cell) => {
-        const renderedCell = renderCellContent(cell)
+        const contentMode = cell.column.columnDef.meta?.contentMode ?? 'wrap'
 
         return (
           <TableCell
             key={cell.id}
             data-column-id={cell.column.id}
+            data-content-mode={contentMode}
             className={cn(
               'max-w-full min-w-0',
-              renderedCell.isPrimitive && 'overflow-hidden',
+              contentMode === 'full' &&
+                'max-w-none overflow-visible [&_.truncate]:overflow-visible [&_.truncate]:text-clip [&_[data-slot=status-badge]]:max-w-none [&_[data-slot=status-badge]]:overflow-visible [&_[data-slot=status-badge-label]]:overflow-visible [&_[data-slot=status-badge-label]]:text-clip',
+              contentMode === 'wrap' &&
+                'whitespace-normal break-words [overflow-wrap:anywhere] [&_.truncate]:overflow-visible [&_.truncate]:text-clip [&_.truncate]:whitespace-normal [&_.whitespace-nowrap]:whitespace-normal [&_[data-slot=status-badge]]:h-auto [&_[data-slot=status-badge]]:overflow-visible [&_[data-slot=status-badge-label]]:overflow-visible [&_[data-slot=status-badge-label]]:text-clip [&_[data-slot=status-badge-label]]:whitespace-normal',
+              contentMode === 'summary' &&
+                'whitespace-normal break-words [overflow-wrap:anywhere]',
               getColumnClassName?.(cell.column.id, 'cell')
             )}
           >
-            {renderedCell.content}
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </TableCell>
         )
       })}
@@ -110,28 +114,4 @@ export function DataTableRow<TData>(props: DataTableRowProps<TData>) {
   return (
     <MemoizedDataTableRow {...props} isSelected={props.row.getIsSelected()} />
   )
-}
-
-function renderCellContent<TData>(cell: Cell<TData, unknown>) {
-  const content = flexRender(cell.column.columnDef.cell, cell.getContext())
-  const textContent = getPrimitiveTextContent(content)
-
-  if (!textContent) {
-    return { content, isPrimitive: false }
-  }
-
-  return {
-    content: (
-      <TruncatedCell tooltipContent={textContent}>{content}</TruncatedCell>
-    ),
-    isPrimitive: true,
-  }
-}
-
-function getPrimitiveTextContent(content: React.ReactNode): string | null {
-  if (typeof content === 'string' || typeof content === 'number') {
-    return String(content)
-  }
-
-  return null
 }

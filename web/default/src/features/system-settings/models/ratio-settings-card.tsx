@@ -24,7 +24,12 @@ import { toast } from 'sonner'
 import * as z from 'zod'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/design-system/tabs'
 import { zodResolver } from '@/lib/zod-resolver'
 
 import { resetModelRatios } from '../api'

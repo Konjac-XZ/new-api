@@ -22,6 +22,16 @@ import { useForm, type Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { Button } from '@/components/design-system/button'
+import { Input } from '@/components/design-system/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/design-system/select'
 import {
   SideDrawerSection,
   sideDrawerContentClassName,
@@ -30,7 +40,6 @@ import {
   sideDrawerHeaderClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
-import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -40,15 +49,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Sheet,
   SheetClose,

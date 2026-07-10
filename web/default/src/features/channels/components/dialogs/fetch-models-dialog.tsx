@@ -30,19 +30,24 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { Button } from '@/components/design-system/button'
+import { Input } from '@/components/design-system/input'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/design-system/tabs'
 import { Dialog } from '@/components/dialog'
 import { tintedBadgeClassMap } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Tooltip,
   TooltipContent,
