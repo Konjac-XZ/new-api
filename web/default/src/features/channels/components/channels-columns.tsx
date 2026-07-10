@@ -587,7 +587,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
                 size='sm'
                 copyable={false}
                 showDot={false}
-                className='-ml-1.5 cursor-help'
+                className='cursor-help'
               />
             }
           />
@@ -650,7 +650,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
 
   return (
     <TooltipProvider>
-      <div className='-ml-1.5 flex items-center gap-1'>
+      <div className='flex items-center gap-1'>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -915,7 +915,6 @@ export function useChannelsColumns(
                 variant='blue'
                 size='sm'
                 copyable={false}
-                className='-ml-1.5'
               />
             )
           }
@@ -1085,7 +1084,6 @@ export function useChannelsColumns(
                   variant='success'
                   size='sm'
                   copyable={false}
-                  className='-ml-1.5'
                 />
               )
             } else {
@@ -1095,7 +1093,6 @@ export function useChannelsColumns(
                   variant='neutral'
                   size='sm'
                   copyable={false}
-                  className='-ml-1.5'
                 />
               )
             }
@@ -1278,14 +1275,7 @@ export function useChannelsColumns(
             return <span className='text-muted-foreground text-xs'>-</span>
           }
 
-          return (
-            <StatusBadge
-              label={tag}
-              autoColor={tag}
-              size='sm'
-              className='-ml-1.5'
-            />
-          )
+          return <StatusBadge label={tag} autoColor={tag} size='sm' />
         },
         size: 120,
         enableSorting: false,
@@ -1332,7 +1322,6 @@ export function useChannelsColumns(
               variant={config.variant}
               size='sm'
               copyable={false}
-              className='-ml-1.5'
             />
           )
         },
@@ -1366,7 +1355,7 @@ export function useChannelsColumns(
                       variant='neutral'
                       size='sm'
                       copyable={false}
-                      className='-ml-1.5 cursor-pointer'
+                      className='cursor-pointer'
                     />
                   }
                 />
