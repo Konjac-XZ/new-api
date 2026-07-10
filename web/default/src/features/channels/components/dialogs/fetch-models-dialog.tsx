@@ -31,6 +31,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
+import { tintedBadgeClassMap } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -542,15 +543,13 @@ export function FetchModelsDialog({
             key: `compact-new:${entry.model}`,
             model: entry.model,
             checked,
-            className: checked
-              ? 'font-medium text-emerald-700 dark:text-emerald-300'
-              : '',
+            className: checked ? 'font-medium text-success' : '',
             badgeLabel: entry.shouldMap
               ? t('Compacts {{model}}', { model: entry.upstreamModel })
               : t('From upstream'),
             badgeClassName: entry.shouldMap
-              ? 'border-emerald-200/70 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300'
-              : 'border-border bg-background text-muted-foreground',
+              ? tintedBadgeClassMap.success
+              : tintedBadgeClassMap.neutral,
           }
         }),
     [classificationSet, compactEntries, selectedCompactModelSet, t]
@@ -590,9 +589,9 @@ export function FetchModelsDialog({
           }
           let className = ''
           if (compacted) {
-            className = 'font-medium text-amber-700 dark:text-amber-300'
+            className = 'font-medium text-warning'
           } else if (!selectedExistingModelSet.has(normalized)) {
-            className = 'font-medium text-rose-700 dark:text-rose-300'
+            className = 'font-medium text-destructive'
           }
 
           return {
@@ -604,8 +603,8 @@ export function FetchModelsDialog({
             className,
             badgeLabel,
             badgeClassName: compacted
-              ? 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300'
-              : 'border-border bg-background text-muted-foreground',
+              ? tintedBadgeClassMap.warning
+              : tintedBadgeClassMap.neutral,
           }
         }),
     [
@@ -641,11 +640,10 @@ export function FetchModelsDialog({
             model,
             checked: selectedExistingModelSet.has(normalized),
             className: selectedExistingModelSet.has(normalized)
-              ? 'font-medium text-rose-700 dark:text-rose-300'
+              ? 'font-medium text-destructive'
               : '',
             badgeLabel: t('Not returned by upstream'),
-            badgeClassName:
-              'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300',
+            badgeClassName: tintedBadgeClassMap.danger,
           }
         })
         .filter((row): row is CompactModelRow => row !== null),
@@ -677,13 +675,13 @@ export function FetchModelsDialog({
             key: `preview-removed:${model}`,
             model,
             checked: false,
-            className: 'font-medium text-rose-700 dark:text-rose-300',
+            className: 'font-medium text-destructive',
             badgeLabel: compacted
               ? t('Compacted to {{model}}', { model: compactEntry.model })
               : t('Manual removal'),
             badgeClassName: compacted
-              ? 'border-amber-200/70 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300'
-              : 'border-rose-200/70 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300',
+              ? tintedBadgeClassMap.warning
+              : tintedBadgeClassMap.danger,
           }
         })
         .filter((row): row is CompactModelRow => row !== null),
@@ -998,13 +996,13 @@ export function FetchModelsDialog({
     const existing = existingModelSet.has(normalized)
 
     if (!existing && selected) {
-      return 'font-medium text-emerald-700 dark:text-emerald-300'
+      return 'font-medium text-success'
     }
     if (existing && !selected) {
-      return 'font-medium text-rose-700 dark:text-rose-300'
+      return 'font-medium text-destructive'
     }
     if (activeTab === 'removed' && selected) {
-      return 'font-medium text-rose-700 dark:text-rose-300'
+      return 'font-medium text-destructive'
     }
     return ''
   }
@@ -1146,7 +1144,7 @@ export function FetchModelsDialog({
                         <Tooltip>
                           <TooltipTrigger
                             render={
-                              <Info className='mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500' />
+                              <Info className='text-warning mt-0.5 h-3.5 w-3.5 shrink-0' />
                             }
                           />
                           <TooltipContent>
@@ -1481,14 +1479,14 @@ export function FetchModelsDialog({
             ) : null}
           </div>
           <div className='grid gap-3 md:grid-cols-2'>
-            <div className='rounded-md border border-emerald-200/60 bg-emerald-50/50 p-3 dark:border-emerald-900/50 dark:bg-emerald-950/20'>
-              <p className='mb-2 text-sm font-medium text-emerald-700 dark:text-emerald-300'>
+            <div className='border-success/25 bg-success/10 rounded-md border p-3'>
+              <p className='text-success mb-2 text-sm font-medium'>
                 {t('Models to add')} ({modelsToAdd.length})
               </p>
               {renderPreviewList(modelsToAdd, t('No models to add'))}
             </div>
-            <div className='rounded-md border border-rose-200/60 bg-rose-50/50 p-3 dark:border-rose-900/50 dark:bg-rose-950/20'>
-              <p className='mb-2 text-sm font-medium text-rose-700 dark:text-rose-300'>
+            <div className='border-destructive/25 bg-destructive/10 rounded-md border p-3'>
+              <p className='text-destructive mb-2 text-sm font-medium'>
                 {t('Models to remove')} ({modelsToRemove.length})
               </p>
               {compactMode

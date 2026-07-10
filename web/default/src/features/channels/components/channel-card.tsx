@@ -80,7 +80,7 @@ function ChannelCardComponent({
   const responseCell = renderCell('response_time')
   const testCell = renderCell('test_time')
 
-  const labelClass = 'text-muted-foreground text-[11px] font-medium select-none'
+  const labelClass = 'text-muted-foreground text-xs font-medium select-none'
   const statCells = [
     { id: 'priority', content: priorityCell },
     { id: 'weight', content: weightCell },
