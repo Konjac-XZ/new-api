@@ -1,9 +1,9 @@
 {
   "base": "en.json",
   "sourceKeys": {
-    "scannedFileCount": 989,
-    "staticKeyCount": 454,
-    "discoveredKeyCount": 4129,
+    "scannedFileCount": 994,
+    "staticKeyCount": 466,
+    "discoveredKeyCount": 4159,
     "missingCount": 0,
     "missing": {}
   },
@@ -18,29 +18,29 @@
       "file": "fr.json",
       "missingCount": 0,
       "extrasCount": 0,
-      "untranslatedCount": 0
+      "untranslatedCount": 24
     },
     "ja": {
       "file": "ja.json",
       "missingCount": 0,
       "extrasCount": 0,
-      "untranslatedCount": 0
+      "untranslatedCount": 113
     },
     "ru": {
       "file": "ru.json",
       "missingCount": 0,
       "extrasCount": 0,
-      "untranslatedCount": 0
+      "untranslatedCount": 113
     },
     "vi": {
       "file": "vi.json",
       "missingCount": 0,
       "extrasCount": 0,
-      "untranslatedCount": 0
+      "untranslatedCount": 24
     },
     "zh-TW": {
       "file": "zh-TW.json",
-      "missingCount": 118,
+      "missingCount": 0,
       "extrasCount": 0,
       "untranslatedCount": 0
     },
