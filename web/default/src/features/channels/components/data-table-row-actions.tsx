@@ -39,7 +39,7 @@ import { useContext, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Button } from '@/components/design-system/button'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -219,8 +219,8 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <Button
                 variant='ghost'
                 size='icon-sm'
-                onClick={(event) => {
-                  event.stopPropagation()
+                onClick={(e) => {
+                  e.stopPropagation()
                   handleTest()
                 }}
                 aria-label={t('Test Channel Connection')}
@@ -261,9 +261,8 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         <DropdownMenuTrigger
           render={
             <Button
-              size='icon-sm'
               variant='ghost'
-              className='data-popup-open:bg-muted'
+              className='data-popup-open:bg-muted flex h-8 w-8 p-0'
             />
           }
         >
@@ -287,6 +286,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <PlugZap size={16} />
             </DropdownMenuShortcut>
           </DropdownMenuItem>
+
           {/* Query Balance */}
           <DropdownMenuItem onClick={handleQueryBalance}>
             {t('Query Balance')}

@@ -21,7 +21,7 @@ import { Check as CheckIcon, CircleCheck, ChevronDown } from 'lucide-react'
 import type { ComponentType, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/design-system/button'
+import { Button } from '@/components/ui/button'
 import {
   Command,
   CommandEmpty,
@@ -30,7 +30,7 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
-} from '@/components/design-system/command'
+} from '@/components/ui/command'
 import {
   Popover,
   PopoverContent,

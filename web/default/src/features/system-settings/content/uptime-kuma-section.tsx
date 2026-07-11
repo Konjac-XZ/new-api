@@ -34,9 +34,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/design-system/alert-dialog'
-import { Button } from '@/components/design-system/button'
-import { Input } from '@/components/design-system/input'
+} from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Dialog } from '@/components/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import {

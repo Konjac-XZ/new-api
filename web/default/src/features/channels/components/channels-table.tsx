@@ -35,8 +35,8 @@ import {
   useDebouncedColumnFilter,
   useDataTable,
 } from '@/components/data-table'
-import { Button } from '@/components/design-system/button'
-import { Input } from '@/components/design-system/input'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Tooltip,
   TooltipContent,

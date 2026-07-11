@@ -21,8 +21,8 @@ import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
-import { Button } from '@/components/design-system/button'
-import { Input } from '@/components/design-system/input'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Dialog } from '@/components/dialog'
 import {
   Form,

@@ -29,7 +29,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-} from '@/components/design-system/tabs'
+} from '@/components/ui/tabs'
 import { zodResolver } from '@/lib/zod-resolver'
 
 import { resetModelRatios } from '../api'

@@ -30,14 +30,14 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/design-system/button'
-import { Input } from '@/components/design-system/input'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from '@/components/design-system/tabs'
+} from '@/components/ui/tabs'
 import { Dialog } from '@/components/dialog'
 import { tintedBadgeClassMap } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'

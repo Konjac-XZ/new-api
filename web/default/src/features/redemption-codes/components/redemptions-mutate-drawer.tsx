@@ -22,8 +22,6 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { DateTimePicker } from '@/components/datetime-picker'
-import { Button } from '@/components/design-system/button'
-import { Input } from '@/components/design-system/input'
 import {
   SideDrawerSection,
   sideDrawerContentClassName,
@@ -31,6 +29,7 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -40,6 +39,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 import {
   Sheet,
   SheetClose,
@@ -260,6 +260,7 @@ export function RedemptionsMutateDrawer({
                         <Button
                           type='button'
                           variant='outline'
+                          size='sm'
                           onClick={() => handleSetExpiry(0, 0, 0)}
                         >
                           {t('Never')}
@@ -267,6 +268,7 @@ export function RedemptionsMutateDrawer({
                         <Button
                           type='button'
                           variant='outline'
+                          size='sm'
                           onClick={() => handleSetExpiry(1, 0, 0)}
                         >
                           {t('1M')}
@@ -274,6 +276,7 @@ export function RedemptionsMutateDrawer({
                         <Button
                           type='button'
                           variant='outline'
+                          size='sm'
                           onClick={() => handleSetExpiry(0, 7, 0)}
                         >
                           {t('1W')}
@@ -281,6 +284,7 @@ export function RedemptionsMutateDrawer({
                         <Button
                           type='button'
                           variant='outline'
+                          size='sm'
                           onClick={() => handleSetExpiry(0, 1, 0)}
                         >
                           {t('1 Day')}

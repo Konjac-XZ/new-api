@@ -54,9 +54,9 @@ import { type SubmitErrorHandler, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/design-system/button'
-import { Combobox } from '@/components/design-system/combobox'
-import { Input } from '@/components/design-system/input'
+import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -64,7 +64,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/design-system/select'
+} from '@/components/ui/select'
 import {
   sideDrawerContentClassName,
   sideDrawerFooterClassName,

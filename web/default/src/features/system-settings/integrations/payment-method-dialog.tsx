@@ -21,9 +21,9 @@ import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
-import { Button } from '@/components/design-system/button'
-import { Combobox } from '@/components/design-system/combobox'
-import { Input } from '@/components/design-system/input'
+import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
+import { Input } from '@/components/ui/input'
 import { Dialog } from '@/components/dialog'
 import { ReactIconByName } from '@/components/react-icon-by-name'
 import {
