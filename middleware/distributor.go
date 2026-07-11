@@ -123,7 +123,7 @@ func Distribute() func(c *gin.Context) {
 								abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 								return
 							}
-						} else if !channelSupportsRequestPath(preferred, c.Request.URL.Path) {
+						} else if !channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
 							// Treat a path-mismatched Advanced Custom affinity channel as unusable
 							// and fall back to normal selection.
 						} else if usingGroup == "auto" {
@@ -192,7 +192,7 @@ func Distribute() func(c *gin.Context) {
 // channelSupportsRequestPath reports whether a channel can serve the request path.
 // Only Advanced Custom (type 58) channels are path-checked; all other channel types
 // always pass. A type-58 channel is usable only when one of its routes matches.
-func channelSupportsRequestPath(channel *model.Channel, requestPath string) bool {
+func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
 	if channel == nil {
 		return false
 	}
@@ -200,7 +200,7 @@ func channelSupportsRequestPath(channel *model.Channel, requestPath string) bool
 		return true
 	}
 	config := channel.GetOtherSettings().AdvancedCustom
-	return config != nil && config.SupportsPath(requestPath)
+	return config != nil && config.SupportsPathForModel(requestPath, requestModel)
 }
 
 // getModelFromRequest 从请求中读取模型信息
