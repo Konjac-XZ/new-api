@@ -131,7 +131,6 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
         <StatusBadge
           variant='success'
           size='sm'
-          render={<button type='button' />}
           className='cursor-pointer'
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation()
@@ -151,7 +150,6 @@ function UpstreamUpdateTags({ channel }: { channel: Channel }) {
         <StatusBadge
           variant='destructive'
           size='sm'
-          render={<button type='button' />}
           className='cursor-pointer'
           onClick={(e: React.MouseEvent) => {
             e.stopPropagation()
@@ -670,7 +668,6 @@ function BalanceCell({ channel }: { channel: Channel }) {
               <StatusBadge
                 variant={remainingBadgeVariant}
                 size='sm'
-                render={<button type='button' />}
                 className='cursor-pointer underline-offset-2 hover:underline'
                 onClick={handleClickUpdate}
               >
@@ -980,7 +977,6 @@ export function useChannelsColumns(
                         <StatusBadge
                           variant='neutral'
                           size='sm'
-                          render={<button type='button' />}
                           className='cursor-pointer'
                           onClick={(e) => {
                             e.stopPropagation()
