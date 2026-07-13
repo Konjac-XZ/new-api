@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 type DataTableFacetedFilterProps<TData, TValue> = {
   column?: Column<TData, TValue>
   title?: string
+  triggerClassName?: string
   options: {
     label: string
     value: string
@@ -56,6 +57,7 @@ type DataTableFacetedFilterProps<TData, TValue> = {
 export function DataTableFacetedFilter<TData, TValue>({
   column,
   title,
+  triggerClassName,
   options,
   singleSelect = false,
   compactActiveIndicator = false,
@@ -102,7 +104,8 @@ export function DataTableFacetedFilter<TData, TValue>({
               'w-full min-w-0 justify-start font-normal',
               compactActiveIndicator &&
                 selectedValues.size > 0 &&
-                'border-primary/60 bg-primary/5 text-primary'
+                'border-primary/60 bg-primary/5 text-primary',
+              triggerClassName
             )}
             aria-label={
               selectedSummary

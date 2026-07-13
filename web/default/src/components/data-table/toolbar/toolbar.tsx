@@ -33,6 +33,7 @@ import { DataTableViewOptions } from './view-options'
 type FilterDef = {
   columnId: string
   title: string
+  triggerClassName?: string
   options: {
     label: string
     value: string
@@ -266,6 +267,7 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
             <DataTableFacetedFilter
               column={column}
               title={filter.title}
+              triggerClassName={filter.triggerClassName}
               options={filter.options}
               singleSelect={filter.singleSelect}
               compactActiveIndicator={filter.compactActiveIndicator}
