@@ -497,7 +497,7 @@ export function ChannelsTable() {
       applyHeaderSize
       toolbarProps={{
         searchPlaceholder: t('Filter by name, ID, or key...'),
-        searchClassName: 'hidden h-8 2xl:block 2xl:w-[240px]',
+        searchClassName: 'hidden h-8 2xl:block 2xl:w-[200px]',
         searchDebounceMs: 500,
         hasAdditionalFilters: Boolean(modelFilterInput.trim()),
         onReset: () => {
@@ -511,13 +511,14 @@ export function ChannelsTable() {
             onChange={onModelFilterInputChange}
             onCompositionStart={onModelFilterCompositionStart}
             onCompositionEnd={onModelFilterCompositionEnd}
-            className='hidden h-8 2xl:block 2xl:w-[180px]'
+            className='hidden h-8 2xl:block 2xl:w-[160px]'
           />
         ),
         filters: [
           {
             columnId: 'status',
             title: t('Status'),
+            triggerClassName: 'h-8 w-[116px] shrink-0',
             options: [...CHANNEL_STATUS_OPTIONS],
             singleSelect: true,
             compactActiveIndicator: true,
@@ -525,6 +526,7 @@ export function ChannelsTable() {
           {
             columnId: 'dynamic_breaker',
             title: t('Dynamic Breaker'),
+            triggerClassName: 'h-8 w-[144px] shrink-0',
             options: [
               {
                 value: 'enabled',
@@ -545,6 +547,7 @@ export function ChannelsTable() {
           {
             columnId: 'type',
             title: t('Type'),
+            triggerClassName: 'h-8 w-[112px] shrink-0',
             options: typeFilterOptions,
             singleSelect: true,
             compactActiveIndicator: true,
@@ -552,6 +555,7 @@ export function ChannelsTable() {
           {
             columnId: 'group',
             title: t('Group'),
+            triggerClassName: 'h-8 w-[112px] shrink-0',
             options: groupFilterOptions,
             singleSelect: true,
             compactActiveIndicator: true,
