@@ -52,8 +52,13 @@ func TestMonitorBodyCapturePolicy(t *testing.T) {
 	require.False(t, truncated)
 	assert.Equal(t, MonitorBody("small body"), body)
 
-	largeBody := make([]byte, MonitorBodyCaptureMaxBytes+1)
-	body, truncated = monitorBody(largeBody)
+	maxBody := make([]byte, MonitorBodyCaptureMaxBytes)
+	body, truncated = monitorBody(maxBody)
+	require.False(t, truncated)
+	assert.Len(t, body, MonitorBodyCaptureMaxBytes)
+
+	overLimitBody := make([]byte, MonitorBodyCaptureMaxBytes+1)
+	body, truncated = monitorBody(overLimitBody)
 	require.True(t, truncated)
 	assert.Empty(t, body)
 

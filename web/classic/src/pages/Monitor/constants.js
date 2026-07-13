@@ -3,7 +3,7 @@ export const DURATION_UPDATE_INTERVAL_MS = 100;
 export const MS_TO_SECONDS = 1000;
 
 // Body size limits
-export const BODY_DISPLAY_LIMIT_BYTES = 40000;
+export const BODY_DISPLAY_LIMIT_BYTES = 40 * 1024;
 
 // Duration thresholds for color coding
 

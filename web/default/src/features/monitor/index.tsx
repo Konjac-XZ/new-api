@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { isAxiosError } from 'axios'
 import {
   Activity,
   ArrowDownToLine,
@@ -119,7 +120,7 @@ const MONITOR_COLUMN_KEYS = {
 const monitorNeutralBadgeClassName =
   'border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
 
-const BODY_DISPLAY_LIMIT_BYTES = 40000
+const BODY_DISPLAY_LIMIT_BYTES = 40 * 1024
 const MONITOR_STOPWATCH_INTERVAL_MS = 100
 const MONITOR_METRIC_INTERVAL_MS = 100
 const MONITOR_ROW_HEIGHT_PX = 44
@@ -825,7 +826,13 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : t('Request failed'))
+          const responseMessage = isAxiosError<{ message?: string }>(err)
+            ? err.response?.data?.message
+            : undefined
+          setError(
+            responseMessage ||
+              (err instanceof Error ? err.message : t('Request failed'))
+          )
           setBody('')
           setBodySize(0)
           setBodyTruncated(false)
@@ -948,6 +955,8 @@ function RequestDetail(props: {
   const displayStatus = deriveDisplayStatus(props.record)
   const tokenUsage = getMonitorTokenUsage(props.record)
   const canInterrupt = isActiveStatus(displayStatus)
+  const isWaitingForResponse =
+    !props.record.response && isActiveStatus(displayStatus)
   const recordId = props.record.id
   const activeAttemptIndex = (props.record.channel_attempts ?? [])
     .map((attempt, index) => ({ attempt, index }))
@@ -1208,7 +1217,7 @@ function RequestDetail(props: {
             <span>{formatBytes(props.record.downstream?.body_size || 0)}</span>
           </DetailPill>
         </div>
-        <Tabs defaultValue='headers'>
+        <Tabs defaultValue='body'>
           <TabsList className='grid w-full grid-cols-2 sm:w-72'>
             <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
             <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
@@ -1249,7 +1258,7 @@ function RequestDetail(props: {
               <span>{formatBytes(props.record.upstream.body_size || 0)}</span>
             </DetailPill>
           </div>
-          <Tabs defaultValue='headers'>
+          <Tabs defaultValue='body'>
             <TabsList className='grid w-full grid-cols-2 sm:w-72'>
               <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
               <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
@@ -1315,21 +1324,31 @@ function RequestDetail(props: {
             </AlertDescription>
           </Alert>
         ) : null}
-        <Tabs defaultValue='headers'>
-          <TabsList className='grid w-full grid-cols-2 sm:w-72'>
-            <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
-            <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
-          </TabsList>
-          <TabsContent value='headers' className='mt-3'>
-            <HeadersViewer
-              headers={props.record.response?.headers}
-              emptyLabel={t('No headers')}
-            />
-          </TabsContent>
-          <TabsContent value='body' className='mt-3'>
-            <BodyPanel requestId={recordId} type='response' />
-          </TabsContent>
-        </Tabs>
+        {isWaitingForResponse ? (
+          <Alert className='bg-muted/30'>
+            <Clock3 className='size-4' />
+            <AlertTitle>{t('In Progress')}</AlertTitle>
+            <AlertDescription>
+              {t('This request is still in progress. Please check back later.')}
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Tabs defaultValue='body'>
+            <TabsList className='grid w-full grid-cols-2 sm:w-72'>
+              <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
+              <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
+            </TabsList>
+            <TabsContent value='headers' className='mt-3'>
+              <HeadersViewer
+                headers={props.record.response?.headers}
+                emptyLabel={t('No headers')}
+              />
+            </TabsContent>
+            <TabsContent value='body' className='mt-3'>
+              <BodyPanel requestId={recordId} type='response' />
+            </TabsContent>
+          </Tabs>
+        )}
       </DetailCard>
     </div>
   )
@@ -1488,6 +1507,7 @@ export function Monitor() {
   const detail = useRequestDetail()
   const applyLiveUpdate = detail.applyLiveUpdate
   const fetchDetail = detail.fetchDetail
+  const invalidateDetailCache = detail.invalidateCache
   const monitorWs = useMonitorWs({ focusedRequestId: selectedId })
 
   useEffect(() => {
@@ -1541,6 +1561,29 @@ export function Monitor() {
   }, [monitorWs.summaries])
 
   const selectedSummaryExists = !selectedId || summariesById.has(selectedId)
+  const selectedSummary = selectedId ? summariesById.get(selectedId) : undefined
+  const selectedSummaryStatus = selectedSummary
+    ? deriveDisplayStatus(selectedSummary)
+    : ''
+
+  useEffect(() => {
+    if (
+      !detailOpen ||
+      !selectedId ||
+      !isTerminalStatus(selectedSummaryStatus)
+    ) {
+      return
+    }
+
+    invalidateDetailCache(selectedId)
+    void fetchDetail(selectedId)
+  }, [
+    detailOpen,
+    fetchDetail,
+    invalidateDetailCache,
+    selectedId,
+    selectedSummaryStatus,
+  ])
 
   useEffect(() => {
     if (!detailOpen || !selectedId || selectedSummaryExists) return

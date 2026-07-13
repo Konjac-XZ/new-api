@@ -4634,6 +4634,7 @@
     "This project must be used in compliance with the": "Этот проект должен использоваться в соответствии с",
     "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.": "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.",
     "This removes {{count}} failed models from this channel. This action cannot be undone.": "Это удалит {{count}} неуспешных моделей из этого канала. Действие необратимо.",
+    "This request is still in progress. Please check back later.": "Этот запрос еще выполняется. Проверьте позже.",
     "This site currently has {{count}} models enabled": "На этом сайте сейчас включено моделей: {{count}}",
     "This tier catches any request that did not match earlier tiers.": "Этот уровень обрабатывает все запросы, которые не совпали с предыдущими уровнями.",
     "this token group": "эта группа токенов",

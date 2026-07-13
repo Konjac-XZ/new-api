@@ -23,5 +23,5 @@ const (
 	MonitorStatsCacheTTL       = time.Second
 	MonitorDegradeActiveLimit  = MonitorMinRecords
 	MonitorRecoverActiveLimit  = MonitorMinRecords * 8 / 10
-	MonitorBodyCaptureMaxBytes = 40 * 1024
+	MonitorBodyCaptureMaxBytes = 512 * 1024
 )

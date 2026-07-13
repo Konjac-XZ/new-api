@@ -665,8 +665,8 @@ const JsonViewer = ({
 
   // Check if content is too large BEFORE parsing
   // Two thresholds:
-  // 1. Frontend display limit: 40,000 bytes - refuse to display inline
-  // 2. Backend truncation flag: indicates content was truncated at 1MB
+  // 1. Frontend display limit: 40 KiB - refuse to display inline
+  // 2. Backend truncation flag: indicates content exceeded the capture limit
   // Use bodySize (from backend) instead of checking actual data length
   const isLengthExceeded = bodyTruncated || bodySize > BODY_DISPLAY_LIMIT_BYTES;
 

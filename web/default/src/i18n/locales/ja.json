@@ -4634,6 +4634,7 @@
     "This project must be used in compliance with the": "このプロジェクトは、以下を遵守して使用する必要があります",
     "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.": "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.",
     "This removes {{count}} failed models from this channel. This action cannot be undone.": "この操作はこのチャンネルから失敗した {{count}} 個のモデルを削除します。元に戻せません。",
+    "This request is still in progress. Please check back later.": "このリクエストはまだ処理中です。しばらくしてからもう一度ご確認ください。",
     "This site currently has {{count}} models enabled": "このサイトでは現在 {{count}} 個のモデルが有効です",
     "This tier catches any request that did not match earlier tiers.": "この段階は、前の段階に一致しなかったすべてのリクエストを受け取ります。",
     "this token group": "このトークングループ",

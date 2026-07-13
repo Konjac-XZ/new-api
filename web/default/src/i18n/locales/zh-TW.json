@@ -4634,6 +4634,7 @@
     "This project must be used in compliance with the": "此項目的使用必須遵守",
     "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.": "This record was written by a pre-upgrade instance and lacks audit info. Upgrade the instance to record server IP, callback IP, payment method and system version.",
     "This removes {{count}} failed models from this channel. This action cannot be undone.": "此操作將從該渠道移除 {{count}} 個測試失敗的模型，且無法撤銷。",
+    "This request is still in progress. Please check back later.": "此請求仍在進行中，請稍後再查看。",
     "This site currently has {{count}} models enabled": "本站目前已啟用模型，總計 {{count}} 個",
     "This tier catches any request that did not match earlier tiers.": "此階梯會兜底處理未匹配前面階梯的請求。",
     "this token group": "此令牌分組",
