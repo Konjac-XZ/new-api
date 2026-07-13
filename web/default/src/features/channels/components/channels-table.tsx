@@ -138,7 +138,6 @@ export function ChannelsTable() {
     pagination: {
       defaultPage: 1,
       defaultPageSize: DEFAULT_PAGE_SIZE,
-      pageSizeStorageKey: 'channels:page-size:v1',
     },
     globalFilter: { enabled: true, key: 'filter' },
     columnFilters: [
@@ -480,7 +479,6 @@ export function ChannelsTable() {
     <DataTablePage
       table={table}
       columns={columns}
-      tableLabel={t('Channels')}
       isLoading={isLoading}
       isFetching={isFetching}
       emptyTitle={t('No Channels Found')}
