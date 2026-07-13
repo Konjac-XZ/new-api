@@ -263,16 +263,15 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
         const column = props.table.getColumn(filter.columnId)
         if (!column) return null
         return (
-          <DataTableFilterField key={filter.columnId}>
-            <DataTableFacetedFilter
-              column={column}
-              title={filter.title}
-              triggerClassName={filter.triggerClassName}
-              options={filter.options}
-              singleSelect={filter.singleSelect}
-              compactActiveIndicator={filter.compactActiveIndicator}
-            />
-          </DataTableFilterField>
+          <DataTableFacetedFilter
+            key={filter.columnId}
+            column={column}
+            title={filter.title}
+            triggerClassName={filter.triggerClassName}
+            options={filter.options}
+            singleSelect={filter.singleSelect}
+            compactActiveIndicator={filter.compactActiveIndicator}
+          />
         )
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
