@@ -401,12 +401,13 @@ function formatLabelValue(label: string, value: string) {
 }
 
 const percentTextClassName: Record<
-  'neutral' | 'info' | 'success' | 'warning' | 'destructive',
+  NonNullable<StatusBadgeProps['variant']>,
   string
 > = {
   success: 'text-success',
   warning: 'text-warning',
   danger: 'text-destructive',
+  destructive: 'text-destructive',
   info: 'text-info',
   neutral: 'text-muted-foreground',
   purple: 'text-chart-4',
