@@ -203,11 +203,6 @@ func InitDB() (err error) {
 		sqlDB.SetMaxIdleConns(common.GetEnvOrDefault("SQL_MAX_IDLE_CONNS", 100))
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
-		if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
-			if err := configureSQLitePerformance(DB); err != nil {
-				common.SysError(fmt.Sprintf("failed to apply SQLite performance pragmas: %v", err))
-			}
-		}
 
 		if !common.IsMasterNode {
 			return nil
@@ -222,33 +217,6 @@ func InitDB() (err error) {
 		common.FatalLog(err)
 	}
 	return err
-}
-
-func configureSQLitePerformance(db *gorm.DB) error {
-	cacheSizeMB := common.GetEnvOrDefault("SQLITE_CACHE_SIZE_MB", 256)
-	mmapSizeMB := common.GetEnvOrDefault("SQLITE_MMAP_SIZE_MB", 1024)
-	busyTimeoutMs := common.GetEnvOrDefault("SQLITE_BUSY_TIMEOUT_MS", 5000)
-	statements := []struct {
-		desc string
-		sql  string
-	}{
-		{"journal_mode", "PRAGMA journal_mode=WAL;"},
-		{"synchronous", "PRAGMA synchronous=NORMAL;"},
-		{"temp_store", "PRAGMA temp_store=MEMORY;"},
-		{"cache_size", fmt.Sprintf("PRAGMA cache_size = -%d;", cacheSizeMB*1024)},
-		{"mmap_size", fmt.Sprintf("PRAGMA mmap_size = %d;", mmapSizeMB*1024*1024)},
-		{"busy_timeout", fmt.Sprintf("PRAGMA busy_timeout = %d;", busyTimeoutMs)},
-	}
-	for _, stmt := range statements {
-		if err := db.Exec(stmt.sql).Error; err != nil {
-			return fmt.Errorf("%s (%s)", stmt.desc, err.Error())
-		}
-	}
-	common.SysLog(fmt.Sprintf(
-		"SQLite tuned: cache=%dMB, mmap=%dMB, busy_timeout=%dms (journal=WAL, temp=MEMORY, sync=NORMAL)",
-		cacheSizeMB, mmapSizeMB, busyTimeoutMs,
-	))
-	return nil
 }
 
 func InitLogDB() (err error) {
@@ -307,6 +275,9 @@ func migrateDB() error {
 		&BreakerPenaltyTrace{},
 		&Token{},
 		&User{},
+		&UserSession{},
+		&AuthFlow{},
+		&ExternalIdentityClaim{},
 		&PasskeyCredential{},
 		&Option{},
 		&Redemption{},
@@ -338,6 +309,12 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := InitializeUserAuthVersions(); err != nil {
+		return err
+	}
+	if err := InitializeExternalIdentityClaims(); err != nil {
+		return err
+	}
 	if err := migrateChannelExternalTables(); err != nil {
 		return err
 	}
@@ -367,6 +344,9 @@ func migrateDBFast() error {
 		{&BreakerPenaltyTrace{}, "BreakerPenaltyTrace"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
+		{&UserSession{}, "UserSession"},
+		{&AuthFlow{}, "AuthFlow"},
+		{&ExternalIdentityClaim{}, "ExternalIdentityClaim"},
 		{&PasskeyCredential{}, "PasskeyCredential"},
 		{&Option{}, "Option"},
 		{&Redemption{}, "Redemption"},
@@ -415,6 +395,12 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := InitializeUserAuthVersions(); err != nil {
+		return err
+	}
+	if err := InitializeExternalIdentityClaims(); err != nil {
+		return err
 	}
 	if err := migrateChannelExternalTables(); err != nil {
 		return err
