@@ -17,42 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  CheckCheck,
-  Loader2,
-  Search,
-  Info,
-  ChevronDown,
-  MinusCircle,
-  X,
-} from 'lucide-react'
+import { CheckCheck, Loader2, Search, Info, MinusCircle, X } from 'lucide-react'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
 import { Dialog } from '@/components/dialog'
 import { tintedBadgeClassMap } from '@/components/status-badge'
 import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
-import { Label } from '@/components/ui/label'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 
 import { fetchUpstreamModels, updateChannel } from '../../api'
@@ -60,11 +35,16 @@ import {
   buildCompactUpstreamModels,
   channelsQueryKeys,
   categorizeModelsWithRedirect,
+  getReconciliationModelClassName,
   type CompactUpstreamModelEntry,
   normalizeModelName,
   parseModelsString,
 } from '../../lib'
 import { useChannels } from '../channels-provider'
+import {
+  ModelReconciliationList,
+  type ModelReconciliationRow,
+} from './model-reconciliation-list'
 
 function normalizeModelNameList(models: readonly string[]): string[] {
   return [...new Set(models.map((m) => normalizeModelName(m)).filter(Boolean))]
@@ -83,16 +63,6 @@ function removeNormalizedModel(models: string[], model: string): string[] {
 }
 
 type ModelTab = 'new' | 'existing' | 'removed'
-
-type CompactModelRow = {
-  key: string
-  model: string
-  checked: boolean
-  className: string
-  badgeLabel: string
-  badgeClassName: string
-  compactModel?: string
-}
 
 type FetchModelsDialogProps = {
   open: boolean
@@ -532,7 +502,7 @@ export function FetchModelsDialog({
     },
     [searchKeyword]
   )
-  const compactNewRowsAll = useMemo<CompactModelRow[]>(
+  const compactNewRowsAll = useMemo<ModelReconciliationRow[]>(
     () =>
       compactEntries
         .filter(
@@ -545,10 +515,15 @@ export function FetchModelsDialog({
             normalizeModelName(entry.model)
           )
           return {
-            key: `compact-new:${entry.model}`,
+            id: `compact-new:${entry.model}`,
             model: entry.model,
             checked,
-            className: checked ? 'font-medium text-success' : '',
+            className: getReconciliationModelClassName({
+              existedLocally: existingModelSet.has(
+                normalizeModelName(entry.model)
+              ),
+              selected: checked,
+            }),
             badgeLabel: entry.shouldMap
               ? t('Compacts {{model}}', { model: entry.upstreamModel })
               : t('From upstream'),
@@ -557,9 +532,15 @@ export function FetchModelsDialog({
               : tintedBadgeClassMap.neutral,
           }
         }),
-    [classificationSet, compactEntries, selectedCompactModelSet, t]
+    [
+      classificationSet,
+      compactEntries,
+      existingModelSet,
+      selectedCompactModelSet,
+      t,
+    ]
   )
-  const compactExistingRowsAll = useMemo<CompactModelRow[]>(
+  const compactExistingRowsAll = useMemo<ModelReconciliationRow[]>(
     () =>
       existingModels
         .filter((model) => {
@@ -592,20 +573,18 @@ export function FetchModelsDialog({
           } else if (existingCompactName) {
             badgeLabel = t('Existing compact name')
           }
-          let className = ''
-          if (compacted) {
-            className = 'font-medium text-warning'
-          } else if (!selectedExistingModelSet.has(normalized)) {
-            className = 'font-medium text-destructive'
-          }
+          const checked =
+            selectedExistingModelSet.has(normalized) &&
+            !selectedCompactMappedTargetSet.has(normalized)
 
           return {
-            key: `existing:${model}`,
+            id: `existing:${model}`,
             model,
-            checked:
-              selectedExistingModelSet.has(normalized) &&
-              !selectedCompactMappedTargetSet.has(normalized),
-            className,
+            checked,
+            className: getReconciliationModelClassName({
+              existedLocally: true,
+              selected: checked,
+            }),
             badgeLabel,
             badgeClassName: compacted
               ? tintedBadgeClassMap.warning
@@ -625,10 +604,10 @@ export function FetchModelsDialog({
       t,
     ]
   )
-  const compactRemovedRowsAll = useMemo<CompactModelRow[]>(
+  const compactRemovedRowsAll = useMemo<ModelReconciliationRow[]>(
     () =>
       existingModels
-        .map((model): CompactModelRow | null => {
+        .map((model): ModelReconciliationRow | null => {
           const normalized = normalizeModelName(model)
           if (!normalized) return null
           if (fetchedModelSet.has(normalized)) return null
@@ -641,17 +620,18 @@ export function FetchModelsDialog({
           }
 
           return {
-            key: `removed:${model}`,
+            id: `removed:${model}`,
             model,
             checked: selectedExistingModelSet.has(normalized),
-            className: selectedExistingModelSet.has(normalized)
-              ? 'font-medium text-destructive'
-              : '',
+            className: getReconciliationModelClassName({
+              existedLocally: true,
+              selected: selectedExistingModelSet.has(normalized),
+            }),
             badgeLabel: t('Not returned by upstream'),
             badgeClassName: tintedBadgeClassMap.danger,
           }
         })
-        .filter((row): row is CompactModelRow => row !== null),
+        .filter((row): row is ModelReconciliationRow => row !== null),
     [
       compactEntryByUpstreamModel,
       compactEntryMap,
@@ -664,10 +644,10 @@ export function FetchModelsDialog({
       t,
     ]
   )
-  const compactRemovalPreviewRowsAll = useMemo<CompactModelRow[]>(
+  const compactRemovalPreviewRowsAll = useMemo<ModelReconciliationRow[]>(
     () =>
       existingModels
-        .map((model): CompactModelRow | null => {
+        .map((model): ModelReconciliationRow | null => {
           const normalized = normalizeModelName(model)
           const compactEntry = compactEntryByUpstreamModel.get(normalized)
           const compacted =
@@ -677,7 +657,7 @@ export function FetchModelsDialog({
           if (!compacted && !manuallyRemoved) return null
 
           return {
-            key: `preview-removed:${model}`,
+            id: `preview-removed:${model}`,
             model,
             checked: false,
             className: 'font-medium text-destructive',
@@ -689,7 +669,7 @@ export function FetchModelsDialog({
               : tintedBadgeClassMap.danger,
           }
         })
-        .filter((row): row is CompactModelRow => row !== null),
+        .filter((row): row is ModelReconciliationRow => row !== null),
     [
       compactEntryByUpstreamModel,
       existingModels,
@@ -781,19 +761,6 @@ export function FetchModelsDialog({
     ]
   )
 
-  const activeModelsByCategory = categorizeModels(activeTabModels)
-  const activeCompactRowsByCategory = useMemo(() => {
-    const categories: Record<string, CompactModelRow[]> = {}
-    activeCompactRows.forEach((row) => {
-      const category = categorizeModels([row.model])
-      const categoryName = Object.keys(category)[0] ?? 'Other'
-      if (!categories[categoryName]) {
-        categories[categoryName] = []
-      }
-      categories[categoryName].push(row)
-    })
-    return categories
-  }, [activeCompactRows])
   const modelsToAdd = useMemo(
     () =>
       compactMode
@@ -831,17 +798,9 @@ export function FetchModelsDialog({
   )
 
   // 厂商分类按 a-z 排序，Other 放最后，便于查找
-  const getSortedCategoryEntries = (
-    categories: Record<string, string[]>
-  ): [string, string[]][] =>
-    Object.entries(categories).sort(([a], [b]) => {
-      if (a === 'Other') return 1
-      if (b === 'Other') return -1
-      return a.localeCompare(b, undefined, { sensitivity: 'base' })
-    })
-  const getSortedCompactCategoryEntries = (
-    categories: Record<string, CompactModelRow[]>
-  ): [string, CompactModelRow[]][] =>
+  const getSortedCategoryEntries = <T,>(
+    categories: Record<string, T[]>
+  ): [string, T[]][] =>
     Object.entries(categories).sort(([a], [b]) => {
       if (a === 'Other') return 1
       if (b === 'Other') return -1
@@ -888,8 +847,8 @@ export function FetchModelsDialog({
     }
   }
 
-  const toggleCompactRow = (row: CompactModelRow) => {
-    if (row.key.startsWith('compact-new:')) {
+  const toggleCompactRow = (row: ModelReconciliationRow) => {
+    if (row.id.startsWith('compact-new:')) {
       if (row.checked) {
         deselectCompactModel(row.model)
       } else {
@@ -898,7 +857,7 @@ export function FetchModelsDialog({
       return
     }
 
-    if (row.key.startsWith('removed:')) {
+    if (row.id.startsWith('removed:')) {
       if (row.checked) {
         removeExistingModel(row.model)
       } else {
@@ -927,12 +886,12 @@ export function FetchModelsDialog({
   }
 
   const toggleCompactCategory = (
-    categoryRows: CompactModelRow[],
+    categoryRows: ModelReconciliationRow[],
     isChecked: boolean
   ) => {
     categoryRows.forEach((row) => {
       if (isChecked) {
-        if (row.key.startsWith('compact-new:')) {
+        if (row.id.startsWith('compact-new:')) {
           selectCompactModel(row.model)
         } else {
           keepExistingModel(row.model)
@@ -940,11 +899,11 @@ export function FetchModelsDialog({
         return
       }
 
-      if (row.key.startsWith('compact-new:')) {
+      if (row.id.startsWith('compact-new:')) {
         deselectCompactModel(row.model)
-      } else if (row.key.startsWith('existing:')) {
+      } else if (row.id.startsWith('existing:')) {
         removeExistingModel(row.model)
-      } else if (row.key.startsWith('removed:')) {
+      } else if (row.id.startsWith('removed:')) {
         removeExistingModel(row.model)
       }
     })
@@ -995,22 +954,42 @@ export function FetchModelsDialog({
     return t('No models found.')
   }
 
-  const getModelChangeClassName = (model: string) => {
-    const normalized = normalizeModelName(model)
-    const selected = selectedModelSet.has(normalized)
-    const existing = existingModelSet.has(normalized)
-
-    if (!existing && selected) {
-      return 'font-medium text-success'
-    }
-    if (existing && !selected) {
-      return 'font-medium text-destructive'
-    }
-    if (activeTab === 'removed' && selected) {
-      return 'font-medium text-destructive'
-    }
-    return ''
-  }
+  const activeRegularRows = useMemo<ModelReconciliationRow[]>(
+    () =>
+      activeTabModels.map((model) => {
+        const normalized = normalizeModelName(model)
+        const redirectOnly = redirectOnlySet.has(normalized)
+        return {
+          id: `regular:${model}`,
+          model,
+          checked: selectedModelSet.has(normalized),
+          className: getReconciliationModelClassName({
+            existedLocally: existingModelSet.has(normalized),
+            selected: selectedModelSet.has(normalized),
+          }),
+          hint: redirectOnly ? (
+            <Info className='text-warning mt-0.5 h-3.5 w-3.5 shrink-0' />
+          ) : undefined,
+          hintText: redirectOnly
+            ? t('From model redirect, not yet added to models list')
+            : undefined,
+        }
+      }),
+    [activeTabModels, existingModelSet, redirectOnlySet, selectedModelSet, t]
+  )
+  const activeReconciliationRows = compactMode
+    ? activeCompactRows
+    : activeRegularRows
+  const activeRowsByCategory = useMemo(() => {
+    const categories: Record<string, ModelReconciliationRow[]> = {}
+    activeReconciliationRows.forEach((row) => {
+      const category = categorizeModels([row.model])
+      const categoryName = Object.keys(category)[0] ?? 'Other'
+      categories[categoryName] ??= []
+      categories[categoryName].push(row)
+    })
+    return categories
+  }, [activeReconciliationRows])
 
   const renderPreviewList = (models: string[], emptyText: string) => {
     if (models.length === 0) {
@@ -1045,7 +1024,7 @@ export function FetchModelsDialog({
       <div className='max-h-28 space-y-1 overflow-y-auto pr-1'>
         {compactRemovalPreviewRowsAll.map((row) => (
           <div
-            key={row.key}
+            key={row.id}
             className='bg-background rounded-md border px-2 py-1.5 text-xs leading-5'
             title={row.model}
           >
@@ -1067,173 +1046,25 @@ export function FetchModelsDialog({
     )
   }
 
-  const isCategorySelected = (categoryModels: string[]) => {
-    return categoryModels.every((m) => selectedModels.includes(m))
+  const handleToggleReconciliationRow = (row: ModelReconciliationRow) => {
+    if (compactMode) {
+      toggleCompactRow(row)
+      return
+    }
+    toggleModel(row.model)
   }
 
-  const isCompactCategorySelected = (categoryRows: CompactModelRow[]) => {
-    return categoryRows.length > 0 && categoryRows.every((row) => row.checked)
-  }
-
-  const renderModelCategory = (
-    categoryName: string,
-    categoryModels: string[]
+  const handleToggleReconciliationCategory = (
+    rows: ModelReconciliationRow[],
+    checked: boolean
   ) => {
-    const allSelected = isCategorySelected(categoryModels)
-
-    return (
-      <Collapsible key={categoryName} defaultOpen>
-        <CollapsibleTrigger className='hover:bg-muted/50 flex w-full items-center justify-between gap-3 rounded-lg border p-3'>
-          <div className='flex min-w-0 items-center gap-2'>
-            <ChevronDown className='h-4 w-4 shrink-0' />
-            <span className='min-w-0 truncate font-medium'>
-              {categoryName} ({categoryModels.length})
-            </span>
-          </div>
-          <div className='flex shrink-0 items-center gap-2'>
-            <span className='text-muted-foreground text-sm whitespace-nowrap'>
-              {categoryModels.filter((m) => selectedModels.includes(m)).length}{' '}
-              / {categoryModels.length} {t('selected')}
-            </span>
-            <Checkbox
-              checked={allSelected}
-              onCheckedChange={(checked) =>
-                toggleCategory(categoryModels, !!checked)
-              }
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        </CollapsibleTrigger>
-        <CollapsibleContent className='px-1 py-2 sm:px-4'>
-          <div className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-2'>
-            {categoryModels.map((model) =>
-              (() => {
-                const compactEntry = compactEntryMap.get(
-                  normalizeModelName(model)
-                )
-                return (
-                  <div key={model} className='flex min-w-0 items-start gap-2'>
-                    <Checkbox
-                      id={model}
-                      checked={selectedModels.includes(model)}
-                      onCheckedChange={() => toggleModel(model)}
-                      className='mt-0.5 shrink-0'
-                    />
-                    <Label
-                      htmlFor={model}
-                      className='flex min-w-0 flex-1 cursor-pointer items-start gap-1.5 text-sm leading-5 font-normal'
-                    >
-                      <span
-                        className={cn(
-                          'min-w-0 break-words [overflow-wrap:anywhere]',
-                          getModelChangeClassName(model)
-                        )}
-                      >
-                        {model}
-                      </span>
-                      {compactMode && compactEntry?.shouldMap && (
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Info className='text-muted-foreground mt-0.5 h-3.5 w-3.5 shrink-0' />
-                            }
-                          />
-                          <TooltipContent>
-                            {t('Redirects to {{model}}', {
-                              model: compactEntry.upstreamModel,
-                            })}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                      {redirectOnlySet.has(normalizeModelName(model)) && (
-                        <Tooltip>
-                          <TooltipTrigger
-                            render={
-                              <Info className='text-warning mt-0.5 h-3.5 w-3.5 shrink-0' />
-                            }
-                          />
-                          <TooltipContent>
-                            {t(
-                              'From model redirect, not yet added to models list'
-                            )}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                    </Label>
-                  </div>
-                )
-              })()
-            )}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
-    )
-  }
-
-  const renderCompactModelCategory = (
-    categoryName: string,
-    categoryRows: CompactModelRow[]
-  ) => {
-    const allSelected = isCompactCategorySelected(categoryRows)
-
-    return (
-      <Collapsible key={categoryName} defaultOpen>
-        <CollapsibleTrigger className='hover:bg-muted/50 flex w-full items-center justify-between gap-3 rounded-lg border p-3'>
-          <div className='flex min-w-0 items-center gap-2'>
-            <ChevronDown className='h-4 w-4 shrink-0' />
-            <span className='min-w-0 truncate font-medium'>
-              {categoryName} ({categoryRows.length})
-            </span>
-          </div>
-          <div className='flex shrink-0 items-center gap-2'>
-            <span className='text-muted-foreground text-sm whitespace-nowrap'>
-              {categoryRows.filter((row) => row.checked).length} /{' '}
-              {categoryRows.length} {t('selected')}
-            </span>
-            <Checkbox
-              checked={allSelected}
-              onCheckedChange={(checked) =>
-                toggleCompactCategory(categoryRows, !!checked)
-              }
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
-        </CollapsibleTrigger>
-        <CollapsibleContent className='px-1 py-2 sm:px-4'>
-          <div className='grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-2'>
-            {categoryRows.map((row) => (
-              <div key={row.key} className='flex min-w-0 items-start gap-2'>
-                <Checkbox
-                  id={row.key}
-                  checked={row.checked}
-                  onCheckedChange={() => toggleCompactRow(row)}
-                  className='mt-0.5 shrink-0'
-                />
-                <Label
-                  htmlFor={row.key}
-                  className='flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-1 text-sm leading-5 font-normal'
-                >
-                  <span
-                    className={cn(
-                      'min-w-0 break-words [overflow-wrap:anywhere]',
-                      row.className
-                    )}
-                  >
-                    {row.model}
-                  </span>
-                  <Badge
-                    variant='outline'
-                    className={cn('max-w-full', row.badgeClassName)}
-                    title={row.badgeLabel}
-                  >
-                    <span className='min-w-0 truncate'>{row.badgeLabel}</span>
-                  </Badge>
-                </Label>
-              </div>
-            ))}
-          </div>
-        </CollapsibleContent>
-      </Collapsible>
+    if (compactMode) {
+      toggleCompactCategory(rows, checked)
+      return
+    }
+    toggleCategory(
+      rows.map((row) => row.model),
+      checked
     )
   }
 
@@ -1397,18 +1228,14 @@ export function FetchModelsDialog({
                 {getEmptyTabMessage()}
               </p>
             ) : null}
-            {activeTab === 'new' && compactMode
-              ? getSortedCompactCategoryEntries(
-                  activeCompactRowsByCategory
-                ).map(([category, rows]) =>
-                  renderCompactModelCategory(category, rows)
-                )
-              : null}
-            {activeTab === 'new' && !compactMode
-              ? getSortedCategoryEntries(activeModelsByCategory).map(
-                  ([category, models]) => renderModelCategory(category, models)
-                )
-              : null}
+            {activeTab === 'new' ? (
+              <ModelReconciliationList
+                categories={getSortedCategoryEntries(activeRowsByCategory)}
+                selectedLabel={t('selected')}
+                onToggleRow={handleToggleReconciliationRow}
+                onToggleCategory={handleToggleReconciliationCategory}
+              />
+            ) : null}
           </TabsContent>
 
           <TabsContent
@@ -1420,18 +1247,14 @@ export function FetchModelsDialog({
                 {getEmptyTabMessage()}
               </p>
             ) : null}
-            {activeTab === 'existing' && compactMode
-              ? getSortedCompactCategoryEntries(
-                  activeCompactRowsByCategory
-                ).map(([category, rows]) =>
-                  renderCompactModelCategory(category, rows)
-                )
-              : null}
-            {activeTab === 'existing' && !compactMode
-              ? getSortedCategoryEntries(activeModelsByCategory).map(
-                  ([category, models]) => renderModelCategory(category, models)
-                )
-              : null}
+            {activeTab === 'existing' ? (
+              <ModelReconciliationList
+                categories={getSortedCategoryEntries(activeRowsByCategory)}
+                selectedLabel={t('selected')}
+                onToggleRow={handleToggleReconciliationRow}
+                onToggleCategory={handleToggleReconciliationCategory}
+              />
+            ) : null}
           </TabsContent>
 
           <TabsContent
@@ -1448,18 +1271,14 @@ export function FetchModelsDialog({
                 {getEmptyTabMessage()}
               </p>
             ) : null}
-            {activeTab === 'removed' && compactMode
-              ? getSortedCompactCategoryEntries(
-                  activeCompactRowsByCategory
-                ).map(([category, rows]) =>
-                  renderCompactModelCategory(category, rows)
-                )
-              : null}
-            {activeTab === 'removed' && !compactMode
-              ? getSortedCategoryEntries(activeModelsByCategory).map(
-                  ([category, models]) => renderModelCategory(category, models)
-                )
-              : null}
+            {activeTab === 'removed' ? (
+              <ModelReconciliationList
+                categories={getSortedCategoryEntries(activeRowsByCategory)}
+                selectedLabel={t('selected')}
+                onToggleRow={handleToggleReconciliationRow}
+                onToggleCategory={handleToggleReconciliationCategory}
+              />
+            ) : null}
           </TabsContent>
         </Tabs>
 

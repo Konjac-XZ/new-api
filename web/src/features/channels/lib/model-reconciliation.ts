@@ -16,15 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-// Re-export all library functions
-export * from './channel-actions'
-export * from './advanced-custom'
-export * from './channel-form-errors'
-export * from './channel-form'
-export * from './channel-sort'
-export * from './channel-type-config'
-export * from './channel-utils'
-export * from './compact-upstream-models'
-export * from './multi-key-utils'
-export * from './model-mapping-validation'
-export * from './model-reconciliation'
+
+export function getReconciliationModelClassName(params: {
+  existedLocally: boolean
+  selected: boolean
+}): string {
+  if (params.existedLocally && !params.selected) {
+    return 'font-medium text-destructive'
+  }
+  if (!params.existedLocally && params.selected) {
+    return 'font-medium text-success'
+  }
+  return ''
+}

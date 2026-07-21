@@ -3389,7 +3389,6 @@ export function ChannelMutateDrawer({
                                     <Button
                                       type='button'
                                       variant='outline'
-                                      size='sm'
                                       onClick={() =>
                                         handleFetchModels({ compact: true })
                                       }
