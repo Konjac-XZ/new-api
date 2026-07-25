@@ -54,17 +54,6 @@ import { type SubmitErrorHandler, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { Button } from '@/components/ui/button'
-import { Combobox } from '@/components/ui/combobox'
-import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   sideDrawerContentClassName,
   sideDrawerFooterClassName,
@@ -73,10 +62,13 @@ import {
   sideDrawerSectionClassName,
   sideDrawerSwitchItemClassName,
 } from '@/components/drawer-layout'
+import { JsonCodeEditor } from '@/components/json-code-editor'
 import { JsonEditor } from '@/components/json-editor'
 import { MultiSelect } from '@/components/multi-select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import {
   Form,
   FormControl,
@@ -86,6 +78,15 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import {
   Sheet,
@@ -4163,17 +4164,18 @@ export function ChannelMutateDrawer({
                                       </div>
                                     </div>
                                     <FormControl>
-                                      <Textarea
+                                      <JsonCodeEditor
                                         value={field.value || ''}
                                         onChange={field.onChange}
+                                        name={field.name}
+                                        onBlur={field.onBlur}
+                                        textareaRef={field.ref}
                                         disabled={
                                           sensitiveLocked || isSubmitting
                                         }
-                                        rows={8}
                                         placeholder={t(
                                           'Override request parameters. Cannot override stream parameter.'
                                         )}
-                                        className='max-h-72 min-h-40 resize-y overflow-auto font-mono text-xs'
                                       />
                                     </FormControl>
                                     <FormMessage />
@@ -4261,17 +4263,19 @@ export function ChannelMutateDrawer({
                                       </div>
                                     </div>
                                     <FormControl>
-                                      <Textarea
-                                        className='font-mono text-sm'
-                                        rows={6}
+                                      <JsonCodeEditor
                                         value={field.value || ''}
                                         onChange={field.onChange}
+                                        name={field.name}
+                                        onBlur={field.onBlur}
+                                        textareaRef={field.ref}
                                         disabled={
                                           sensitiveLocked || isSubmitting
                                         }
                                         placeholder={t(
                                           'Enter JSON to override request headers'
                                         )}
+                                        heightClassName='h-40 min-h-40 max-h-40'
                                       />
                                     </FormControl>
                                     <FormDescription className='text-xs'>

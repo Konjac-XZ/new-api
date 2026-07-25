@@ -22,6 +22,7 @@ import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
+import { JsonCodeEditor } from '@/components/json-code-editor'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -34,7 +35,6 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import { zodResolver } from '@/lib/zod-resolver'
 
 import {
@@ -273,11 +273,16 @@ export function RateLimitSection({ defaultValues }: RateLimitSectionProps) {
                       onChange={field.onChange}
                     />
                   ) : (
-                    <Textarea
-                      rows={8}
+                    <JsonCodeEditor
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      textareaRef={field.ref}
                       placeholder={`{\n  "default": [200, 100],\n  "vip": [0, 1000]\n}`}
-                      className='font-mono text-sm'
-                      {...field}
+                      aria-invalid={Boolean(
+                        form.formState.errors.ModelRequestRateLimitGroup
+                      )}
                     />
                   )}
                 </FormControl>
