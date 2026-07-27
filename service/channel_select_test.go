@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 )
 
 func buildDynamicBreakerSettingForSelectTest(t *testing.T) *string {
@@ -26,11 +26,11 @@ func buildObservedChannelForSelectTest(t *testing.T, id int, priority int64) *mo
 	setting := buildDynamicBreakerSettingForSelectTest(t)
 	now := time.Now().Unix()
 	return &model.Channel{
-		Id:               id,
-		AutoBan:          &autoBan,
-		Weight:           &weight,
-		Priority:         &priority,
-		Setting:          setting,
+		Id:                id,
+		AutoBan:           &autoBan,
+		Weight:            &weight,
+		Priority:          &priority,
+		Setting:           setting,
 		BreakerCooldownAt: now - 30,
 		BreakerUpdatedAt:  now - 30,
 	}
