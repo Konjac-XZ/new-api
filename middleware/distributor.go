@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -467,10 +468,9 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 		return types.NewError(errors.New("channel is nil"), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
-	// Reset first-token watchdog state for each new channel attempt to avoid leaking
-	// the timeout flag across retries and misclassifying successful attempts as timeouts.
-	common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, false)
-	common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, nil)
+	// Stop the previous attempt's timer before resetting its state. Merely dropping
+	// the pointer leaves the timer alive and lets it poison a later channel retry.
+	helper.ResetFirstTokenWatchdog(c, "switching channel attempt")
 	channelcache.Remember(channel.Id, channel.Name)
 	common.SetContextKey(c, constant.ContextKeyChannelId, channel.Id)
 	common.SetContextKey(c, constant.ContextKeyChannelName, channel.Name)

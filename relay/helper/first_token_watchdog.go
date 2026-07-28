@@ -230,6 +230,21 @@ func EnsureFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limit
 	return watchdog
 }
 
+// ResetFirstTokenWatchdog stops the watchdog owned by the current channel
+// attempt before clearing its request-scoped state. Stopping it first is
+// important: a watchdog left running by an early HTTP error could otherwise
+// time out during a later retry and mark that unrelated attempt as failed.
+func ResetFirstTokenWatchdog(c *gin.Context, reason string) {
+	if c == nil {
+		return
+	}
+	if watchdog, ok := common.GetContextKeyType[*FirstTokenWatchdog](c, constant.ContextKeyFirstTokenWatchdog); ok && watchdog != nil {
+		watchdog.Stop(reason)
+	}
+	common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, nil)
+	common.SetContextKey(c, constant.ContextKeyFirstTokenLatencyExceeded, false)
+}
+
 func HasFirstTokenTimeout(c *gin.Context) bool {
 	return common.GetContextKeyBool(c, constant.ContextKeyFirstTokenLatencyExceeded)
 }

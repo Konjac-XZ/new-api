@@ -370,6 +370,11 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	}
 	if watchdog != nil {
 		watchdog.AttachResponse(resp)
+		// An HTTP error is already a complete upstream response, not a slow first
+		// token. Stop this attempt's timer now so it cannot fire during a retry.
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			helper.ResetFirstTokenWatchdog(c, "upstream returned HTTP error")
+		}
 	}
 	return resp, nil
 }
