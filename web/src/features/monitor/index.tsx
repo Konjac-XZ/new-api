@@ -100,7 +100,9 @@ import {
   isTerminalStatus,
   SUMMARY_RETENTION_WINDOW_MS,
 } from './lib'
+import { getMonitorTableLayout } from './table-layout'
 import type { MonitorBodyType, MonitorRecord } from './types'
+import { useMonitorFullscreen } from './use-monitor-fullscreen'
 import { useMonitorWs } from './use-monitor-ws'
 import { useRequestDetail } from './use-request-detail'
 
@@ -145,37 +147,6 @@ type MonitorColumnDefinition = {
   render: (record: MonitorRecord, clientNowMs: number) => React.ReactNode
   measure?: (record: MonitorRecord) => string
   live?: boolean
-}
-
-function getColumnWidthPercents(
-  columns: MonitorColumnDefinition[],
-  records: MonitorRecord[]
-): Record<MonitorColumnId, number> {
-  const columnScores = columns.map((column) => {
-    let measuredChars = column.label.length
-    if (column.measure) {
-      for (const record of records) {
-        measuredChars = Math.max(measuredChars, column.measure(record).length)
-      }
-    }
-    const contentScore = Math.ceil(
-      measuredChars * (column.layout.contentScale ?? 1)
-    )
-    const score = Math.min(
-      column.layout.max,
-      Math.max(column.layout.min, contentScore)
-    )
-
-    return { key: column.key, score }
-  })
-  const totalScore = columnScores.reduce((sum, column) => sum + column.score, 0)
-
-  return Object.fromEntries(
-    columnScores.map((column) => [
-      column.key,
-      totalScore > 0 ? (column.score / totalScore) * 100 : 0,
-    ])
-  ) as Record<MonitorColumnId, number>
 }
 
 function getDefaultMonitorVisibleColumns(): MonitorVisibleColumns {
@@ -612,8 +583,8 @@ function MonitorTable(props: {
       ),
     [props.records]
   )
-  const columnWidthPercents = useMemo(
-    () => getColumnWidthPercents(props.columns, props.records),
+  const tableLayout = useMemo(
+    () => getMonitorTableLayout(props.columns, props.records),
     [props.columns, props.records]
   )
   const rowVirtualizer = useVirtualizer({
@@ -664,12 +635,15 @@ function MonitorTable(props: {
       ref={scrollParentRef}
       className='h-full overflow-auto rounded-lg border'
     >
-      <Table className='min-w-[72rem] table-fixed'>
+      <Table
+        className='table-fixed'
+        style={{ minWidth: `max(100%, ${tableLayout.minWidthRem}rem)` }}
+      >
         <colgroup>
           {props.columns.map((column) => (
             <col
               key={column.key}
-              style={{ width: `${columnWidthPercents[column.key]}%` }}
+              style={{ width: `${tableLayout.widthPercents[column.key]}%` }}
             />
           ))}
         </colgroup>
@@ -1354,57 +1328,6 @@ function RequestDetail(props: {
   )
 }
 
-function useFullscreenWakeLock(
-  targetRef: React.RefObject<HTMLDivElement | null>
-) {
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null)
-
-  useEffect(() => {
-    const handleChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
-    }
-    document.addEventListener('fullscreenchange', handleChange)
-    handleChange()
-    return () => document.removeEventListener('fullscreenchange', handleChange)
-  }, [])
-
-  useEffect(() => {
-    if (!isFullscreen || !navigator.wakeLock?.request) return
-    let cancelled = false
-    void navigator.wakeLock
-      .request('screen')
-      .then((lock) => {
-        if (cancelled) {
-          void lock.release()
-          return
-        }
-        wakeLockRef.current = lock
-        lock.addEventListener('release', () => {
-          wakeLockRef.current = null
-        })
-      })
-      .catch(() => undefined)
-
-    return () => {
-      cancelled = true
-      const lock = wakeLockRef.current
-      wakeLockRef.current = null
-      void lock?.release().catch(() => undefined)
-    }
-  }, [isFullscreen])
-
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen()
-      return
-    }
-    void targetRef.current?.requestFullscreen({ navigationUI: 'hide' })
-  }, [targetRef])
-
-  return { isFullscreen, toggleFullscreen }
-}
-
 function getSortedStartTimes(records: MonitorRecord[]): number[] {
   const startTimes: number[] = []
   for (const record of records) {
@@ -1502,8 +1425,7 @@ export function Monitor() {
     getInitialMonitorVisibleColumns
   )
   const fullscreenRef = useRef<HTMLDivElement | null>(null)
-  const { isFullscreen, toggleFullscreen } =
-    useFullscreenWakeLock(fullscreenRef)
+  const { isFullscreen, toggleFullscreen } = useMonitorFullscreen(fullscreenRef)
   const detail = useRequestDetail()
   const applyLiveUpdate = detail.applyLiveUpdate
   const fetchDetail = detail.fetchDetail
