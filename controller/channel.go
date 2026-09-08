@@ -567,14 +567,8 @@ func SearchChannels(c *gin.Context) {
 	}
 
 	total := len(channelData)
-	startIdx := (page - 1) * pageSize
-	if startIdx > total {
-		startIdx = total
-	}
-	endIdx := startIdx + pageSize
-	if endIdx > total {
-		endIdx = total
-	}
+	startIdx := min((page-1)*pageSize, total)
+	endIdx := min(startIdx+pageSize, total)
 
 	pagedData := channelData[startIdx:endIdx]
 
@@ -909,7 +903,7 @@ func GetChannelKey(c *gin.Context) {
 	}
 
 	// 记录操作审计日志（高危：查看渠道密钥）
-	recordManageAudit(c, "channel.key_view", map[string]interface{}{
+	recordManageAudit(c, "channel.key_view", map[string]any{
 		"id":   channelId,
 		"name": channel.Name,
 	})
@@ -918,7 +912,7 @@ func GetChannelKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "获取成功",
-		"data": map[string]interface{}{
+		"data": map[string]any{
 			"key": channel.Key,
 		},
 	})
@@ -1069,7 +1063,7 @@ func getVertexArrayKeys(keys string) ([]string, error) {
 	if keys == "" {
 		return nil, nil
 	}
-	var keyArray []interface{}
+	var keyArray []any
 	err := common.Unmarshal([]byte(keys), &keyArray)
 	if err != nil {
 		return nil, fmt.Errorf("批量添加 Vertex AI 必须使用标准的JsonArray格式，例如[{key1}, {key2}...]，请检查输入: %w", err)
@@ -1152,7 +1146,7 @@ func AddChannel(c *gin.Context) {
 			addChannelRequest.Channel.Key = strings.Join(array, "\n")
 		} else {
 			cleanKeys := make([]string, 0)
-			for _, key := range strings.Split(addChannelRequest.Channel.Key, "\n") {
+			for key := range strings.SplitSeq(addChannelRequest.Channel.Key, "\n") {
 				if key == "" {
 					continue
 				}
@@ -1210,7 +1204,7 @@ func AddChannel(c *gin.Context) {
 	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()
-	createAudit := map[string]interface{}{
+	createAudit := map[string]any{
 		"name":  addChannelRequest.Channel.Name,
 		"type":  addChannelRequest.Channel.Type,
 		"count": len(channels),
@@ -1249,7 +1243,7 @@ func DeleteChannel(c *gin.Context) {
 	} else {
 		service.InvalidateProxyClient(channelProxy)
 	}
-	recordManageAudit(c, "channel.delete", map[string]interface{}{
+	recordManageAudit(c, "channel.delete", map[string]any{
 		"id":   id,
 		"name": channelName,
 	})
@@ -1267,7 +1261,10 @@ func DeleteDisabledChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.delete_disabled", map[string]interface{}{
+	if rows > 0 {
+		service.ResetProxyClientCache()
+	}
+	recordManageAudit(c, "channel.delete_disabled", map[string]any{
 		"count": rows,
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1306,7 +1303,7 @@ func DisableTagChannels(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_disable", map[string]interface{}{
+	recordManageAudit(c, "channel.tag_disable", map[string]any{
 		"tag": channelTag.Tag,
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1332,7 +1329,7 @@ func EnableTagChannels(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_enable", map[string]interface{}{
+	recordManageAudit(c, "channel.tag_enable", map[string]any{
 		"tag": channelTag.Tag,
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1392,7 +1389,7 @@ func EditTagChannels(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_edit", map[string]interface{}{
+	recordManageAudit(c, "channel.tag_edit", map[string]any{
 		"tag": channelTag.Tag,
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1423,7 +1420,10 @@ func DeleteChannelBatch(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.delete_batch", map[string]interface{}{
+	if deletedCount > 0 {
+		service.ResetProxyClientCache()
+	}
+	recordManageAudit(c, "channel.delete_batch", map[string]any{
 		"count": deletedCount,
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1615,8 +1615,8 @@ func UpdateChannel(c *gin.Context) {
 					}
 				} else {
 					// 普通渠道的处理
-					inputKeys := strings.Split(channel.Key, "\n")
-					for _, key := range inputKeys {
+					inputKeys := strings.SplitSeq(channel.Key, "\n")
+					for key := range inputKeys {
 						key = strings.TrimSpace(key)
 						if key != "" {
 							newKeys = append(newKeys, key)
@@ -1677,7 +1677,7 @@ func UpdateChannel(c *gin.Context) {
 	if channel.Key != "" && channel.Key != originChannel.Key {
 		changedFields = append(changedFields, "key")
 	}
-	updateAudit := map[string]interface{}{
+	updateAudit := map[string]any{
 		"id":             channel.Id,
 		"name":           channel.Name,
 		"changed_fields": changedFields,
@@ -1712,7 +1712,7 @@ func UpdateChannelStatus(c *gin.Context) {
 		model.InitChannelCache()
 		service.ResetProxyClientCache()
 	}
-	recordManageAudit(c, "channel.status_update", map[string]interface{}{
+	recordManageAudit(c, "channel.status_update", map[string]any{
 		"id":      id,
 		"status":  req.Status,
 		"changed": changed,
@@ -1740,7 +1740,7 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 		model.InitChannelCache()
 		service.ResetProxyClientCache()
 	}
-	recordManageAudit(c, "channel.status_update_batch", map[string]interface{}{
+	recordManageAudit(c, "channel.status_update_batch", map[string]any{
 		"count":  changedCount,
 		"total":  len(req.Ids),
 		"status": req.Status,
@@ -1840,7 +1840,7 @@ func BatchSetChannelTag(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.tag_batch_set", map[string]interface{}{
+	recordManageAudit(c, "channel.tag_batch_set", map[string]any{
 		"count": len(channelBatch.Ids),
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1951,7 +1951,7 @@ func CopyChannel(c *gin.Context) {
 		return
 	}
 	model.InitChannelCache()
-	recordManageAudit(c, "channel.copy", map[string]interface{}{
+	recordManageAudit(c, "channel.copy", map[string]any{
 		"sourceId": id,
 		"id":       clone.Id,
 		"name":     clone.Name,
@@ -2026,7 +2026,7 @@ func ManageMultiKeys(c *gin.Context) {
 	if request.Action == "get_key_status" {
 		markAuditLogged(c)
 	} else {
-		recordManageAudit(c, "channel.multi_key_manage", map[string]interface{}{
+		recordManageAudit(c, "channel.multi_key_manage", map[string]any{
 			"action": request.Action,
 			"id":     channel.Id,
 		})
@@ -2124,10 +2124,7 @@ func ManageMultiKeys(c *gin.Context) {
 
 		// Calculate range for current page
 		start := (page - 1) * pageSize
-		end := start + pageSize
-		if end > filteredTotal {
-			end = filteredTotal
-		}
+		end := min(start+pageSize, filteredTotal)
 
 		// Get the page data
 		var pageKeyStatusList []KeyStatus
