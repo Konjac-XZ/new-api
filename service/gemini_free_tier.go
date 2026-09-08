@@ -93,7 +93,7 @@ func NormalizeGeminiUpstreamModelForSuppression(upstreamModel string, originMode
 	if strings.HasSuffix(upstreamModel, "-nothinking") {
 		return strings.TrimSuffix(upstreamModel, "-nothinking")
 	}
-	if baseModel, level, ok := reasoning.TrimEffortSuffix(upstreamModel); ok && level != "" {
+	if baseModel, level, ok := reasoning.TrimEffortSuffixWithSuffixes(upstreamModel, reasoning.EffortSuffixes); ok && level != "" {
 		return baseModel
 	}
 	return upstreamModel
