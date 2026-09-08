@@ -363,7 +363,9 @@ it('converts task base charges and second, token and credit prices, including wh
   await selectCurrency('Site currency (CNY)')
   fireEvent.change(
     screen.getByRole('textbox', { name: 'Additional charge: mode: std' }),
-    { target: { value: '7' } }
+    {
+      target: { value: '7' },
+    }
   )
   fireEvent.change(
     screen.getByRole('textbox', { name: 'Unit price: tokens: mode: std' }),
