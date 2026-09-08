@@ -7,9 +7,29 @@ import (
 
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFirstTokenWatchdogSupportsForcedUpstreamStream(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeChatCompletions,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:    constant.ChannelTypeOpenAI,
+			ChannelSetting: dto.ChannelSettings{ForceStream: true},
+		},
+	}
+
+	watchdog := EnsureFirstTokenWatchdog(c, info, 8, nil)
+	require.NotNil(t, watchdog)
+
+	ResetFirstTokenWatchdog(c, "test complete")
+}
 
 func TestResetFirstTokenWatchdogPreventsPreviousAttemptFromTimingOut(t *testing.T) {
 	t.Parallel()

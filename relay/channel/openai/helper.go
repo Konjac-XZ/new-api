@@ -125,6 +125,33 @@ func processTokenData(relayMode int, data string, responseTextBuilder *strings.B
 	return nil
 }
 
+func appendMonitorTokenData(relayMode int, data string, responseText *relaycommon.MonitorResponseText) error {
+	switch relayMode {
+	case relayconstant.RelayModeChatCompletions:
+		var streamResponse dto.ChatCompletionsStreamResponse
+		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
+			return err
+		}
+		for _, choice := range streamResponse.Choices {
+			responseText.WriteThinking(choice.Delta.GetReasoningContent())
+			responseText.WriteContent(choice.Delta.GetContentString())
+			for _, tool := range choice.Delta.ToolCalls {
+				responseText.WriteContent(tool.Function.Name)
+				responseText.WriteContent(tool.Function.Arguments)
+			}
+		}
+	case relayconstant.RelayModeCompletions:
+		var streamResponse dto.CompletionsStreamResponse
+		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
+			return err
+		}
+		for _, choice := range streamResponse.Choices {
+			responseText.WriteContent(choice.Text)
+		}
+	}
+	return nil
+}
+
 func processCompletionsStreamResponse(streamResponse dto.CompletionsStreamResponse, responseTextBuilder *strings.Builder) {
 	for _, choice := range streamResponse.Choices {
 		responseTextBuilder.WriteString(choice.Text)

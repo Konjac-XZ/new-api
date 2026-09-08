@@ -29,6 +29,7 @@ interface MarkdownProps {
   breaks?: boolean
   children: string
   className?: string
+  renderHtmlAsText?: boolean
 }
 
 const markdownOptions = {
@@ -734,20 +735,47 @@ function addExternalLinkAttributes(html: string): string {
   return template.innerHTML
 }
 
-function renderMarkdown(markdown: string, breaks = false): string {
-  const parsedHtml = markdownParser.parse(markdown, {
+function protectMarkupTags(markdown: string): {
+  markdown: string
+  tags: Array<{ placeholder: string; value: string }>
+} {
+  const tags: Array<{ placeholder: string; value: string }> = []
+  const protectedMarkdown = markdown.replace(
+    /<\/?[A-Za-z_][\w.:-]*(?:\s+[^<>]*?)?\s*\/?>/g,
+    (value) => {
+      const placeholder = `\uE000XMLTAG${tags.length}\uE001`
+      tags.push({ placeholder, value })
+      return placeholder
+    }
+  )
+  return { markdown: protectedMarkdown, tags }
+}
+
+function renderMarkdown(
+  markdown: string,
+  breaks = false,
+  renderHtmlAsText = false
+): string {
+  const protectedMarkup = renderHtmlAsText
+    ? protectMarkupTags(markdown)
+    : { markdown, tags: [] }
+  const parsedHtml = markdownParser.parse(protectedMarkup.markdown, {
     ...markdownOptions,
     breaks,
   })
-  const html = DOMPurify.sanitize(parsedHtml, sanitizeOptions)
+  let html = DOMPurify.sanitize(parsedHtml, sanitizeOptions)
+
+  for (const tag of protectedMarkup.tags) {
+    html = html.replaceAll(tag.placeholder, () => escapeHtml(tag.value))
+  }
 
   return addExternalLinkAttributes(html)
 }
 
 export function Markdown(props: MarkdownProps) {
   const html = useMemo(
-    () => renderMarkdown(props.children, props.breaks),
-    [props.breaks, props.children]
+    () => renderMarkdown(props.children, props.breaks, props.renderHtmlAsText),
+    [props.breaks, props.children, props.renderHtmlAsText]
   )
 
   return (

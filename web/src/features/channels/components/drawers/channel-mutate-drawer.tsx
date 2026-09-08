@@ -282,6 +282,7 @@ const SENSITIVE_FORM_FIELDS = [
   'aws_key_type',
   'azure_responses_version',
   'force_format',
+  'force_stream',
   'thinking_to_content',
   'proxy',
   'http_protocol',
@@ -338,6 +339,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.proxy?.trim() ||
     values.system_prompt?.trim() ||
     values.force_format ||
+    values.force_stream ||
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
     values.system_prompt_override ||
@@ -738,6 +740,7 @@ export function ChannelMutateDrawer({
   const currentParamOverride = form.watch('param_override')
   const currentHeaderOverride = form.watch('header_override')
   const currentForceFormat = form.watch('force_format')
+  const currentForceStream = form.watch('force_stream')
   const currentThinkingToContent = form.watch('thinking_to_content')
   const currentPassThroughBodyEnabled = form.watch('pass_through_body_enabled')
   const currentTreatEmptyReplyAsFailure = form.watch(
@@ -998,6 +1001,7 @@ export function ChannelMutateDrawer({
   )
   const extraSettingsConfigured = Boolean(
     currentForceFormat ||
+    currentForceStream ||
     currentThinkingToContent ||
     currentPassThroughBodyEnabled ||
     currentTreatEmptyReplyAsFailure ||
@@ -4333,30 +4337,57 @@ export function ChannelMutateDrawer({
                           >
                             <div className='divide-border space-y-0 divide-y border-y'>
                               {currentType === 1 && (
-                                <FormField
-                                  control={form.control}
-                                  name='force_format'
-                                  render={({ field }) => (
-                                    <FormItem className='flex items-center justify-between px-4 py-3'>
-                                      <div className='space-y-0.5'>
-                                        <FormLabel>
-                                          {t('Force Format')}
-                                        </FormLabel>
-                                        <FormDescription>
-                                          {t(
-                                            'Force format response to OpenAI standard (OpenAI channel only)'
-                                          )}
-                                        </FormDescription>
-                                      </div>
-                                      <FormControl>
-                                        <Switch
-                                          checked={field.value}
-                                          onCheckedChange={field.onChange}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
+                                <>
+                                  <FormField
+                                    control={form.control}
+                                    name='force_stream'
+                                    render={({ field }) => (
+                                      <FormItem className='flex items-center justify-between px-4 py-3'>
+                                        <div className='space-y-0.5'>
+                                          <FormLabel>
+                                            {t('Force Streaming Upstream')}
+                                          </FormLabel>
+                                          <FormDescription>
+                                            {t(
+                                              'Send non-streaming Completions requests to this OpenAI channel as upstream streams, then buffer the result for the client. This also enables first-token latency limits.'
+                                            )}
+                                          </FormDescription>
+                                        </div>
+                                        <FormControl>
+                                          <Switch
+                                            checked={field.value}
+                                            onCheckedChange={field.onChange}
+                                          />
+                                        </FormControl>
+                                      </FormItem>
+                                    )}
+                                  />
+
+                                  <FormField
+                                    control={form.control}
+                                    name='force_format'
+                                    render={({ field }) => (
+                                      <FormItem className='flex items-center justify-between px-4 py-3'>
+                                        <div className='space-y-0.5'>
+                                          <FormLabel>
+                                            {t('Force Format')}
+                                          </FormLabel>
+                                          <FormDescription>
+                                            {t(
+                                              'Force format response to OpenAI standard (OpenAI channel only)'
+                                            )}
+                                          </FormDescription>
+                                        </div>
+                                        <FormControl>
+                                          <Switch
+                                            checked={field.value}
+                                            onCheckedChange={field.onChange}
+                                          />
+                                        </FormControl>
+                                      </FormItem>
+                                    )}
+                                  />
+                                </>
                               )}
 
                               <FormField

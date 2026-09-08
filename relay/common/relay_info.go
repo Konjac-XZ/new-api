@@ -259,6 +259,27 @@ type RelayInfo struct {
 	*TaskRelayInfo
 }
 
+// IsUpstreamStream reports whether the selected channel should receive a
+// streaming request. The downstream response format remains controlled by
+// IsStream.
+func (info *RelayInfo) IsUpstreamStream() bool {
+	if info == nil || info.IsStream {
+		return info != nil && info.IsStream
+	}
+	if info.ChannelMeta == nil || info.ChannelMeta.ChannelType != constant.ChannelTypeOpenAI {
+		return false
+	}
+	if !info.ChannelMeta.ChannelSetting.ForceStream {
+		return false
+	}
+	return info.RelayMode == relayconstant.RelayModeChatCompletions ||
+		info.RelayMode == relayconstant.RelayModeCompletions
+}
+
+func (info *RelayInfo) ShouldBufferUpstreamStream() bool {
+	return info != nil && !info.IsStream && info.IsUpstreamStream()
+}
+
 func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	channelType := common.GetContextKeyInt(c, constant.ContextKeyChannelType)
 	paramOverride := common.GetContextKeyStringMap(c, constant.ContextKeyChannelParamOverride)

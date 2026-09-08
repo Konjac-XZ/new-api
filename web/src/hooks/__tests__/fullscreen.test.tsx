@@ -42,7 +42,7 @@ for (const key of domGlobals) {
 
 const { act, useRef } = await import('react')
 const { createRoot } = await import('react-dom/client')
-const { useMonitorFullscreen } = await import('../use-monitor-fullscreen')
+const { useFullscreen } = await import('../use-fullscreen')
 const reactTestGlobals = globalThis as typeof globalThis & {
   IS_REACT_ACT_ENVIRONMENT?: boolean
 }
@@ -57,7 +57,7 @@ type RenderedHarness = {
 
 function FullscreenHarness() {
   const targetRef = useRef<HTMLDivElement | null>(null)
-  const fullscreen = useMonitorFullscreen(targetRef)
+  const fullscreen = useFullscreen(targetRef)
 
   return (
     <div ref={targetRef} data-active={fullscreen.isFullscreen}>
@@ -86,7 +86,7 @@ async function unmountHarness(rendered: RenderedHarness) {
   rendered.container.remove()
 }
 
-describe('Monitor fullscreen behavior', () => {
+describe('Shared fullscreen behavior', () => {
   after(() => {
     domWindow.close()
   })

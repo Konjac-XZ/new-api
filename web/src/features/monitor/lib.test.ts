@@ -1,8 +1,36 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { getOutputSpeed, getTtftMs } from './lib'
+import { getMonitorDisplayModel, getOutputSpeed, getTtftMs } from './lib'
 import type { MonitorRecord } from './types'
+
+describe('monitor model display', () => {
+  const redirectedRecord: MonitorRecord = {
+    id: 'request-1',
+    model: 'requested-model',
+    upstream_model: 'redirected-model',
+  }
+
+  test('shows the requested model when configured for before redirect', () => {
+    assert.equal(
+      getMonitorDisplayModel(redirectedRecord, 'requested'),
+      'requested-model'
+    )
+  })
+
+  test('shows the upstream model when configured for after redirect', () => {
+    assert.equal(
+      getMonitorDisplayModel(redirectedRecord, 'upstream'),
+      'redirected-model'
+    )
+  })
+
+  test('falls back to the available model when only one name is present', () => {
+    const record: MonitorRecord = { id: 'request-2', model: 'only-model' }
+
+    assert.equal(getMonitorDisplayModel(record, 'upstream'), 'only-model')
+  })
+})
 
 describe('monitor timing helpers', () => {
   test('measures TTFT from request start across retries', () => {

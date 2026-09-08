@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Expand, Minimize2, Settings2 } from 'lucide-react'
-import { type RefObject, useCallback, useEffect, useRef, useState } from 'react'
+import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -30,6 +30,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useFullscreen } from '@/hooks/use-fullscreen'
 import { ROLE } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -41,60 +42,10 @@ import { ChannelsPrimaryButtons } from './components/channels-primary-buttons'
 import { ChannelsProvider } from './components/channels-provider'
 import { ChannelsTable } from './components/channels-table'
 
-function useFullscreenWakeLock(targetRef: RefObject<HTMLDivElement | null>) {
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null)
-
-  useEffect(() => {
-    const handleChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
-    }
-    document.addEventListener('fullscreenchange', handleChange)
-    handleChange()
-    return () => document.removeEventListener('fullscreenchange', handleChange)
-  }, [])
-
-  useEffect(() => {
-    if (!isFullscreen || !navigator.wakeLock?.request) return
-    let cancelled = false
-    void navigator.wakeLock
-      .request('screen')
-      .then((lock) => {
-        if (cancelled) {
-          void lock.release()
-          return
-        }
-        wakeLockRef.current = lock
-        lock.addEventListener('release', () => {
-          wakeLockRef.current = null
-        })
-      })
-      .catch(() => undefined)
-
-    return () => {
-      cancelled = true
-      const lock = wakeLockRef.current
-      wakeLockRef.current = null
-      void lock?.release().catch(() => undefined)
-    }
-  }, [isFullscreen])
-
-  const toggleFullscreen = useCallback(() => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen()
-      return
-    }
-    void targetRef.current?.requestFullscreen({ navigationUI: 'hide' })
-  }, [targetRef])
-
-  return { isFullscreen, toggleFullscreen }
-}
-
 export function Channels() {
   const { t } = useTranslation()
   const fullscreenRef = useRef<HTMLDivElement | null>(null)
-  const { isFullscreen, toggleFullscreen } =
-    useFullscreenWakeLock(fullscreenRef)
+  const { isFullscreen, toggleFullscreen } = useFullscreen(fullscreenRef)
   const isRoot = useAuthStore(
     (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
   )

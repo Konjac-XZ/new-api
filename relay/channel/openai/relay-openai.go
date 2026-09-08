@@ -115,6 +115,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var systemFingerprint string
 	var containStreamUsage bool
 	var responseTextBuilder strings.Builder
+	var monitorResponseText relaycommon.MonitorResponseText
 	var toolCount int
 	var usage = &dto.Usage{}
 	var lastStreamData string
@@ -143,6 +144,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			if err := processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount); err != nil {
 				logger.LogError(c, "error processing stream token data: "+err.Error())
 				sr.Error(err)
+			}
+			if err := appendMonitorTokenData(info.RelayMode, data, &monitorResponseText); err != nil {
+				logger.LogError(c, "error processing monitor stream data: "+err.Error())
 			}
 		}
 	})
@@ -183,7 +187,7 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	}
 
 	if info.MonitorResponseBody != nil {
-		info.MonitorResponseBody.WriteString(responseTextBuilder.String())
+		info.MonitorResponseBody.WriteString(monitorResponseText.String())
 	}
 
 	if !containStreamUsage {

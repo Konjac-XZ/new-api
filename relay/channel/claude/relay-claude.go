@@ -199,8 +199,18 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		ResponseText: strings.Builder{},
 		Usage:        &dto.Usage{},
 	}
+	var monitorResponseText relaycommon.MonitorResponseText
 	var err *types.NewAPIError
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		var streamResponse dto.ClaudeResponse
+		if unmarshalErr := common.UnmarshalJsonStr(data, &streamResponse); unmarshalErr == nil && streamResponse.Delta != nil {
+			if streamResponse.Delta.Thinking != nil {
+				monitorResponseText.WriteThinking(*streamResponse.Delta.Thinking)
+			}
+			if streamResponse.Delta.Text != nil {
+				monitorResponseText.WriteContent(*streamResponse.Delta.Text)
+			}
+		}
 		err = HandleStreamResponseData(c, info, claudeInfo, data)
 		if err != nil {
 			sr.Stop(err)
@@ -216,7 +226,7 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 	HandleStreamFinalResponse(c, info, claudeInfo)
 
 	if info.MonitorResponseBody != nil {
-		info.MonitorResponseBody.WriteString(claudeInfo.ResponseText.String())
+		info.MonitorResponseBody.WriteString(monitorResponseText.String())
 	}
 
 	return claudeInfo.Usage, nil

@@ -149,6 +149,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	var imageCount int
 	var hasBillableUsageMetadata bool
 	responseText := strings.Builder{}
+	var monitorResponseText relaycommon.MonitorResponseText
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		var geminiResponse dto.GeminiChatResponse
@@ -171,6 +172,11 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 				}
 				if part.Text != "" {
 					responseText.WriteString(part.Text)
+					if part.Thought {
+						monitorResponseText.WriteThinking(part.Text)
+					} else {
+						monitorResponseText.WriteContent(part.Text)
+					}
 				}
 			}
 		}
@@ -188,7 +194,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 	})
 
 	if info.MonitorResponseBody != nil {
-		info.MonitorResponseBody.WriteString(responseText.String())
+		info.MonitorResponseBody.WriteString(monitorResponseText.String())
 	}
 
 	if !hasBillableUsageMetadata {

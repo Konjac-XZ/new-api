@@ -52,7 +52,7 @@ func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Hea
 	} else {
 		req.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 		req.Set("Accept", c.Request.Header.Get("Accept"))
-		if info.IsStream && c.Request.Header.Get("Accept") == "" {
+		if info.IsUpstreamStream() && c.Request.Header.Get("Accept") == "" {
 			req.Set("Accept", "text/event-stream")
 		}
 	}
@@ -335,7 +335,7 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	}
 
 	// Set up watchdog for streaming requests with max latency
-	if info != nil && info.IsStream && info.ChannelMeta != nil {
+	if info != nil && info.IsUpstreamStream() && info.ChannelMeta != nil {
 		if maxLatency := info.ChannelMeta.MaxFirstTokenLatencySeconds; maxLatency > 0 {
 			watchdog = helper.EnsureFirstTokenWatchdog(c, info, maxLatency, reqCancel)
 		}

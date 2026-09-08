@@ -60,6 +60,8 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -80,16 +82,19 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useFullscreen } from '@/hooks/use-fullscreen'
 import { cn, tryPrettyJson } from '@/lib/utils'
 
 import { ModelBadge } from '../usage-logs/components/model-badge'
 import { getMonitorBody } from './api'
 import {
+  type MonitorModelDisplayMode,
   deriveDisplayStatus,
   formatBytes,
   formatDateTime,
   formatDuration,
   formatTokenCount,
+  getMonitorDisplayModel,
   getDurationMs,
   getMonitorTokenUsage,
   getOutputSpeed,
@@ -100,13 +105,15 @@ import {
   isTerminalStatus,
   SUMMARY_RETENTION_WINDOW_MS,
 } from './lib'
+import { MessageBodyViewer } from './message-body-viewer'
+import { ResponseBodyViewer } from './response-body-viewer'
 import { getMonitorTableLayout } from './table-layout'
 import type { MonitorBodyType, MonitorRecord } from './types'
-import { useMonitorFullscreen } from './use-monitor-fullscreen'
 import { useMonitorWs } from './use-monitor-ws'
 import { useRequestDetail } from './use-request-detail'
 
 const MONITOR_COLUMN_STORAGE_KEY = 'monitor-table-columns'
+const MONITOR_MODEL_DISPLAY_STORAGE_KEY = 'monitor-model-display-mode'
 
 const MONITOR_COLUMN_KEYS = {
   TIME: 'time',
@@ -182,6 +189,16 @@ function getInitialMonitorVisibleColumns(): MonitorVisibleColumns {
   } catch {
     return defaults
   }
+}
+
+function getInitialMonitorModelDisplayMode(): MonitorModelDisplayMode {
+  if (typeof localStorage === 'undefined') {
+    return 'upstream'
+  }
+
+  return localStorage.getItem(MONITOR_MODEL_DISPLAY_STORAGE_KEY) === 'requested'
+    ? 'requested'
+    : 'upstream'
 }
 
 function getStatusLabel(status: string, t: (key: string) => string): string {
@@ -347,14 +364,17 @@ function MonitorTtftBadge({ ttftMs }: { ttftMs: number | null }) {
   )
 }
 
-function MonitorModelCell({ record }: { record: MonitorRecord }) {
-  const displayModel = record.upstream_model || record.model || ''
+function MonitorModelCell(props: {
+  record: MonitorRecord
+  displayMode: MonitorModelDisplayMode
+}) {
+  const displayModel = getMonitorDisplayModel(props.record, props.displayMode)
   if (!displayModel) return <EmptyMonitorCell />
 
   return (
     <div className='flex w-full min-w-0 items-center gap-1.5 overflow-hidden'>
       <ModelBadge modelName={displayModel} className='max-w-full' />
-      {record.is_model_mapped ? (
+      {props.record.is_model_mapped ? (
         <StatusBadge
           label='R'
           size='sm'
@@ -362,8 +382,10 @@ function MonitorModelCell({ record }: { record: MonitorRecord }) {
           copyable={false}
           variant='purple'
           title={
-            record.model && record.model !== displayModel
-              ? `${record.model} -> ${displayModel}`
+            props.record.model &&
+            props.record.upstream_model &&
+            props.record.model !== props.record.upstream_model
+              ? `${props.record.model} -> ${props.record.upstream_model}`
               : displayModel
           }
           className='h-5 min-w-5 justify-center rounded-full px-1 text-xs'
@@ -410,6 +432,7 @@ function MonitorToolbar(props: {
   isFullscreen: boolean
   columns: MonitorColumnDefinition[]
   visibleColumns: MonitorVisibleColumns
+  modelDisplayMode: MonitorModelDisplayMode
   onModelSearchChange: (value: string) => void
   onColumnVisibilityChange: (
     columnKey: MonitorColumnId,
@@ -417,6 +440,7 @@ function MonitorToolbar(props: {
   ) => void
   onSelectAllColumns: (checked: boolean) => void
   onResetColumns: () => void
+  onModelDisplayModeChange: (mode: MonitorModelDisplayMode) => void
   onReconnect: () => void
   onFullscreenToggle: () => void
 }) {
@@ -500,6 +524,23 @@ function MonitorToolbar(props: {
                   {column.label}
                 </DropdownMenuCheckboxItem>
               ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t('Model name display')}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={props.modelDisplayMode}
+                onValueChange={(value) =>
+                  props.onModelDisplayModeChange(
+                    value as MonitorModelDisplayMode
+                  )
+                }
+              >
+                <DropdownMenuRadioItem value='requested'>
+                  {t('Before redirect')}
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value='upstream'>
+                  {t('After redirect')}
+                </DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -881,6 +922,14 @@ function BodyPanel(props: { requestId: string; type: MonitorBodyType }) {
     )
   }
 
+  if (props.type === 'downstream') {
+    return <MessageBodyViewer body={body} prettyBody={prettyBody} />
+  }
+
+  if (props.type === 'response') {
+    return <ResponseBodyViewer body={body} prettyBody={prettyBody} />
+  }
+
   return (
     <Textarea
       readOnly
@@ -1191,7 +1240,7 @@ function RequestDetail(props: {
             <span>{formatBytes(props.record.downstream?.body_size || 0)}</span>
           </DetailPill>
         </div>
-        <Tabs defaultValue='body'>
+        <Tabs defaultValue='body' className='relative'>
           <TabsList className='grid w-full grid-cols-2 sm:w-72'>
             <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
             <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
@@ -1307,7 +1356,7 @@ function RequestDetail(props: {
             </AlertDescription>
           </Alert>
         ) : (
-          <Tabs defaultValue='body'>
+          <Tabs defaultValue='body' className='relative'>
             <TabsList className='grid w-full grid-cols-2 sm:w-72'>
               <TabsTrigger value='headers'>{t('Headers')}</TabsTrigger>
               <TabsTrigger value='body'>{t('Body')}</TabsTrigger>
@@ -1424,8 +1473,11 @@ export function Monitor() {
   const [visibleColumns, setVisibleColumns] = useState(
     getInitialMonitorVisibleColumns
   )
+  const [modelDisplayMode, setModelDisplayMode] = useState(
+    getInitialMonitorModelDisplayMode
+  )
   const fullscreenRef = useRef<HTMLDivElement | null>(null)
-  const { isFullscreen, toggleFullscreen } = useMonitorFullscreen(fullscreenRef)
+  const { isFullscreen, toggleFullscreen } = useFullscreen(fullscreenRef)
   const detail = useRequestDetail()
   const applyLiveUpdate = detail.applyLiveUpdate
   const fetchDetail = detail.fetchDetail
@@ -1557,8 +1609,11 @@ export function Monitor() {
         header: t('Model'),
         layout: { min: 16, max: 32, contentScale: 0.72 },
         cellClassName: 'min-w-0 overflow-hidden',
-        render: (record) => <MonitorModelCell record={record} />,
-        measure: (record) => record.upstream_model || record.model || '-',
+        render: (record) => (
+          <MonitorModelCell record={record} displayMode={modelDisplayMode} />
+        ),
+        measure: (record) =>
+          getMonitorDisplayModel(record, modelDisplayMode) || '-',
       },
       {
         key: MONITOR_COLUMN_KEYS.CHANNEL,
@@ -1632,7 +1687,7 @@ export function Monitor() {
         },
       },
     ],
-    [t]
+    [modelDisplayMode, t]
   )
 
   const visibleMonitorColumns = useMemo(
@@ -1649,6 +1704,13 @@ export function Monitor() {
       JSON.stringify(visibleColumns)
     )
   }, [visibleColumns])
+
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') {
+      return
+    }
+    localStorage.setItem(MONITOR_MODEL_DISPLAY_STORAGE_KEY, modelDisplayMode)
+  }, [modelDisplayMode])
 
   const handleColumnVisibilityChange = useCallback(
     (columnKey: MonitorColumnId, checked: boolean) => {
@@ -1696,10 +1758,12 @@ export function Monitor() {
             isFullscreen={isFullscreen}
             columns={monitorColumns}
             visibleColumns={visibleColumns}
+            modelDisplayMode={modelDisplayMode}
             onModelSearchChange={setModelSearch}
             onColumnVisibilityChange={handleColumnVisibilityChange}
             onSelectAllColumns={handleSelectAllColumns}
             onResetColumns={handleResetColumns}
+            onModelDisplayModeChange={setModelDisplayMode}
             onReconnect={monitorWs.reconnect}
             onFullscreenToggle={toggleFullscreen}
           />

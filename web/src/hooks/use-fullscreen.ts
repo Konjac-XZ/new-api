@@ -20,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const DESKTOP_POINTER_QUERY = '(hover: hover) and (pointer: fine)'
 
-export function useMonitorFullscreen(
+export function useFullscreen(
   targetRef: React.RefObject<HTMLDivElement | null>
 ) {
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false)

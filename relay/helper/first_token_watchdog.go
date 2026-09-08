@@ -43,7 +43,7 @@ const (
 )
 
 func NewFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limitSeconds int, reqCancel context.CancelFunc) *FirstTokenWatchdog {
-	if c == nil || info == nil || limitSeconds <= 0 || !info.IsStream {
+	if c == nil || info == nil || limitSeconds <= 0 || !info.IsUpstreamStream() {
 		return nil
 	}
 
@@ -206,7 +206,7 @@ func (w *FirstTokenWatchdog) triggerTimeout() {
 }
 
 func EnsureFirstTokenWatchdog(c *gin.Context, info *relaycommon.RelayInfo, limitSeconds int, reqCancel context.CancelFunc) *FirstTokenWatchdog {
-	if c == nil || info == nil || limitSeconds <= 0 || !info.IsStream {
+	if c == nil || info == nil || limitSeconds <= 0 || !info.IsUpstreamStream() {
 		return nil
 	}
 

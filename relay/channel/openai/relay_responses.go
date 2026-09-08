@@ -17,6 +17,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func appendResponsesMonitorEvent(streamResponse *dto.ResponsesStreamResponse, responseText *relaycommon.MonitorResponseText) {
+	if streamResponse == nil {
+		return
+	}
+	switch streamResponse.Type {
+	case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+		responseText.WriteThinking(streamResponse.Delta)
+	case "response.output_text.delta":
+		responseText.WriteContent(streamResponse.Delta)
+	}
+}
+
 func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
 
@@ -85,6 +97,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	var monitorResponseText relaycommon.MonitorResponseText
 	imageCounter := &relaycommon.ImageGenerationCallCounter{}
 	imageCommitted := false
 
@@ -98,6 +111,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			return
 		}
 		sendResponsesStreamData(c, streamResponse, data)
+		appendResponsesMonitorEvent(&streamResponse, &monitorResponseText)
 		switch streamResponse.Type {
 		case "response.completed", "response.done":
 			if streamResponse.Response != nil {
@@ -182,7 +196,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	if info.MonitorResponseBody != nil {
-		info.MonitorResponseBody.WriteString(responseTextBuilder.String())
+		info.MonitorResponseBody.WriteString(monitorResponseText.String())
 	}
 
 	return usage, nil

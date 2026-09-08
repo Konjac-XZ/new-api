@@ -5,11 +5,47 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/constant"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRelayInfoForceStreamOnlyAppliesToOpenAICompletionsRequests(t *testing.T) {
+	tests := []struct {
+		name               string
+		channelType        int
+		relayMode          int
+		clientStream       bool
+		wantUpstreamStream bool
+		wantBuffer         bool
+	}{
+		{name: "OpenAI chat completions", channelType: constant.ChannelTypeOpenAI, relayMode: relayconstant.RelayModeChatCompletions, wantUpstreamStream: true, wantBuffer: true},
+		{name: "OpenAI legacy completions", channelType: constant.ChannelTypeOpenAI, relayMode: relayconstant.RelayModeCompletions, wantUpstreamStream: true, wantBuffer: true},
+		{name: "OpenAI responses excluded", channelType: constant.ChannelTypeOpenAI, relayMode: relayconstant.RelayModeResponses},
+		{name: "other channel excluded", channelType: constant.ChannelTypeAnthropic, relayMode: relayconstant.RelayModeChatCompletions},
+		{name: "client stream remains streaming", channelType: constant.ChannelTypeAnthropic, relayMode: relayconstant.RelayModeChatCompletions, clientStream: true, wantUpstreamStream: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := &RelayInfo{
+				IsStream:  tt.clientStream,
+				RelayMode: tt.relayMode,
+				ChannelMeta: &ChannelMeta{
+					ChannelType:    tt.channelType,
+					ChannelSetting: dto.ChannelSettings{ForceStream: true},
+				},
+			}
+
+			assert.Equal(t, tt.wantUpstreamStream, info.IsUpstreamStream())
+			assert.Equal(t, tt.wantBuffer, info.ShouldBufferUpstreamStream())
+		})
+	}
+}
 
 func TestRelayInfoGetFinalRequestRelayFormatPrefersExplicitFinal(t *testing.T) {
 	info := &RelayInfo{

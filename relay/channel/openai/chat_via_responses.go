@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -85,6 +86,16 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
 	}
 	defer service.CloseResponseBodyGracefully(resp)
+	var watchdog *helper.FirstTokenWatchdog
+	if stored, ok := common.GetContextKeyType[*helper.FirstTokenWatchdog](c, constant.ContextKeyFirstTokenWatchdog); ok {
+		watchdog = stored
+	}
+	defer func() {
+		if watchdog != nil {
+			watchdog.Stop("buffered responses stream finished")
+		}
+		common.SetContextKey(c, constant.ContextKeyFirstTokenWatchdog, nil)
+	}()
 
 	accumulator := relayconvert.NewResponsesBufferedAccumulator()
 	var finalResponse *dto.OpenAIResponsesResponse
@@ -105,6 +116,11 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 			}
 			continue
 		}
+		if watchdog != nil {
+			watchdog.Stop("first token received")
+		}
+		info.SetFirstResponseTime()
+		info.ReceivedResponseCount++
 
 		var streamResp dto.ResponsesStreamResponse
 		if err := common.UnmarshalJsonStr(data, &streamResp); err != nil {
@@ -136,6 +152,9 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 		if streamErr != nil || finalResponse != nil {
 			break
 		}
+	}
+	if helper.HasFirstTokenTimeout(c) {
+		return nil, helper.FirstTokenLatencyError(info)
 	}
 	if streamErr != nil {
 		return nil, streamErr
@@ -184,7 +203,7 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 		return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
 	}
 
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	service.IOCopyBytesGracefully(c, bufferedJSONHTTPResponse(resp), responseBody)
 	return usage, nil
 }
 
@@ -206,6 +225,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 	}
 	streamErr := (*types.NewAPIError)(nil)
+	var monitorResponseText relaycommon.MonitorResponseText
 
 	if info.RelayFormat == types.RelayFormatClaude && info.ClaudeConvertInfo == nil {
 		info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{LastMessagesType: relaycommon.LastMessageTypeNone}
@@ -282,6 +302,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			sr.Error(err)
 			return
 		}
+		appendResponsesMonitorEvent(&streamResp, &monitorResponseText)
 
 		if streamResp.Type == "response.error" || streamResp.Type == "response.failed" {
 			if streamResp.Response != nil {
@@ -315,7 +336,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	}
 
 	if info.MonitorResponseBody != nil {
-		info.MonitorResponseBody.WriteString(state.UsageText())
+		info.MonitorResponseBody.WriteString(monitorResponseText.String())
 	}
 
 	usage := state.Usage()

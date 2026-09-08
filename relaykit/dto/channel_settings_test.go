@@ -522,11 +522,12 @@ func TestAdvancedCustomValidateAlphaSearchConverterPath(t *testing.T) {
 }
 
 func TestChannelSettingsHTTPTransportJSONRoundTrip(t *testing.T) {
-	legacy := `{"proxy":"http://127.0.0.1:8080","force_format":true}`
+	legacy := `{"proxy":"http://127.0.0.1:8080","force_format":true,"force_stream":true}`
 	var settings ChannelSettings
 	require.NoError(t, json.Unmarshal([]byte(legacy), &settings))
 	assert.Equal(t, "http://127.0.0.1:8080", settings.Proxy)
 	assert.True(t, settings.ForceFormat)
+	assert.True(t, settings.ForceStream)
 	assert.Empty(t, settings.HTTPProtocol)
 	assert.Zero(t, settings.HTTP2ConnectionShards)
 
@@ -534,6 +535,7 @@ func TestChannelSettingsHTTPTransportJSONRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(encoded), "http_protocol")
 	assert.NotContains(t, string(encoded), "http2_connection_shards")
+	assert.Contains(t, string(encoded), `"force_stream":true`)
 
 	explicit := ChannelSettings{
 		Proxy:                 "socks5://127.0.0.1:1080",

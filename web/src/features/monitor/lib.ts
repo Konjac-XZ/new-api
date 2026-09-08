@@ -19,6 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 
 import type { MonitorRecord } from './types'
 
+export type MonitorModelDisplayMode = 'requested' | 'upstream'
+
+export function getMonitorDisplayModel(
+  record: MonitorRecord,
+  mode: MonitorModelDisplayMode
+): string {
+  if (mode === 'requested') {
+    return record.model || record.upstream_model || ''
+  }
+  return record.upstream_model || record.model || ''
+}
+
 export const MIN_SUMMARY_ITEMS = 100
 export const SUMMARY_RETENTION_WINDOW_MS = 5 * 60 * 1000
 export const MS_TO_SECONDS = 1000

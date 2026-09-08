@@ -59,6 +59,9 @@ func OaiChatToResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
+	if info.MonitorResponseBody != nil {
+		info.MonitorResponseBody.Write(responseBody)
+	}
 	return usage, nil
 }
 
@@ -77,6 +80,7 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 	}
 	streamErr := (*types.NewAPIError)(nil)
+	var monitorResponseText relaycommon.MonitorResponseText
 
 	sendEvent := func(event relayconvert.ChatToResponsesStreamEvent) bool {
 		data, err := common.Marshal(event.Payload)
@@ -108,6 +112,10 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			logger.LogError(c, "failed to unmarshal chat stream response: "+err.Error())
 			sr.Error(err)
 			return
+		}
+		for _, choice := range chunk.Choices {
+			monitorResponseText.WriteThinking(choice.Delta.GetReasoningContent())
+			monitorResponseText.WriteContent(choice.Delta.GetContentString())
 		}
 
 		results, err := relayconvert.ConvertStreamResponseChunk(c, info, state, &chunk)
@@ -152,6 +160,9 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		if !sendEvent(event) {
 			return nil, streamErr
 		}
+	}
+	if info.MonitorResponseBody != nil {
+		info.MonitorResponseBody.WriteString(monitorResponseText.String())
 	}
 
 	return usage, nil

@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/monitor"
+	openaichannel "github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -22,6 +24,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func forceStreamRequestBody(data []byte, streamOptions *dto.StreamOptions) ([]byte, error) {
+	var bodyMap map[string]json.RawMessage
+	if err := common.Unmarshal(data, &bodyMap); err != nil {
+		return nil, err
+	}
+	bodyMap["stream"] = json.RawMessage("true")
+	if streamOptions != nil {
+		encodedOptions, err := common.Marshal(streamOptions)
+		if err != nil {
+			return nil, err
+		}
+		bodyMap["stream_options"] = encodedOptions
+	}
+	return common.Marshal(bodyMap)
+}
 
 func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
@@ -43,6 +61,9 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	err = helper.ModelMappedHelper(c, info, request)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeChannelModelMappedError, types.ErrOptionWithSkipRetry())
+	}
+	if info.IsUpstreamStream() {
+		request.Stream = common.GetPointer(true)
 	}
 
 	includeUsage := true
@@ -115,7 +136,25 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				logger.LogDebug(c, "requestBody: %s", debugBytes)
 			}
 		}
-		requestBody = common.ReaderOnly(storage)
+		if info.ShouldBufferUpstreamStream() {
+			rawBody, err := storage.Bytes()
+			if err != nil {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
+			forcedBody, err := forceStreamRequestBody(rawBody, request.StreamOptions)
+			if err != nil {
+				return types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+			}
+			body, size, closer, err := relaycommon.NewOutboundJSONBody(forcedBody)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			defer closer.Close()
+			info.UpstreamRequestBodySize = size
+			requestBody = body
+		} else {
+			requestBody = common.ReaderOnly(storage)
+		}
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIRequest(c, info, request)
 		if err != nil {
@@ -183,6 +222,12 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				return newAPIErrorFromParamOverride(err)
 			}
 		}
+		if info.ShouldBufferUpstreamStream() {
+			jsonData, err = forceStreamRequestBody(jsonData, nil)
+			if err != nil {
+				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
 
 		logger.LogDebug(c, "text request body: %s", jsonData)
 
@@ -205,9 +250,15 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
 
+	upstreamStream := false
 	if resp != nil {
 		httpResp = resp.(*http.Response)
-		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
+		upstreamStream = strings.Contains(strings.ToLower(httpResp.Header.Get("Content-Type")), "text/event-stream")
+		if !info.ShouldBufferUpstreamStream() {
+			info.IsStream = info.IsStream || upstreamStream
+		} else if !upstreamStream {
+			helper.ResetFirstTokenWatchdog(c, "upstream returned a non-stream response")
+		}
 		if httpResp.StatusCode != http.StatusOK {
 			newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
 			// reset status code 重置状态码
@@ -216,7 +267,13 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		}
 	}
 
-	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
+	var usage any
+	var newApiErr *types.NewAPIError
+	if info.ShouldBufferUpstreamStream() && upstreamStream {
+		usage, newApiErr = openaichannel.OaiBufferedStreamHandler(c, info, httpResp)
+	} else {
+		usage, newApiErr = adaptor.DoResponse(c, httpResp, info)
+	}
 	if newApiErr != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
