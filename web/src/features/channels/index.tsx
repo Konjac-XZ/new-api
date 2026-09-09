@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/tooltip'
 import { useFullscreen } from '@/hooks/use-fullscreen'
 import { ROLE } from '@/lib/roles'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -51,7 +52,7 @@ export function Channels() {
   )
   const channelOpsQuery = useQuery({
     queryKey: ['channel-ops'],
-    queryFn: getChannelOps,
+    queryFn: async () => requireServerSuccess(await getChannelOps()),
     retry: false,
     staleTime: 5 * 60 * 1000,
   })

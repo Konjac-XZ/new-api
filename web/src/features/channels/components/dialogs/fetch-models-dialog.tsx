@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
 
 import { fetchUpstreamModels, updateChannel } from '../../api'
@@ -232,14 +233,12 @@ export function FetchModelsDialog({
             toast.success(t('Fetched {{count}} models', { count: list.length }))
           }
         } else {
-          toast.error(response.message || t('Failed to fetch models'))
+          handleServerError(response, t('Failed to fetch models'))
           setFetchedModels([])
         }
       }
     } catch (error: unknown) {
-      toast.error(
-        error instanceof Error ? error.message : t('Failed to fetch models')
-      )
+      handleServerError(error, t('Failed to fetch models'))
       setFetchedModels([])
     } finally {
       setIsFetching(false)
@@ -352,12 +351,10 @@ export function FetchModelsDialog({
         queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
         onOpenChange(false)
       } else {
-        toast.error(response.message || t('Failed to update models'))
+        handleServerError(response, t('Failed to update models'))
       }
     } catch (error: unknown) {
-      toast.error(
-        error instanceof Error ? error.message : t('Failed to update models')
-      )
+      handleServerError(error, t('Failed to update models'))
     } finally {
       setIsSaving(false)
     }

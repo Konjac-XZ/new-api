@@ -25,13 +25,6 @@ import { toast } from 'sonner'
 import * as z from 'zod'
 
 import { CopyButton } from '@/components/copy-button'
-import { Input } from '@/components/ui/input'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Form,
@@ -42,7 +35,10 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { handleServerError } from '@/lib/handle-server-error'
 import { zodResolver } from '@/lib/zod-resolver'
 
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
@@ -334,9 +330,8 @@ export function OAuthSection(props: OAuthSectionProps) {
 
         toast.success(t('OIDC configuration fetched successfully'))
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(err)
-        toast.error(
+        handleServerError(
+          err,
           t(
             'Failed to fetch OIDC configuration. Please check the URL and network status'
           )

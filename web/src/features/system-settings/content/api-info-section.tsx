@@ -59,6 +59,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { getBgColorClass } from '@/lib/colors'
+import { handleServerError } from '@/lib/handle-server-error'
 import { zodResolver } from '@/lib/zod-resolver'
 
 import { SettingsSwitchField } from '../components/settings-form-layout'
@@ -157,8 +158,8 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
       })
       setIsEnabledDraft(checked)
       toast.success(t('Setting saved'))
-    } catch {
-      toast.error(t('Failed to update setting'))
+    } catch (error) {
+      handleServerError(error, t('Failed to update setting'))
     }
   }
 
@@ -245,8 +246,8 @@ export function ApiInfoSection({ enabled, data }: ApiInfoSectionProps) {
       if (result.success) {
         setDraftApiInfoList(null)
       }
-    } catch {
-      toast.error(t('Failed to save API info'))
+    } catch (error) {
+      handleServerError(error, t('Failed to save API info'))
     }
   }
 
